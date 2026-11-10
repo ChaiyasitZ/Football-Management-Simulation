@@ -1,0 +1,338 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Global Hardened Primitives
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Master Gate helper: verifies parent /users/{userId} exists (or is created in the same batch) and belongs to userId
+    function hasParentUser(userId) {
+      return (
+        exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid
+      ) || (
+        existsAfter(/databases/$(database)/documents/users/$(userId)) &&
+        getAfter(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid
+      );
+    }
+
+    // =========================================================================
+    // Validation Blueprints
+    // =========================================================================
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['ownerId', 'displayName', 'photoURL', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'displayName', 'photoURL', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.displayName is string &&
+        data.displayName.size() >= 1 &&
+        data.displayName.size() <= 80 &&
+        data.photoURL is string &&
+        data.photoURL.size() <= 500 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateInfo(data, userId) {
+      return data.keys().hasAll(['ownerId', 'email', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'email', 'createdAt', 'updatedAt']) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.email is string &&
+        data.email.size() >= 3 &&
+        data.email.size() <= 254 &&
+        data.email == request.auth.token.email &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCareerStateMap(cs) {
+      return cs is map &&
+        cs.keys().hasAll([
+          'processedDates',
+          'manager',
+          'standings',
+          'clubs',
+          'staff',
+          'completedFixtures',
+          'modifiedPlayers',
+          'playerDiffs',
+          'transferOffers',
+          'shortlistPlayerIds',
+          'scoutAssignments',
+          'scoutReports',
+          'transactions',
+          'inbox'
+        ]) &&
+        cs.keys().hasOnly([
+          'processedDates',
+          'manager',
+          'standings',
+          'clubs',
+          'staff',
+          'completedFixtures',
+          'modifiedPlayers',
+          'playerDiffs',
+          'transferOffers',
+          'shortlistPlayerIds',
+          'scoutAssignments',
+          'scoutReports',
+          'transactions',
+          'inbox'
+        ]) &&
+        cs.processedDates is list &&
+        cs.processedDates.size() <= 400 &&
+        (cs.processedDates.size() == 0 || (cs.processedDates[0] is string && cs.processedDates[0].size() <= 16)) &&
+        cs.manager is map &&
+        cs.standings is map &&
+        cs.clubs is map &&
+        cs.staff is map &&
+        cs.completedFixtures is map &&
+        cs.modifiedPlayers is map &&
+        cs.playerDiffs is map &&
+        cs.transferOffers is list &&
+        cs.transferOffers.size() <= 60 &&
+        (cs.transferOffers.size() == 0 || cs.transferOffers[0] is map) &&
+        cs.shortlistPlayerIds is list &&
+        cs.shortlistPlayerIds.size() <= 60 &&
+        (cs.shortlistPlayerIds.size() == 0 || (cs.shortlistPlayerIds[0] is string && cs.shortlistPlayerIds[0].size() <= 64)) &&
+        cs.scoutAssignments is list &&
+        cs.scoutAssignments.size() <= 30 &&
+        (cs.scoutAssignments.size() == 0 || cs.scoutAssignments[0] is map) &&
+        cs.scoutReports is map &&
+        cs.transactions is list &&
+        cs.transactions.size() <= 80 &&
+        (cs.transactions.size() == 0 || cs.transactions[0] is map) &&
+        cs.inbox is list &&
+        cs.inbox.size() <= 50 &&
+        (cs.inbox.size() == 0 || cs.inbox[0] is map);
+    }
+
+    function isValidCareerSave(data, userId, slotId) {
+      return data.keys().hasAll([
+          'ownerId',
+          'slotId',
+          'saveName',
+          'clubName',
+          'managerName',
+          'gameDate',
+          'season',
+          'lastSavedAtIso',
+          'randomSeed',
+          'controlledClubId',
+          'careerState',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'ownerId',
+          'slotId',
+          'saveName',
+          'clubName',
+          'managerName',
+          'gameDate',
+          'season',
+          'lastSavedAtIso',
+          'randomSeed',
+          'controlledClubId',
+          'careerState',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.ownerId is string &&
+        data.ownerId.size() >= 1 &&
+        data.ownerId.size() <= 128 &&
+        data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.ownerId == request.auth.uid &&
+        data.ownerId == userId &&
+        data.slotId is string &&
+        data.slotId.size() >= 1 &&
+        data.slotId.size() <= 64 &&
+        data.slotId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.slotId == slotId &&
+        data.saveName is string &&
+        data.saveName.size() >= 1 &&
+        data.saveName.size() <= 120 &&
+        data.clubName is string &&
+        data.clubName.size() >= 1 &&
+        data.clubName.size() <= 100 &&
+        data.managerName is string &&
+        data.managerName.size() >= 1 &&
+        data.managerName.size() <= 80 &&
+        data.gameDate is string &&
+        data.gameDate.size() == 10 &&
+        data.gameDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+        data.season is string &&
+        data.season.size() >= 4 &&
+        data.season.size() <= 16 &&
+        data.lastSavedAtIso is string &&
+        data.lastSavedAtIso.size() >= 10 &&
+        data.lastSavedAtIso.size() <= 40 &&
+        data.randomSeed is number &&
+        data.controlledClubId is string &&
+        data.controlledClubId.size() >= 1 &&
+        data.controlledClubId.size() <= 64 &&
+        data.controlledClubId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        isValidCareerStateMap(data.careerState) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection 1: /users/{userId} (Public Manager Profile, No PII)
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId) && (resource == null || existing().ownerId == request.auth.uid);
+      allow list: if isSignedIn() && isVerifiedUser() && userId == request.auth.uid && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: UpdateProfileMetadata
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+        );
+
+      allow delete: if false;
+
+      // =======================================================================
+      // Subcollection 1A: /users/{userId}/private/{docId} (Isolated PII)
+      // =======================================================================
+      match /private/{docId} {
+        allow get: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'info' &&
+          (resource == null || existing().ownerId == request.auth.uid) &&
+          hasParentUser(userId);
+
+        allow list: if false;
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'info' &&
+          isValidUserPrivateInfo(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          hasParentUser(userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(docId) &&
+          docId == 'info' &&
+          isValidUserPrivateInfo(incoming(), userId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            // Action: SyncVerifiedEmail
+            incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt'])
+          ) &&
+          hasParentUser(userId);
+
+        allow delete: if false;
+      }
+
+      // =======================================================================
+      // Subcollection 1B: /users/{userId}/saves/{slotId} (Career Save Slots)
+      // =======================================================================
+      match /saves/{slotId} {
+        allow get: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(slotId) &&
+          (resource == null || existing().ownerId == request.auth.uid) &&
+          hasParentUser(userId);
+
+        allow list: if isSignedIn() &&
+          isVerifiedUser() &&
+          userId == request.auth.uid &&
+          resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(slotId) &&
+          isValidCareerSave(incoming(), userId, slotId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          hasParentUser(userId);
+
+        allow update: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(slotId) &&
+          isValidCareerSave(incoming(), userId, slotId) &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().slotId == existing().slotId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          (
+            // Action: OverwriteCareerSaveSlot
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'saveName',
+              'clubName',
+              'managerName',
+              'gameDate',
+              'season',
+              'lastSavedAtIso',
+              'randomSeed',
+              'controlledClubId',
+              'careerState',
+              'updatedAt'
+            ])
+          ) &&
+          hasParentUser(userId);
+
+        allow delete: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(slotId) &&
+          existing().ownerId == request.auth.uid &&
+          hasParentUser(userId);
+      }
+    }
+  }
+}

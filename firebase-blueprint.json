@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Public manager account metadata without PII.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the football manager.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional avatar URL from Google profile.",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": ["ownerId", "displayName", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII record containing the user's verified Gmail address.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified Google account email address.",
+          "minLength": 3,
+          "maxLength": 254
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the record was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the record was last updated."
+        }
+      },
+      "required": ["ownerId", "email", "createdAt", "updatedAt"]
+    },
+    "CareerSave": {
+      "title": "CareerSave",
+      "description": "Cloud career save slot storing native Firestore maps for world state deltas.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the save owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "slotId": {
+          "type": "string",
+          "description": "Save slot identifier (e.g. slot_autosave, slot_1, slot_2).",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "saveName": {
+          "type": "string",
+          "description": "Human-readable name of the career save.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "clubName": {
+          "type": "string",
+          "description": "Name of the controlled football club.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "managerName": {
+          "type": "string",
+          "description": "Name of the manager in this career save.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "gameDate": {
+          "type": "string",
+          "description": "In-game ISO date YYYY-MM-DD.",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "season": {
+          "type": "string",
+          "description": "Season label (e.g., 2026/27).",
+          "minLength": 4,
+          "maxLength": 16
+        },
+        "lastSavedAtIso": {
+          "type": "string",
+          "description": "Client ISO string for UI display.",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "randomSeed": {
+          "type": "number",
+          "description": "Deterministic world seed."
+        },
+        "controlledClubId": {
+          "type": "string",
+          "description": "ID of the user's controlled club.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "careerState": {
+          "type": "object",
+          "description": "Native Firestore map containing mutable career state deltas."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the save slot was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the save slot was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "slotId",
+        "saveName",
+        "clubName",
+        "managerName",
+        "gameDate",
+        "season",
+        "lastSavedAtIso",
+        "randomSeed",
+        "controlledClubId",
+        "careerState",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores public manager profile metadata per authenticated user."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": {
+        "$ref": "#/entities/UserPrivateInfo"
+      },
+      "description": "Stores isolated PII (verified Gmail address) restricted strictly to the owner."
+    },
+    "/users/{userId}/saves/{slotId}": {
+      "schema": {
+        "$ref": "#/entities/CareerSave"
+      },
+      "description": "Stores cloud football career save slots belonging to the user."
+    }
+  }
+}

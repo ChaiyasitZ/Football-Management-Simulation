@@ -1,0 +1,1160 @@
+TOUCHLINE - FOOTBALL MANAGER WEB GAME
+PRODUCT REQUIREMENTS DOCUMENT (PRD)
+Version: 1.0
+Language: Thai
+Target platform: Web (Desktop-first)
+Development environment: Google AI Studio Build Mode
+Genre: Football Management / Sports Simulation / Text-based Management Game
+
+======================================================================
+1. ภาพรวมโครงการ (PROJECT OVERVIEW)
+======================================================================
+
+ชื่อโครงการชั่วคราว: TOUCHLINE
+Tagline: The World Is Your Pitch.
+
+แนวคิด:
+สร้างเกมบริหารสโมสรฟุตบอลบนเว็บ โดยได้รับแรงบันดาลใจจากเกม Football Manager บน PC ผู้เล่นรับบทเป็นผู้จัดการทีม มีหน้าที่วางแท็กติก จัดตัวจริง ฝึกซ้อม ซื้อขายนักเตะ พัฒนาทีมเยาวชน บริหารความสัมพันธ์กับนักเตะและบอร์ดบริหาร และพาสโมสรประสบความสำเร็จ
+
+เกมเน้นข้อมูลและข้อความเป็นหลัก (Text-first Management Simulation) ไม่จำเป็นต้องมีภาพนักเตะหรือการแข่งขันแบบ 3D การแข่งขันนำเสนอผ่าน Match Commentary, Timeline, Match Statistics และแผนผังแท็กติก
+
+เป้าหมายสำคัญ:
+1. ให้ความรู้สึกเหมือนเกม Football Manager บน PC แต่ใช้งานผ่านเว็บได้สะดวก
+2. มีโลกฟุตบอลจำลองที่ประกอบด้วย 5 ลีกใหญ่ของยุโรป
+3. นักเตะ สโมสร และผู้จัดการทีมมีข้อมูลและพัฒนาการต่อเนื่องตามเวลา
+4. ผลการแข่งขันต้องเกิดจาก Game Simulation Engine ที่มีเหตุผลและตรวจสอบได้ ไม่ใช่ให้ AI สุ่มตัดสินผล
+5. ใช้ Gemini/AI ช่วยสร้างบทบรรยาย ข่าวฟุตบอล รายงาน Scout และบทสนทนา โดยอ้างอิงข้อมูลจริงที่ Game Engine ส่งให้เท่านั้น
+6. ผู้เล่นสามารถ Save/Load เกมและเล่นต่อจากฤดูกาลเดิมได้
+
+กลุ่มผู้เล่นเป้าหมาย:
+- ผู้เล่นที่ชอบเกม Football Manager และเกมบริหารทีมกีฬา
+- ผู้เล่นที่ชอบวิเคราะห์ข้อมูลนักเตะ แท็กติก และสถิติ
+- ผู้เล่นที่ชอบสร้างทีมระยะยาวและเล่นหลายฤดูกาล
+- ผู้เล่นที่ต้องการเกมฟุตบอลแบบไม่ต้องควบคุมนักเตะด้วยตนเอง
+
+หลักการออกแบบ:
+- Simulation First: ระบบจำลองเป็นแหล่งความจริงหลักของเกม
+- Data-driven: ลีก สโมสร นักเตะ และกฎการแข่งขันต้องปรับได้จากข้อมูล
+- AI as Storyteller: AI สร้างภาษาและเรื่องราว ไม่ใช่เปลี่ยนค่าข้อมูลหลักของเกม
+- Desktop-first: ออกแบบให้เหมาะกับจอคอมพิวเตอร์ก่อน และรองรับแท็บเล็ต/มือถือ
+- Readability: แสดงข้อมูลเยอะได้ แต่ต้องค้นหา กรอง และเรียงข้อมูลได้ง่าย
+
+======================================================================
+2. ขอบเขตฟุตบอล 5 ลีกใหญ่ยุโรป (CORE LEAGUES)
+======================================================================
+
+เกมรุ่นแรกให้เน้น 5 ลีกสูงสุดของยุโรปดังนี้
+
+1. England - Premier League
+   จำนวนทีมเป้าหมาย: 20 สโมสร
+   รูปแบบ: แข่งขันพบกันเหย้าและเยือน
+   จำนวนเกมต่อสโมสรในลีก: 38 นัด
+
+2. Spain - LaLiga
+   จำนวนทีมเป้าหมาย: 20 สโมสร
+   รูปแบบ: แข่งขันพบกันเหย้าและเยือน
+   จำนวนเกมต่อสโมสรในลีก: 38 นัด
+
+3. Germany - Bundesliga
+   จำนวนทีมเป้าหมาย: 18 สโมสร
+   รูปแบบ: แข่งขันพบกันเหย้าและเยือน
+   จำนวนเกมต่อสโมสรในลีก: 34 นัด
+
+4. Italy - Serie A
+   จำนวนทีมเป้าหมาย: 20 สโมสร
+   รูปแบบ: แข่งขันพบกันเหย้าและเยือน
+   จำนวนเกมต่อสโมสรในลีก: 38 นัด
+
+5. France - Ligue 1
+   จำนวนทีมเป้าหมาย: 18 สโมสร
+   รูปแบบ: แข่งขันพบกันเหย้าและเยือน
+   จำนวนเกมต่อสโมสรในลีก: 34 นัด
+
+รวมทีมในลีกสูงสุดเป้าหมาย: 96 สโมสร
+
+ข้อกำหนดสำคัญ:
+- จำนวนทีม วันแข่งขัน คะแนน และกฎการแข่งขันต้องเก็บเป็น Configuration ห้าม hardcode กระจายอยู่ในหลายไฟล์
+- ต้องรองรับการเปลี่ยนจำนวนทีมในอนาคต
+- ลีกใช้ระบบคะแนนพื้นฐาน: ชนะ 3 คะแนน, เสมอ 1 คะแนน, แพ้ 0 คะแนน
+- ตารางคะแนนเรียงตามคะแนน จากนั้นผลต่างประตูได้เสีย และประตูได้ ตามลำดับ โดยสามารถตั้งกฎ tie-break เพิ่มเติมใน League Configuration
+- แต่ละลีกมี Matchday, ตารางการแข่งขัน, ผลการแข่งขัน, ตารางคะแนน และสถิติรายทีม/รายนักเตะ
+- ต้องรองรับการเลื่อนชั้น/ตกชั้นในสถาปัตยกรรมข้อมูล แม้ MVP แรกอาจใช้ทีมจากลีกล่างแบบจำลองหรือเปิดระบบเต็มใน Phase ถัดไป
+
+ประเทศและการแข่งขันเสริม:
+- Domestic Cup ของแต่ละประเทศควรออกแบบเป็น Competition Configuration เช่น ระบบแพ้คัดออก, นัดเดียว หรือเหย้า-เยือน
+- UEFA Champions League, Europa League และ Conference League เป็นระบบเสริมใน Phase ถัดไป โดยออกแบบ Competition Engine ให้รองรับลีกเฟส/รอบน็อกเอาต์ที่ตั้งค่าได้
+- ทีมชาติและการแข่งขันระดับทีมชาติยังไม่ใช่สิ่งจำเป็นสำหรับ MVP
+
+ขอบเขตข้อมูลทีม:
+- MVP แนะนำให้สร้างชื่อสโมสรและนักเตะสมมติที่มีรูปแบบสมจริง เพื่อหลีกเลี่ยงปัญหาสิทธิ์การใช้ชื่อ โลโก้ ภาพ และข้อมูลฐานข้อมูลจากผู้ให้บริการรายอื่น
+- หากต้องการใช้ชื่อสโมสร/นักเตะจริง ให้แยกเป็น Data Import Layer และนำเข้าข้อมูลที่ผู้พัฒนามีสิทธิ์ใช้งาน
+- ไม่จำเป็นต้องใช้ภาพนักเตะ ใช้ชื่อ สัญชาติ ตำแหน่ง อายุ ค่า Ability และสัญลักษณ์ตัวอักษร/ธงประเทศแทนได้
+
+======================================================================
+3. GAME LOOP และรูปแบบการเล่น
+======================================================================
+
+วงจรการเล่นหลัก:
+1. เปิด Dashboard และตรวจสอบ Inbox/ข่าวสาร/สถานะทีม
+2. ตรวจสอบสภาพนักเตะ ความฟิต ขวัญกำลังใจ อาการบาดเจ็บ และความพร้อม
+3. จัดตัวจริง ตัวสำรอง และแท็กติกสำหรับนัดถัดไป
+4. จัดการฝึกซ้อมหรือปรับ Individual Training
+5. จัดการตลาดซื้อขาย สัญญา และ Scout ตามต้องการ
+6. กด Continue เพื่อเดินเวลาไปยังเหตุการณ์ถัดไป
+7. ก่อนแข่งขัน ตรวจสอบคู่แข่งและเลือกแผนรับมือ
+8. จำลองการแข่งขันผ่าน Match Engine
+9. อ่าน Match Commentary และวิเคราะห์ผลการแข่งขัน
+10. จัดการผลกระทบหลังเกม เช่น ความฟิต ขวัญกำลังใจ อาการบาดเจ็บ ข่าว และความเชื่อมั่นของบอร์ด
+11. เล่นต่อจนจบฤดูกาลและเข้าสู่ช่วงปิดฤดูกาล
+
+การเดินเวลา:
+- ปุ่ม Continue ต้องเป็นจุดควบคุมหลักของเกม
+- ผู้เล่นเลือกเดินเวลาไปวันถัดไป, เหตุการณ์ถัดไป หรือวันแข่งขันถัดไปได้
+- เกมต้องหยุดอัตโนมัติเมื่อมีเหตุการณ์สำคัญ เช่น วันแข่งขัน, ข้อเสนอสัญญา, ข้อเสนอซื้อขาย, ข่าวบอร์ดบริหาร หรือกำหนดเส้นตายตลาดซื้อขาย
+- ห้ามเปลี่ยนวันหรือจำลองเหตุการณ์ซ้ำเมื่อผู้เล่นกดปุ่มหลายครั้งอย่างรวดเร็ว
+- ทุกการเดินเวลาต้องทำงานแบบ Transaction/Atomic Update เพื่อป้องกันข้อมูลซ้ำหรือข้อมูลไม่ตรงกัน
+
+======================================================================
+4. ระบบจัดการสโมสรและนักเตะ (SQUAD MANAGEMENT)
+======================================================================
+
+ข้อมูลนักเตะ (Player Profile):
+- ชื่อและนามสกุล
+- วันเกิดและอายุที่คำนวณจากวันในเกม
+- สัญชาติ และประเทศที่ลงเล่นให้ได้
+- ส่วนสูง น้ำหนัก และเท้าถนัด
+- ตำแหน่งหลักและตำแหน่งรอง
+- Role/Duty ที่เหมาะสม
+- Current Ability (CA) หรือระดับความสามารถปัจจุบัน
+- Potential Ability (PA) หรือช่วงศักยภาพในอนาคต
+- Attributes ด้าน Technical, Mental และ Physical
+- ความฟิต (Fitness)
+- ความพร้อมในการแข่งขัน (Match Sharpness)
+- ขวัญกำลังใจ (Morale)
+- ความเข้าใจแท็กติก (Tactical Familiarity)
+- ความพึงพอใจต่อบทบาทในทีม (Squad Status/Satisfaction)
+- Personality และ Professionalism
+- ความสัมพันธ์กับเพื่อนร่วมทีม ผู้จัดการ และ Staff
+- สัญญา ค่าเหนื่อย โบนัส และวันหมดสัญญา
+- มูลค่าประเมินและราคาที่สโมสรต้องการ
+- ประวัติอาการบาดเจ็บ
+- สถิติการลงเล่น ประตู แอสซิสต์ ใบเหลือง ใบแดง และคะแนนเฉลี่ย
+- Career History และ Transfer History
+
+Attribute Categories:
+
+A. Technical Attributes
+- Finishing
+- First Touch
+- Passing
+- Technique
+- Dribbling
+- Crossing
+- Heading
+- Tackling
+- Marking
+- Long Shots
+- Penalty Taking
+- Free Kick Taking
+- Corners
+- Ball Control
+
+B. Mental Attributes
+- Decisions
+- Vision
+- Composure
+- Concentration
+- Positioning
+- Anticipation
+- Work Rate
+- Teamwork
+- Leadership
+- Determination
+- Aggression
+- Flair
+- Off The Ball
+- Bravery
+- Consistency
+
+C. Physical Attributes
+- Acceleration
+- Pace
+- Stamina
+- Strength
+- Agility
+- Balance
+- Jumping Reach
+- Natural Fitness
+
+ข้อกำหนด:
+- Attribute ใช้ช่วงคะแนน 1-20 หรือกำหนดเป็น 0-100 ได้ แต่ทั้งเกมต้องใช้มาตรฐานเดียวกัน
+- แนะนำใช้ 1-20 เพื่อให้เข้าใจง่ายและให้ความรู้สึกแบบเกม Manager
+- Current Ability ต้องสะท้อนความสามารถปัจจุบันจาก Attribute ไม่ควรเป็นตัวเลขที่ขัดกับค่าความสามารถจริง
+- Potential ต้องไม่แสดงค่าที่แน่นอนแก่ผู้เล่นเสมอไป Scout อาจรายงานเป็นช่วงค่าพร้อมระดับความมั่นใจ
+- นักเตะที่อายุเพิ่มขึ้นต้องมีการพัฒนา/ถดถอยตามอายุ การฝึกซ้อม เวลาเล่น และปัจจัยอื่น
+- ห้ามเพิ่ม Attribute โดยอัตโนมัติเพียงเพราะนักเตะมี Potential สูง
+
+Squad Screen:
+- แสดงรายชื่อนักเตะในตาราง
+- มี Filter ตามตำแหน่ง อายุ สัญชาติ สถานะสัญญา ความฟิต ขวัญกำลังใจ และสถานะทีม
+- มี Sort ตาม Ability, อายุ, ค่าเหนื่อย, มูลค่า, คะแนนเฉลี่ย และสถิติ
+- กดชื่อนักเตะเพื่อเปิด Player Profile
+- รองรับการเลือกนักเตะหลายคนเพื่อจัดการสถานะหรือส่ง Scout/Training แบบกลุ่ม
+- ใช้สีสถานะอย่างพอดี เช่น เขียว=พร้อม, เหลือง=ต้องติดตาม, แดง=บาดเจ็บ/ไม่พร้อม
+
+======================================================================
+5. ระบบแท็กติก (TACTICS ENGINE)
+======================================================================
+
+Formation พื้นฐานที่ควรรองรับ:
+- 4-3-3
+- 4-2-3-1
+- 4-4-2
+- 4-1-4-1
+- 4-3-1-2
+- 3-5-2
+- 3-4-3
+- 5-3-2
+- 5-4-1
+
+Team Instructions:
+- Mentality: Very Defensive, Defensive, Cautious, Balanced, Positive, Attacking, Very Attacking
+- Passing Directness: Much Shorter, Shorter, Mixed, More Direct, Much More Direct
+- Tempo: Much Lower, Lower, Standard, Higher, Much Higher
+- Attacking Width: Narrow, Standard, Wide
+- Build-up: Play Out of Defence, Mixed, More Direct
+- Pressing Intensity: Low, Standard, High, Very High
+- Defensive Line: Deep, Standard, High, Very High
+- Line of Engagement: Low, Mid, High
+- Transition: Counter-Press, Regroup, Counter, Hold Shape
+- Defensive Approach: Zonal Marking, Man Marking (ตามความเหมาะสม)
+- Time Wasting: Never, Sometimes, Often
+- Offside Trap: On/Off
+- Tackling: Stay On Feet, Standard, Get Stuck In
+
+Player Roles ตัวอย่าง:
+- Goalkeeper, Sweeper Keeper
+- Full Back, Wing Back, Complete Wing Back, Inverted Wing Back
+- Central Defender, Ball Playing Defender, No-Nonsense Centre Back
+- Defensive Midfielder, Anchor, Half Back, Deep-Lying Playmaker
+- Central Midfielder, Box-to-Box Midfielder, Ball Winning Midfielder
+- Advanced Playmaker, Mezzala, Carrilero
+- Attacking Midfielder, Trequartista, Shadow Striker
+- Winger, Inverted Winger, Inside Forward, Wide Playmaker
+- Deep-Lying Forward, Advanced Forward, Pressing Forward, Target Forward, Complete Forward
+
+Player Instructions:
+- Dribble More/Less
+- Shoot More/Less
+- Take More Risks
+- Hold Position
+- Roam From Position
+- Stay Wider/Cut Inside
+- Cross More Often
+- Mark Tighter
+- Trigger Press More/Less
+
+Tactics UX:
+- มี Pitch View มองจากด้านบนเพื่อวางตำแหน่งนักเตะ
+- Drag-and-drop นักเตะลงตำแหน่งได้
+- แสดงตำแหน่งและ Role ใต้ชื่อนักเตะ
+- แจ้งเตือนเมื่อนักเตะเล่นตำแหน่งที่ไม่ถนัด
+- แจ้งเตือนเมื่อแท็กติกมีความเสี่ยง เช่น Defensive Line สูงแต่กองหลังช้า
+- แสดง Tactical Familiarity และความเหมาะสมของนักเตะกับ Role
+- สามารถ Save Tactic Preset และตั้งชื่อแผนได้หลายแบบ
+- สามารถตั้ง Primary Tactic และ Alternative Tactic
+
+Tactical Engine:
+- ค่าความสำเร็จของแท็กติกต้องขึ้นกับคุณภาพนักเตะและความเหมาะสมกับ Role
+- Formation เพียงอย่างเดียวไม่ควรรับประกันชัยชนะ
+- แท็กติกแต่ละแบบต้องมีข้อดีและจุดอ่อนที่เข้าใจได้
+- ระบบ Match Engine ต้องใช้ Team Instructions และ Player Instructions จริง ไม่ใช่แสดงผลเพียงภาพ UI
+
+======================================================================
+6. MATCH ENGINE - ระบบจำลองการแข่งขัน
+======================================================================
+
+Match Engine เป็นหัวใจหลักของเกม และต้องแยกจาก Gemini AI
+
+หลักการ:
+- ระบบคำนวณเหตุการณ์การแข่งขันด้วยโค้ดที่ทดสอบได้
+- ผลการแข่งขันและสถิติเป็นข้อมูลจาก Simulation Engine เท่านั้น
+- ใช้ Random Seed เพื่อให้สามารถ Replay/Debug ผลการแข่งขันได้
+- สามารถใช้การจำลองแบบ Event-based หรือ Tick-based ก็ได้ แต่ต้องมีความสอดคล้องด้านเวลาและสถิติ
+- ไม่ควรเรียก Gemini ทุกวินาทีหรือทุกเหตุการณ์ เพราะมีค่าใช้จ่ายและความหน่วง
+
+ปัจจัยที่มีผลต่อการแข่งขัน:
+1. ความสามารถรายบุคคลของนักเตะ
+2. ความเหมาะสมของนักเตะกับตำแหน่งและ Role
+3. Team Tactics และ Player Instructions
+4. Tactical Familiarity
+5. ความฟิตและความเหนื่อยล้า
+6. ขวัญกำลังใจและความมั่นใจ
+7. ความได้เปรียบในการเล่นเป็นเจ้าบ้าน
+8. คุณภาพและความสามัคคีของทีม
+9. ความสามารถผู้รักษาประตู
+10. คุณภาพคู่แข่งและแท็กติกคู่แข่ง
+11. สภาพอากาศหรือสภาพสนาม (เป็นตัวเลือกเสริม)
+12. ความแปรปรวนของเหตุการณ์ฟุตบอล เช่น การยิงพลาด การเซฟ การแฉลบ และการตัดสินใจผิดพลาด
+
+Match Flow:
+- Pre-match: ตรวจสอบรายชื่อ ตัวจริง ตัวสำรอง แผนการเล่น และสภาพสนาม
+- First Half: จำลองเหตุการณ์นาที 1-45+
+- Half-time: สรุปสถิติ ให้ Team Talk และเปลี่ยนแท็กติก/ตัวผู้เล่น
+- Second Half: จำลองนาที 46-90+
+- Extra Time: ใช้เมื่อกติกาของรายการกำหนด
+- Penalty Shootout: ใช้เมื่อกติกาของรายการกำหนด
+- Post-match: สรุปผล สถิติ คะแนนผู้เล่น อาการบาดเจ็บ และผลต่อขวัญกำลังใจ
+
+เหตุการณ์ที่ Engine ควรรองรับ:
+- Goal
+- Assist
+- Shot
+- Shot on Target
+- Blocked Shot
+- Key Pass
+- Through Ball
+- Cross
+- Corner
+- Free Kick
+- Penalty
+- Offside
+- Foul
+- Yellow Card
+- Red Card
+- Injury
+- Substitution
+- Save
+- Tackle
+- Interception
+- Clearance
+- Possession Change
+- Half-time
+- Full-time
+
+ผลลัพธ์การแข่งขัน:
+- Scoreline
+- Possession
+- Total Shots
+- Shots on Target
+- Expected Goals (xG) หากมีการคำนวณรองรับ
+- Passes และ Pass Accuracy
+- Tackles และ Interceptions
+- Fouls และ Cards
+- Corners และ Offsides
+- Player Ratings
+- Goalkeeper Saves
+- Big Chances
+- Team Performance Summary
+
+Match Presentation:
+- แสดง Scoreboard ด้านบน
+- แสดง Match Timeline เรียงตามเวลา
+- แสดง Commentary เป็นข้อความสั้น กระชับ และไม่ซ้ำซาก
+- มีปุ่ม Pause, Continue, Instant Result (ถ้าต้องการ) และปรับความเร็วการแสดงผล
+- ผู้เล่นเปลี่ยนตัวและปรับแท็กติกระหว่างเกมได้ตามกติกา
+- การเปลี่ยนแปลงระหว่างเกมต้องส่งผลต่อ Simulation ตั้งแต่นาทีนั้นเป็นต้นไป
+
+AI Match Commentary:
+- ส่งข้อมูล Event ที่เกิดขึ้นจริงจาก Engine ไปให้ Gemini เรียบเรียง
+- AI ห้ามสร้างผู้ทำประตู คะแนน หรือเหตุการณ์ใหม่ที่ไม่มีใน Event Log
+- ต้องมี Fallback Commentary แบบ Template หาก API ใช้งานไม่ได้
+- เก็บ Event Log ต้นฉบับไว้เสมอเพื่อให้ตรวจสอบย้อนหลังได้
+
+======================================================================
+7. TRANSFER MARKET - ตลาดซื้อขายนักเตะ
+======================================================================
+
+ฟังก์ชัน:
+- ซื้อขาด (Transfer)
+- ยืมตัว (Loan)
+- ปล่อยยืม
+- ต่อสัญญา (Contract Renewal)
+- ยกเลิกสัญญา (Terminate Contract)
+- Player Swap
+- Installment Payment
+- Sell-on Clause
+- Buy-back Clause
+- Loan Option to Buy
+- Release Clause
+- Agent Fee
+- Wage และ Bonus Negotiation
+- Transfer Deadline
+
+ขั้นตอนซื้อขาย:
+1. เลือกนักเตะและดูข้อมูล/มูลค่าประเมิน
+2. ส่ง Scout Report (ถ้าต้องการ)
+3. ยื่นข้อเสนอให้สโมสร
+4. สโมสรตอบรับ ปฏิเสธ หรือขอต่อรอง
+5. หากตกลงกันได้ ให้เจรจาสัญญากับนักเตะ/เอเยนต์
+6. ตรวจสอบค่าเหนื่อย บทบาทในทีม โบนัส และระยะสัญญา
+7. นักเตะตอบรับหรือปฏิเสธ
+8. ยืนยันการย้ายทีมและอัปเดต Squad/Finance/Registration
+
+AI/Logic:
+- การตัดสินใจย้ายทีมต้องมาจากระบบคำนวณ เช่น Reputation, Playing Time, Wage, Club Reputation, League Reputation, Current Club Satisfaction และความสนใจจากทีมอื่น
+- Gemini สามารถสร้างบทสนทนาและข้อความเจรจา แต่ห้ามแก้ค่าข้อเสนอหรือบังคับให้การเจรจาสำเร็จ
+- สโมสร AI ต้องมีงบประมาณและตำแหน่งที่ต้องการ ไม่ซื้อผู้เล่นโดยไร้เหตุผล
+- ป้องกันทีม AI ซื้อขายนักเตะซ้ำซ้อนหรือมีนักเตะเกินขนาด Squad อย่างไม่สมเหตุผล
+
+======================================================================
+8. SCOUTING และ RECRUITMENT
+======================================================================
+
+Scout Filters:
+- Position
+- Age Range
+- Nationality
+- League/Country
+- Ability Range
+- Potential Range
+- Contract Expiry
+- Transfer Value
+- Wage Expectation
+- Playing Style/Role
+
+Scout Assignment:
+- ระบุประเทศหรือภูมิภาคที่ต้องการค้นหา
+- ระบุตำแหน่งและอายุ
+- กำหนดระยะเวลาการค้นหา
+- กำหนดความละเอียดของรายงาน
+- Scout มี Attributes เช่น Judging Player Ability, Judging Player Potential และ Knowledge of Region
+
+Scout Report:
+- Strengths
+- Weaknesses
+- Best Position/Role
+- Current Ability Estimate
+- Potential Estimate (เป็นช่วง ไม่เปิดเผยแน่นอนเสมอไป)
+- Injury Risk/History เมื่อมีข้อมูล
+- Estimated Transfer Fee
+- Estimated Wage
+- Scout Confidence
+
+======================================================================
+9. TRAINING และ PLAYER DEVELOPMENT
+======================================================================
+
+Team Training:
+- Attacking
+- Defending
+- Possession
+- Chance Creation
+- Pressing
+- Set Pieces
+- Physical
+- Recovery
+- Match Preparation
+
+Individual Training:
+- ฝึก Attribute เฉพาะด้าน
+- ฝึก Position
+- ฝึก Role
+- ปรับจุดอ่อนของนักเตะ
+
+Development Factors:
+- อายุ
+- Potential
+- Training Quality
+- Coach Quality
+- Professionalism
+- Determination
+- Playing Time
+- Match Performance
+- Injury History
+- Training Facilities
+- Natural Development Variation
+
+ข้อกำหนด:
+- การฝึกหนักเพิ่มภาระและความเสี่ยงบาดเจ็บ
+- การพักฟื้นช่วยลดความเหนื่อยล้า
+- นักเตะอายุน้อยมีแนวโน้มพัฒนาได้มากกว่า แต่ไม่ได้รับประกันว่าจะเก่ง
+- นักเตะอายุมากอาจถดถอยด้านความเร็วและพละกำลัง แต่ยังคงมีประสบการณ์/การตัดสินใจที่ดีได้
+- แสดง Development History เพื่อดูการเปลี่ยนแปลง Attribute ตามเวลา
+
+======================================================================
+10. CLUB MANAGEMENT และ FINANCE
+======================================================================
+
+ข้อมูลสโมสร:
+- Club Name
+- Country / City
+- Stadium
+- Stadium Capacity
+- Training Facilities
+- Youth Facilities
+- Club Reputation
+- Current Balance
+- Transfer Budget
+- Wage Budget
+- Wage Used
+- Debt
+- Sponsor Revenue
+- Ticket Revenue
+- Prize Money
+- Board Expectations
+- Supporter Expectations
+
+รายรับ:
+- Ticket Sales
+- Sponsorship
+- TV/Broadcasting
+- Prize Money
+- Player Sales
+- Commercial Revenue
+
+รายจ่าย:
+- Player Wages
+- Staff Wages
+- Transfer Installments
+- Bonuses
+- Stadium Maintenance
+- Training/Firebase/Infrastructure Costs (ถ้ามี)
+
+Board Confidence:
+- League Position
+- Cup Performance
+- Financial Management
+- Youth Development
+- Club Vision
+- Squad Atmosphere
+
+Board Interaction:
+- Board Request
+- Transfer Budget Request
+- Facility Upgrade Request
+- Contract/Salary Review
+- Performance Review
+- Warning และ Manager Sacking
+
+การเงินต้องตรวจสอบได้และไม่เปลี่ยนเองโดยไม่มี Transaction Log
+
+======================================================================
+11. STAFF และ MANAGER CAREER
+======================================================================
+
+Staff Roles:
+- Assistant Manager
+- First Team Coach
+- Fitness Coach
+- Goalkeeping Coach
+- Youth Coach
+- Head Scout
+- Scout
+- Physio
+- Data Analyst
+- Director of Football
+
+Staff Attributes ตัวอย่าง:
+- Coaching Technical
+- Coaching Tactical
+- Fitness Coaching
+- Judging Ability
+- Judging Potential
+- Motivating
+- Man Management
+- Tactical Knowledge
+- Medical
+- Adaptability
+
+Manager Profile:
+- Manager Name
+- Age/Nationality (เลือกได้)
+- Coaching Style
+- Tactical Style
+- Reputation
+- Qualifications/Experience (ถ้ามี)
+- Career History
+- Win/Draw/Loss
+- Trophies
+- Average Points
+- Clubs Managed
+- Manager Achievements
+
+Career System:
+- เริ่มเกมโดยเลือกสโมสรหรือเริ่มเป็นผู้จัดการว่างงาน
+- สมัครงานสโมสรอื่นได้
+- สโมสรส่งข้อเสนองานได้ตามชื่อเสียงและผลงาน
+- มีการต่อสัญญาและถูกปลดได้
+- ประวัติการคุมทีมต้องเก็บถาวรใน Save Slot
+- ผู้จัดการไม่ควรได้รับข้อเสนองานจากสโมสรที่ไม่สมเหตุสมผลกับ Reputation/ผลงาน
+
+======================================================================
+12. WORLD SIMULATION และ AI CLUB MANAGERS
+======================================================================
+
+โลกฟุตบอลต้องดำเนินต่อแม้ผู้เล่นไม่ได้คุมสโมสรอื่น
+
+Club AI Responsibilities:
+- เลือก Starting XI
+- เลือก Formation/Tactics
+- จัดการ Rotation
+- เปลี่ยนตัวตามสถานการณ์
+- ยื่นซื้อ/ขายนักเตะ
+- ต่อสัญญา
+- พัฒนานักเตะ
+- จัดการงบประมาณ
+- ตัดสินใจปลด/แต่งตั้งผู้จัดการทีม
+
+AI Club Manager ต้องมีแนวทางต่างกัน เช่น:
+- Attacking Manager
+- Defensive Manager
+- Youth Developer
+- Possession-focused Manager
+- Counter-attacking Manager
+- Pragmatic Manager
+
+การประมวลผล World Simulation:
+- ใช้ระบบจำลองแบบประหยัดทรัพยากรสำหรับเกมที่ไม่ได้อยู่ในจุดสนใจ
+- เก็บผลการแข่งขันและข้อมูลสำคัญให้ครบทุกสโมสร
+- ไม่จำเป็นต้องสร้าง Commentary รายละเอียดให้ทุกคู่ที่ผู้เล่นไม่ได้ดู
+- สร้าง Match Report แบบย่อสำหรับเกมอื่น
+- ต้องมีการตรวจสอบความสมเหตุสมผลของ Transfer, League Table และ Club Finance
+
+======================================================================
+13. FOOTBALL NEWS, INBOX และ MEDIA
+======================================================================
+
+Inbox Categories:
+- Board
+- Player
+- Staff
+- Transfer
+- Scout
+- Match Preview
+- Match Report
+- Media
+- Competition
+- Injury
+- General News
+
+Football News:
+- ข่าวการปลดผู้จัดการทีม
+- ข่าวซื้อขายนักเตะ
+- ข่าวนักเตะบาดเจ็บ
+- ข่าวฟอร์มการเล่น
+- ข่าวการแข่งขันสำคัญ
+- ข่าวดาวรุ่ง
+- ข่าวความขัดแย้งในทีม
+- ข่าวสโมสรคู่แข่ง
+
+AI News Generation:
+- ใช้ข้อมูล Event/State ที่เกิดขึ้นในเกมเป็น Input
+- ข่าวต้องไม่ขัดกับข้อมูลจริงในฐานข้อมูล
+- ต้องมีการอ้างอิง Club, Player, Competition และวันที่ในเกม
+- ป้องกันการสร้างข่าวซ้ำด้วย Event ID/News ID
+- หาก Gemini API ไม่พร้อม ให้ใช้ Template News
+
+Press Conference:
+- ก่อนแข่งและหลังแข่ง
+- เลือกคำตอบจากตัวเลือก หรือพิมพ์คำตอบได้ในอนาคต
+- คำตอบส่งผลต่อ Media Perception, Player Morale หรือ Board Confidence เฉพาะเมื่อ Logic กำหนด
+- Gemini ช่วยแสดงบทสนทนาที่เป็นธรรมชาติ แต่ผลต่อค่าต่าง ๆ ต้องมาจากกฎที่กำหนดไว้
+
+======================================================================
+14. USER INTERFACE / UX
+======================================================================
+
+Visual Direction:
+- Dark Sports Management Dashboard
+- Desktop-first
+- ใช้ Sidebar ด้านซ้าย
+- Header แสดงวันในเกม สโมสร และปุ่ม Continue
+- ใช้ Data Table เป็นองค์ประกอบหลัก
+- ใช้กราฟและ Visual Indicators เท่าที่จำเป็น
+- ไม่ใช้ภาพนักเตะเป็นองค์ประกอบบังคับ
+- อ่านข้อมูลได้ง่ายและแสดงรายละเอียดเมื่อผู้เล่นต้องการ
+
+Main Navigation:
+1. Dashboard
+2. Inbox
+3. Squad
+4. Tactics
+5. Training
+6. Scouting
+7. Transfers
+8. Schedule
+9. Competitions
+10. Club
+11. Staff
+12. Youth Academy
+13. World
+14. Manager Profile
+
+หน้าจอหลักที่ต้องมี:
+
+A. Dashboard
+- Next Match
+- Recent Results
+- League Position
+- Squad Fitness
+- Injuries
+- Unread Inbox
+- Board Confidence
+- Transfer Budget / Wage Budget
+- Quick Actions
+
+B. Inbox
+- รายการข้อความเรียงตามวัน
+- Filter ตามประเภท
+- ระบุข้อความที่ยังไม่อ่าน
+- กดเปิดรายละเอียดและดำเนินการต่อได้
+
+C. Squad
+- Player Table
+- Position Filter
+- Contract Status
+- Fitness/Morale Indicators
+- Player Profile
+
+D. Player Profile
+- Overview
+- Attributes
+- Career Stats
+- Contract
+- Development
+- Medical/Injury
+- Happiness/Relationship
+- Transfer Status
+
+E. Tactics
+- Pitch Formation
+- Starting XI / Bench
+- Team Instructions
+- Player Instructions
+- Tactical Familiarity
+
+F. Match Center
+- Scoreboard
+- Timeline
+- Commentary
+- Statistics
+- Player Ratings
+- Substitution/Tactical Controls
+
+G. Transfers
+- Transfer Shortlist
+- Scouting Reports
+- Offers Received
+- Negotiation Screen
+- Contract Negotiation
+
+H. Competitions
+- League Table
+- Fixtures
+- Results
+- Top Scorers
+- Assists
+- Team Statistics
+
+I. Club
+- Finances
+- Stadium
+- Facilities
+- Board
+- Club Vision
+
+UX Requirements:
+- ทุกหน้าต้องมี Loading, Empty, Error และ Success State
+- ตารางต้อง Search, Sort และ Filter ได้
+- ใช้ Modal/Drawer สำหรับรายละเอียดที่ไม่จำเป็นต้องเปลี่ยนหน้า
+- มี Confirmation ก่อนการกระทำสำคัญ เช่น ยืนยันซื้อขาย ยกเลิกสัญญา หรือเริ่มแข่งขัน
+- มี Toast แจ้งผลการดำเนินการ
+- รองรับ Keyboard Navigation ขั้นพื้นฐาน
+- หลีกเลี่ยง Animation ที่มากจนรบกวนการอ่านข้อมูล
+- ขนาดตัวอักษรและระยะห่างต้องเหมาะกับ Dashboard ที่มีข้อมูลหนาแน่น
+
+======================================================================
+15. TECHNICAL ARCHITECTURE สำหรับ GOOGLE AI STUDIO
+======================================================================
+
+แนะนำโครงสร้างเทคโนโลยี:
+
+Frontend:
+- React
+- TypeScript
+- Vite หรือโครงสร้างที่ Google AI Studio Build Mode สร้างให้
+- Tailwind CSS หรือ Design System ที่สอดคล้องกัน
+- State Management ที่เหมาะกับขนาดโปรเจกต์
+
+Backend:
+- Node.js / TypeScript
+- แยก Game Engine ออกจาก UI
+- แยก API Layer และ Business Logic
+- ตรวจสอบข้อมูลทุกคำสั่งฝั่ง Server
+
+Database:
+- Firebase Authentication สำหรับบัญชีผู้ใช้ (ถ้าต้องการระบบ Account)
+- Cloud Firestore สำหรับ Save Game และข้อมูลผู้เล่น
+- ออกแบบโครงสร้างให้โหลดเฉพาะข้อมูลที่จำเป็น
+- รองรับ Save Slot หลายช่อง
+
+AI:
+- Gemini API เรียกผ่าน Backend เท่านั้น
+- ห้ามฝัง API Key ใน Frontend
+- กำหนด Output Schema สำหรับ AI Responses
+- Validate ข้อมูล AI ก่อนแสดงผล
+- มี Template Fallback เมื่อ API Error หรือหมดโควตา
+
+Game Engine Modules:
+- WorldClockService
+- LeagueService
+- ScheduleService
+- MatchEngine
+- TacticalEngine
+- PlayerDevelopmentEngine
+- TransferEngine
+- ContractEngine
+- FinanceEngine
+- InjuryEngine
+- TrainingEngine
+- ClubAIManager
+- NewsGenerationService
+- SaveGameService
+
+Architecture Rules:
+- UI ห้ามคำนวณกฎเกมสำคัญเอง
+- ทุกการเปลี่ยนแปลงข้อมูลเกมต้องผ่าน Service/Command ที่กำหนด
+- Game Engine ต้องไม่ผูกติดกับ React Components
+- Logic สำคัญต้องทดสอบได้โดยไม่ต้องเปิด UI
+- ใช้ TypeScript Types/Interfaces กลางร่วมกัน
+- ใช้ Database Transaction เมื่อมีการเปลี่ยนข้อมูลที่เกี่ยวข้องหลายส่วน
+- มี Event Log สำหรับการเปลี่ยนแปลงสำคัญ
+- มี Version ของ Save Data และ Migration Strategy
+
+======================================================================
+16. DATA MODEL เบื้องต้น
+======================================================================
+
+ควรออกแบบ Entity หลักดังนี้:
+
+User
+- id
+- email/authProvider
+- createdAt
+
+SaveGame
+- id
+- userId
+- saveName
+- gameDate
+- currentSeason
+- managerId
+- controlledClubId
+- randomSeed
+- saveVersion
+- lastSavedAt
+
+Country
+- id
+- name
+- code
+- leagueRules
+
+Competition
+- id
+- countryId
+- name
+- type
+- seasonId
+- rulesConfig
+
+Club
+- id
+- name
+- countryId
+- competitionIds
+- stadiumId
+- reputation
+- finances
+- facilities
+- managerId
+
+Player
+- id
+- firstName
+- lastName
+- dateOfBirth
+- nationality
+- positions
+- preferredFoot
+- attributes
+- currentAbility
+- potentialRange
+- personality
+- fitness
+- morale
+- contractId
+- clubId
+- injuryStatus
+
+Staff
+- id
+- name
+- role
+- attributes
+- clubId
+- contractId
+
+Contract
+- id
+- entityId
+- clubId
+- startDate
+- endDate
+- wage
+- bonuses
+- clauses
+
+Fixture
+- id
+- competitionId
+- seasonId
+- homeClubId
+- awayClubId
+- kickoffDate
+- status
+- result
+- matchEventIds
+
+MatchEvent
+- id
+- fixtureId
+- minute
+- eventType
+- playerId
+- secondaryPlayerId
+- teamId
+- eventData
+
+LeagueStanding
+- competitionId
+- seasonId
+- clubId
+- played
+- won
+- drawn
+- lost
+- goalsFor
+- goalsAgainst
+- goalDifference
+- points
+
+TransferOffer
+- id
+- playerId
+- buyingClubId
+- sellingClubId
+- offerAmount
+- clauses
+- status
+
+TrainingPlan
+- id
+- clubId
+- weekStartDate
+- sessions
+
+NewsItem
+- id
+- gameDate
+- category
+- title
+- body
+- relatedEntityIds
+- sourceEventId
+
+ต้องใช้ ID ที่เสถียร ไม่ใช้ชื่อเป็น Primary Key และต้องป้องกันการสร้าง Entity ซ้ำ
+
+======================================================================
+17. SAVE / LOAD และความน่าเชื่อถือของข้อมูล
+======================================================================
+
+- มี Save Slot หลายช่อง
+- Auto-save หลังจบวันในเกมและหลังจบการแข่งขัน
+- Manual Save ได้
+- Load Save ได้โดยข้อมูลไม่ย้อนหรือซ้ำ
+- แสดง Save Date และ In-game Date
+- บันทึก Save Version ทุกครั้ง
+- รองรับ Migration เมื่อเพิ่ม Field หรือเปลี่ยนโครงสร้างในอนาคต
+- มี Transaction Log สำหรับ Transfer, Contract, Finance และ Match Result
+- มี Recovery Strategy หาก Save ไม่สำเร็จ
+- การกด Continue ซ้ำต้องไม่สร้าง Match/News/Transfer ซ้ำ
+- ใช้ Idempotency Key สำหรับคำสั่งที่อาจถูกส่งซ้ำ
+
+======================================================================
+18. ขอบเขตการพัฒนา (ROADMAP)
+======================================================================
+
+PHASE 1 - FOUNDATION
+เป้าหมาย: เปิดเกมและเริ่ม Career ได้
+- UI Shell และ Sidebar
+- Dashboard
+- Save/Load
+- Manager Creation
+- Club Selection
+- ข้อมูล 5 ลีกสูงสุดและ 96 สโมสร
+- Player/Club/Competition Data Model
+- Calendar และ Fixture Generator
+- League Table
+
+PHASE 2 - PLAYABLE FOOTBALL
+เป้าหมาย: แข่งขันได้และมีผลต่อเนื่อง
+- Squad Management
+- Tactics
+- Match Engine รุ่นแรก
+- Match Commentary Template
+- Player Ratings
+- Match Statistics
+- Post-match Fitness/Morale Updates
+- Continue/Advance Time
+
+PHASE 3 - MANAGEMENT SYSTEMS
+เป้าหมาย: บริหารสโมสรได้ลึกขึ้น
+- Transfer Market
+- Contract Negotiation
+- Scouting
+- Training
+- Injury System
+- Club Finance
+- Staff Management
+
+PHASE 4 - LIVING FOOTBALL WORLD
+เป้าหมาย: โลกฟุตบอลมีชีวิต
+- AI Club Managers
+- Club Transfer AI
+- Manager Hiring/Firing
+- Dynamic Player Development
+- News/Inbox
+- Domestic Cups
+- Promotion/Relegation และลีกล่างตามลำดับความสำคัญ
+
+PHASE 5 - GEMINI INTEGRATION
+เป้าหมาย: เพิ่มประสบการณ์ด้วยภาษาและเรื่องราว
+- AI Match Commentary
+- AI Match Reports
+- AI Football News
+- Press Conference
+- Scout Report Narratives
+- Board/Player Conversation
+- Fallback Templates และ Validation
+
+PHASE 6 - EXPANSION & POLISH
+- UEFA Competitions
+- ลีกดิวิชันล่างครบถ้วน
+- Youth Academy และ Newgen รุ่นละเอียด
+- National Teams (Optional)
+- Historical Records และ Club Legacy
+- Advanced Analytics
+- Performance Optimization
+- Mobile Responsive Improvements
+
+หมายเหตุ:
+ให้พัฒนาและทดสอบทีละ Phase ห้ามสร้างทุกระบบใน Prompt เดียว เพราะจะทำให้โครงสร้างไม่สอดคล้องและแก้ไขยาก
+
+======================================================================
+19. MVP ACCEPTANCE CRITERIA
+======================================================================
+
+MVP จะถือว่าใช้งานได้เมื่อ:
+
+1. ผู้เล่นสร้าง Manager และเลือกสโมสรในหนึ่งใน 5 ลีกได้
+2. เกมสร้างฤดูกาลและตารางแข่งขันของลีกทั้ง 5 ได้ถูกต้อง
+3. ผู้เล่นเห็น Squad และ Player Profile ของทีมตนเอง
+4. ผู้เล่นจัด Starting XI, Bench และ Formation ได้
+5. ผู้เล่นตั้ง Team Instructions ได้
+6. Match Engine จำลองการแข่งขันและสร้างผลสกอร์ได้
+7. สถิติการแข่งขันสอดคล้องกับ Event Log
+8. ตารางคะแนนอัปเดตถูกต้องหลังการแข่งขัน
+9. ผู้เล่นกด Continue เพื่อเดินเวลาได้โดยไม่มีข้อมูลซ้ำ
+10. เกมอื่นใน 5 ลีกยังมีผลการแข่งขันและอัปเดตตารางตามเวลา
+11. Save/Load แล้วข้อมูลกลับมาเหมือนเดิม
+12. การซื้อขายหรือการเปลี่ยนแปลงสถานะนักเตะมี Log ตรวจสอบได้
+13. เกมยังเล่นได้เมื่อ Gemini API ไม่พร้อม โดยใช้ข้อความ Template
+14. UI สามารถใช้งานบน Desktop ได้อย่างสะดวก
+
+Quality Requirements:
+- ไม่มีคะแนนลีกหรือผลการแข่งขันที่คำนวณผิด
+- ไม่มี Fixture ซ้ำในลีกเดียวกันโดยไม่ตั้งใจ
+- ไม่มีนักเตะอยู่สองสโมสรพร้อมกัน
+- ไม่มีสัญญาที่ถูกต่อ/ยกเลิกซ้ำจากคำสั่งเดียว
+- ไม่มีการหักหรือเพิ่มเงินซ้ำ
+- ไม่มี Event ที่ AI แต่งขึ้นแต่ไม่มีใน Match Engine
+- มี Unit Tests สำหรับ Match Engine, League Table, Transfer และ Save/Load
+
+======================================================================
+20. แนวทางสั่ง GOOGLE AI STUDIO ให้พัฒนา
+======================================================================
+
+คำสั่งหลักสำหรับ AI Studio:
+
+"คุณคือ Senior Full-stack Game Engineer และ Game Systems Designer ที่กำลังพัฒนาเกม TOUCHLINE ซึ่งเป็น Football Management Simulation บนเว็บ โดยใช้ React, TypeScript, Node.js และ Firebase ตามความเหมาะสม
+
+ให้ยึด PRD นี้เป็น Single Source of Truth ห้ามลดทอนระบบหลักหรือสร้างข้อมูลจำลองที่ไม่สอดคล้องกันเอง
+
+ข้อกำหนดการพัฒนา:
+1. วิเคราะห์โครงสร้างโปรเจกต์ก่อนแก้ไขทุกครั้ง
+2. แยก Frontend, Backend, Game Engine, Database และ AI Services ออกจากกัน
+3. สร้าง TypeScript Types กลางสำหรับ Club, Player, Competition, Fixture, MatchEvent, SaveGame และ Entity อื่น ๆ
+4. ห้ามเขียน Match Engine หรือ Business Logic สำคัญไว้ใน React Component
+5. ห้ามให้ Gemini เป็นผู้กำหนดผลการแข่งขันหรือแก้ไขค่าทางเศรษฐกิจของเกมโดยตรง
+6. ทุกการเปลี่ยนข้อมูลต้องผ่าน Service Layer และ Validation
+7. ต้องมี Error Handling, Loading State, Empty State และ Fallback
+8. ต้องมี Unit Tests ในระบบคำนวณสำคัญ
+9. ใช้ข้อมูลสโมสรและนักเตะสมมติในระยะแรก เว้นแต่มีชุดข้อมูลที่ได้รับอนุญาต
+10. พัฒนาเป็น Phase และอย่าสร้างทุกระบบพร้อมกัน
+11. หลังจบแต่ละ Phase ให้สรุปไฟล์ที่สร้าง/แก้ไข วิธีทดสอบ และสิ่งที่ยังไม่เสร็จ
+12. ห้ามแสดงปุ่มที่ยังไม่มีการทำงานจริง หากยังไม่พร้อมให้ระบุเป็น Disabled หรือ Coming Soon
+
+เริ่มจาก Phase 1 เท่านั้น สร้างโครงสร้างโปรเจกต์และระบบ Foundation ให้ทำงานได้จริงก่อน จากนั้นตรวจสอบ TypeScript Errors และทดสอบการสร้าง Save Game ก่อนเพิ่ม Phase ถัดไป"
+
+Prompt สำหรับการทำงานแต่ละ Phase:
+- ระบุ Phase ที่ต้องการ
+- ระบุโมดูลที่เกี่ยวข้อง
+- ระบุ Acceptance Criteria ที่ต้องผ่าน
+- ให้ AI ตรวจโค้ดเดิมก่อนแก้
+- ให้สร้าง Tests และทดสอบการทำงาน
+- ห้ามเขียนทับระบบที่ทำงานแล้วโดยไม่จำเป็น
+
+======================================================================
+21. แนวทางสมดุลเกมและความสมจริง (GAME BALANCE)
+======================================================================
+
+- ทีมใหญ่ควรมีทรัพยากรและคุณภาพทีมสูงกว่าโดยเฉลี่ย แต่ไม่ควรชนะทุกเกม
+- ทีมเล็กสามารถชนะทีมใหญ่ได้เมื่อแท็กติกเหมาะสม ฟอร์มดี หรือคู่แข่งมีปัญหา แต่ไม่ควรเกิดบ่อยจนคุณภาพทีมไม่มีความหมาย
+- นักเตะค่าพลังสูงควรทำผลงานได้ดีในระยะยาว แต่ยังมีความแปรปรวนรายนัด
+- เจ้าบ้านมีความได้เปรียบบ้าง แต่ไม่ควรเป็นตัวกำหนดผลการแข่งขันทั้งหมด
+- ค่าเหนื่อยและค่าตัวต้องสัมพันธ์กับ Ability, Potential, Reputation, อายุ และสัญญา
+- ตลาดซื้อขายต้องมีความต้องการของแต่ละสโมสร ไม่ใช่ทุกสโมสรซื้อผู้เล่นคนเดียวกัน
+- การพัฒนานักเตะต้องใช้เวลา ไม่ควรเพิ่ม Ability อย่างรวดเร็วเกินไป
+- อาการบาดเจ็บต้องมีความเสี่ยงที่สัมพันธ์กับภาระการแข่งขันและการฝึกซ้อม
+- ต้องมีการทดสอบ Simulation จำนวนมากเพื่อดูการกระจายผลการแข่งขัน ค่าเฉลี่ยประตู และความสมดุลระหว่างลีก
+
+======================================================================
+22. สิ่งที่ไม่อยู่ในขอบเขต MVP (NON-GOALS)
+======================================================================
+
+- การแข่งขัน 3D หรือควบคุมนักเตะในสนามแบบ Action Game
+- ภาพถ่ายนักเตะและภาพสนามที่มีลิขสิทธิ์
+- Multiplayer Online Career
+- ระบบซื้อขายเงินจริงหรือ Microtransactions
+- ระบบทีมชาติแบบเต็มรูปแบบ
+- การจำลองทุกลีกทั่วโลกตั้งแต่วันแรก
+- AI ที่สร้างผลการแข่งขันโดยตรง
+- ระบบเสียง Commentary แบบถ่ายทอดสด
+
+======================================================================
+23. สรุปทิศทางผลิตภัณฑ์
+======================================================================
+
+TOUCHLINE คือเกม Football Manager บนเว็บที่เน้น 5 ลีกใหญ่ยุโรป ได้แก่ Premier League, LaLiga, Bundesliga, Serie A และ Ligue 1 โดยให้ผู้เล่นบริหารสโมสรผ่านข้อมูลและข้อความเป็นหลัก
+
+เกมต้องมีแกนหลัก 4 ส่วน:
+1. Football Simulation: Match Engine, Tactics, Player Attributes และ Player Development
+2. Club Management: Transfers, Contracts, Training, Staff และ Finance
+3. Living Football World: 5 ลีก, สโมสร AI, ตารางคะแนน, ข่าว และตลาดซื้อขายที่ดำเนินต่อเนื่อง
+4. AI Storytelling: Commentary, News, Press Conference และ Scout Narratives ที่สร้างจากข้อมูลจริงของเกม
+
+เป้าหมายแรกไม่ใช่การสร้างเกมที่มีจำนวนฟีเจอร์มากที่สุด แต่คือการสร้างแกนจำลองฟุตบอลที่เชื่อถือได้ เล่นได้ต่อเนื่องหลายฤดูกาล และขยายจำนวนลีก/ระบบได้โดยไม่ต้องเขียนโครงสร้างใหม่
+
+END OF DOCUMENT
