@@ -3,6 +3,7 @@ import { AIManagerStyle, Club, LeagueId, ManagerProfile, WorldState } from '../t
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
 import type { User } from '../firebase';
+import { ClubBadge } from './ClubBadge';
 
 interface TitleScreenProps {
   world: WorldState;
@@ -40,11 +41,58 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const [tacticalStyle, setTacticalStyle] = useState<AIManagerStyle>('Possession-focused Manager');
   const [selectedLeague, setSelectedLeague] = useState<LeagueId>('ENG_PL');
   const [selectedClubId, setSelectedClubId] = useState<string>('club_eng_pl_1');
+  const [clubSearchQuery, setClubSearchQuery] = useState<string>('');
+
+  const allLeagueConfigs = Object.values(LEAGUES_CONFIG);
+  const currentLeagueConfig = LEAGUES_CONFIG[selectedLeague];
+  const selectedCountryId = currentLeagueConfig.countryId;
+
+  // Unique countries in order
+  const countriesList = Array.from(
+    new Map(
+      allLeagueConfigs.map((cfg) => [
+        cfg.countryId,
+        {
+          countryId: cfg.countryId,
+          countryName: cfg.countryName,
+          countryFlag: cfg.countryFlag,
+          leagues: allLeagueConfigs.filter((l) => l.countryId === cfg.countryId),
+        },
+      ])
+    ).values()
+  );
+
+  const countryLeagues = allLeagueConfigs.filter((l) => l.countryId === selectedCountryId);
+
+  const handleSelectLeague = (lId: LeagueId) => {
+    setSelectedLeague(lId);
+    setClubSearchQuery('');
+    const firstInLeague = Object.values(world.clubs).find((c) => c.leagueId === lId);
+    if (firstInLeague) {
+      setSelectedClubId(firstInLeague.id);
+      if (!customEditedName) setManagerName(firstInLeague.aiManager.name);
+    }
+  };
+
+  const handleSelectCountry = (countryId: string) => {
+    const firstLeagueOfCountry = allLeagueConfigs.find((l) => l.countryId === countryId);
+    if (firstLeagueOfCountry) {
+      handleSelectLeague(firstLeagueOfCountry.id);
+    }
+  };
 
   const leagueClubs: Club[] = Object.values(world.clubs).filter(
+    (c) =>
+      c.leagueId === selectedLeague &&
+      (clubSearchQuery.trim() === '' ||
+        c.name.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()) ||
+        c.shortName.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()) ||
+        c.city.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()))
+  );
+  const allClubsInSelectedLeague: Club[] = Object.values(world.clubs).filter(
     (c) => c.leagueId === selectedLeague
   );
-  const activeClub = world.clubs[selectedClubId] || leagueClubs[0];
+  const activeClub = world.clubs[selectedClubId] || allClubsInSelectedLeague[0];
 
   // Animated 2D Tactical Pitch Background Canvas
   useEffect(() => {
@@ -171,11 +219,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         <div className="flex items-center gap-3 text-xs text-slate-400 font-mono tabular-nums">
           <span>TOUCHLINE SIMULATION ENGINE</span>
           <span aria-hidden="true">·</span>
-          <span>5 EUROPEAN LEAGUES</span>
+          <span>15 EUROPEAN LEAGUES</span>
           <span aria-hidden="true">·</span>
-          <span>96 CLUBS</span>
+          <span>280 CLUBS</span>
           <span aria-hidden="true">·</span>
-          <span>SEASON 2026/27</span>
+          <span>SEASON 2025/26</span>
         </div>
 
         <div className="flex items-center gap-3">
@@ -262,7 +310,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         <p className="text-slate-300 text-base leading-relaxed mb-8 max-w-xl">
-          เกมจำลองการบริหารสโมสรฟุตบอลระดับลึกบนเว็บ วางระบบแท็กติก บริหารขุมกำลัง พัฒนาดาวรุ่ง เจรจาซื้อขายนักเตะ และพาทีมคว้าแชมป์เหนือ 96 สโมสรจาก 5 ลีกสูงสุดของยุโรป
+          เกมจำลองการบริหารสโมสรฟุตบอลระดับลึกบนเว็บ วางระบบแท็กติก บริหารขุมกำลัง พัฒนาดาวรุ่ง เจรจาซื้อขายนักเตะ และพาทีมคว้าแชมป์เหนือ 280 สโมสรจาก 15 ลีกฟุตบอลยุโรป (ทั้งลีกสูงสุดและลีกรอง)
         </p>
 
         {/* Primary & Secondary CTAs (<= 3 actions) */}
@@ -284,7 +332,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             onClick={() => setShowSetupModal(true)}
             className="px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-slate-100 border border-slate-700 font-medium text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            เลือกสโมสรและสร้างผู้จัดการทีม (96 สโมสร)
+            เลือกสโมสรและสร้างผู้จัดการทีม (280 สโมสร)
           </button>
 
           <button
@@ -300,34 +348,39 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Bottom Safe Margin: Single flat borderless control-hint line */}
       <div className="relative z-10 flex items-center justify-between text-xs text-slate-400 font-mono">
         <span>Enter / Space เริ่มเกมทันที · C เดินเวลาวันถัดไป · M ปิด/เปิดเสียง · Esc เมนูหลักและเซฟเกม</span>
-        <span className="hidden sm:inline text-slate-500">Deterministic Match Engine · 5 European Leagues</span>
+        <span className="hidden sm:inline text-slate-500">Deterministic Match Engine · 15 European Leagues</span>
       </div>
 
       {/* Custom Career & Club Selection Modal */}
       {showSetupModal && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 lg:p-6 transition-opacity duration-200"
           role="dialog"
           aria-modal="true"
           aria-labelledby="setup-modal-title"
         >
-          <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-              <h2 id="setup-modal-title" className="text-xl font-display font-bold text-slate-100">
-                สร้างโปรไฟล์ผู้จัดการทีมและเลือกสโมสร (5 ลีกใหญ่ยุโรป)
-              </h2>
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+              <div className="flex items-center gap-3">
+                <h2 id="setup-modal-title" className="text-xl font-display font-bold text-slate-100">
+                  สร้างโปรไฟล์ผู้จัดการทีมและเลือกสโมสร (15 ลีกยุโรป · 280 สโมสร)
+                </h2>
+                <span className="hidden md:inline-block px-2.5 py-0.5 text-[11px] font-mono rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  SEASON 2025/26
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => setShowSetupModal(false)}
-                className="px-3 py-1 text-xs text-slate-400 hover:text-white rounded cursor-pointer"
+                className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors duration-150 cursor-pointer"
               >
-                ปิดหน้าต่าง
+                ปิดหน้าต่าง (Esc)
               </button>
             </div>
 
             <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left Column: Manager Profile */}
-              <div className="lg:col-span-5 space-y-4">
+              <div className="lg:col-span-4 space-y-4">
                 <h3 className="text-sm font-semibold text-emerald-400">1. ข้อมูลผู้จัดการทีม (Manager Profile)</h3>
 
                 <div>
@@ -342,7 +395,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       setManagerName(e.target.value);
                       setCustomEditedName(true);
                     }}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
                     placeholder="เช่น Mikel Arteta, Pep Guardiola"
                   />
                 </div>
@@ -359,7 +412,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       max={75}
                       value={managerAge}
                       onChange={(e) => setManagerAge(Number(e.target.value) || 38)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100 tabular-nums"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 tabular-nums transition-colors duration-150"
                     />
                   </div>
                   <div>
@@ -370,13 +423,18 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       id="mgr-nat-select"
                       value={managerNat}
                       onChange={(e) => setManagerNat(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
                     >
                       <option value="England">England</option>
                       <option value="Spain">Spain</option>
                       <option value="Germany">Germany</option>
                       <option value="Italy">Italy</option>
                       <option value="France">France</option>
+                      <option value="Portugal">Portugal</option>
+                      <option value="Netherlands">Netherlands</option>
+                      <option value="Belgium">Belgium</option>
+                      <option value="Turkey">Turkey</option>
+                      <option value="Scotland">Scotland</option>
                       <option value="Thailand">Thailand</option>
                     </select>
                   </div>
@@ -390,7 +448,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     id="mgr-coaching-select"
                     value={coachingStyle}
                     onChange={(e) => setCoachingStyle(e.target.value as ManagerProfile['coachingStyle'])}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
                   >
                     <option value="Tactician">Tactician (เชี่ยวชาญการแก้เกมและระบบแท็กติก)</option>
                     <option value="Motivator">Motivator (กระตุ้นขวัญกำลังใจนักเตะยอดเยี่ยม)</option>
@@ -407,7 +465,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     id="mgr-tactical-select"
                     value={tacticalStyle}
                     onChange={(e) => setTacticalStyle(e.target.value as AIManagerStyle)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-slate-100"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
                   >
                     <option value="Possession-focused Manager">Possession-focused (เน้นครองบอลทำชิ่ง)</option>
                     <option value="Attacking Manager">Attacking Football (เปิดเกมรุกกดดันสูง)</option>
@@ -419,40 +477,151 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </div>
 
               {/* Right Column: League & Club Picker */}
-              <div className="lg:col-span-7 space-y-4">
-                <h3 className="text-sm font-semibold text-emerald-400">2. เลือกลีกและสโมสรต้นสังกัด</h3>
-
-                {/* 5 League Filter Buttons */}
-                <div className="flex flex-wrap gap-1.5 p-1 bg-slate-950 rounded-lg border border-slate-800">
-                  {(Object.keys(LEAGUES_CONFIG) as LeagueId[]).map((lId) => {
-                    const cfg = LEAGUES_CONFIG[lId];
-                    const active = selectedLeague === lId;
-                    return (
-                      <button
-                        key={lId}
-                        type="button"
-                        onClick={() => {
-                          setSelectedLeague(lId);
-                          const firstInLeague = Object.values(world.clubs).find((c) => c.leagueId === lId);
-                          if (firstInLeague) {
-                            setSelectedClubId(firstInLeague.id);
-                            if (!customEditedName) setManagerName(firstInLeague.aiManager.name);
-                          }
-                        }}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                          active
-                            ? 'bg-emerald-500 text-slate-950 font-semibold'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        {cfg.countryFlag} · {cfg.countryName} ({cfg.targetClubCount})
-                      </button>
-                    );
-                  })}
+              <div className="lg:col-span-8 space-y-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-emerald-400">
+                    2. เลือกประเทศ ลีก และสโมสรต้นสังกัด
+                  </h3>
+                  <span className="text-xs font-mono text-slate-400">
+                    {currentLeagueConfig.countryFlag} · {currentLeagueConfig.name} ({allClubsInSelectedLeague.length} สโมสร)
+                  </span>
                 </div>
 
-                {/* Club List Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-56 overflow-y-auto p-1">
+                {/* Focused Element: Structured PC-Responsive Country + League Dropdown & Division Switcher */}
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-3 transition-all duration-200">
+                  {/* Top Control Bar: Country Dropdown + League Dropdown + Quick Club Search */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
+                    {/* 1. Country Dropdown */}
+                    <div className="md:col-span-4">
+                      <label htmlFor="picker-country-select" className="block text-[11px] text-slate-400 mb-1">
+                        ประเทศ (Country)
+                      </label>
+                      <select
+                        id="picker-country-select"
+                        value={selectedCountryId}
+                        onChange={(e) => handleSelectCountry(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 hover:bg-slate-800/90 border border-slate-700/80 focus:border-emerald-500 focus:outline-none rounded-lg text-xs font-medium text-slate-100 transition-all duration-150 cursor-pointer"
+                      >
+                        {countriesList.map((c) => (
+                          <option key={c.countryId} value={c.countryId}>
+                            {c.countryFlag} · {c.countryName} ({c.leagues.length} ลีก)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 2. League / Division Dropdown (All 15 Leagues or Country Tier) */}
+                    <div className="md:col-span-5">
+                      <label htmlFor="picker-league-select" className="block text-[11px] text-slate-400 mb-1">
+                        ลีกในประเทศ / ระดับดิวิชั่น (League & Tier)
+                      </label>
+                      <select
+                        id="picker-league-select"
+                        value={selectedLeague}
+                        onChange={(e) => handleSelectLeague(e.target.value as LeagueId)}
+                        className="w-full px-3 py-2 bg-slate-900 hover:bg-slate-800/90 border border-emerald-500/40 focus:border-emerald-500 focus:outline-none rounded-lg text-xs font-semibold text-emerald-300 transition-all duration-150 cursor-pointer"
+                      >
+                        {countriesList.map((country) => (
+                          <optgroup
+                            key={country.countryId}
+                            label={`${country.countryFlag} — ${country.countryName}`}
+                          >
+                            {country.leagues.map((lCfg) => (
+                              <option key={lCfg.id} value={lCfg.id}>
+                                {lCfg.tier === 2 ? 'Tier 2 (ลีกรอง)' : 'Tier 1 (ลีกสูงสุด)'}: {lCfg.name} ({lCfg.targetClubCount} ทีม)
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 3. Quick Club Filter Input */}
+                    <div className="md:col-span-3">
+                      <label htmlFor="picker-club-search" className="block text-[11px] text-slate-400 mb-1">
+                        ค้นหาชื่อสโมสร
+                      </label>
+                      <input
+                        id="picker-club-search"
+                        type="text"
+                        value={clubSearchQuery}
+                        onChange={(e) => setClubSearchQuery(e.target.value)}
+                        placeholder="พิมพ์ชื่อทีม..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 focus:border-emerald-500 focus:outline-none rounded-lg text-xs text-slate-100 placeholder:text-slate-500 transition-all duration-150"
+                      />
+                    </div>
+                  </div>
+
+                  {/* PC Quick Country Grid (10 Countries in 5-col PC grid with smooth hover/active transition) */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1">
+                    {countriesList.map((country) => {
+                      const isCountryActive = country.countryId === selectedCountryId;
+                      return (
+                        <button
+                          key={country.countryId}
+                          type="button"
+                          onClick={() => handleSelectCountry(country.countryId)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition-all duration-200 ease-out cursor-pointer ${
+                            isCountryActive
+                              ? 'bg-emerald-500 text-slate-950 font-semibold shadow-md shadow-emerald-950/60 scale-[1.01]'
+                              : 'bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800/80'
+                          }`}
+                        >
+                          <span className="truncate">
+                            <span className="font-mono text-[10px] opacity-80 mr-1">{country.countryFlag}</span>
+                            {country.countryName}
+                          </span>
+                          {country.leagues.length > 1 && (
+                            <span
+                              className={`text-[10px] font-mono px-1 rounded ${
+                                isCountryActive
+                                  ? 'bg-slate-950/25 text-slate-950 font-bold'
+                                  : 'bg-slate-800 text-emerald-400'
+                              }`}
+                            >
+                              {country.leagues.length}L
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Animated Division Switcher (shows when selected country has both Tier 1 & Tier 2 leagues) */}
+                  {countryLeagues.length > 1 && (
+                    <div className="flex items-center gap-2 pt-1.5 border-t border-slate-800/80 animate-fadeIn">
+                      <span className="text-[11px] text-slate-400 font-medium shrink-0">
+                        เลือกระดับลีกของ {currentLeagueConfig.countryName}:
+                      </span>
+                      <div className="grid grid-cols-2 gap-2 flex-1">
+                        {countryLeagues.map((lCfg) => {
+                          const isTierActive = lCfg.id === selectedLeague;
+                          return (
+                            <button
+                              key={lCfg.id}
+                              type="button"
+                              onClick={() => handleSelectLeague(lCfg.id)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition-all duration-200 ease-out cursor-pointer ${
+                                isTierActive
+                                  ? 'bg-emerald-500/20 border border-emerald-500 text-emerald-300 font-semibold shadow-xs'
+                                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                              }`}
+                            >
+                              <span className="truncate">{lCfg.name}</span>
+                              <span className="text-[10px] font-mono opacity-80 ml-2 shrink-0">
+                                {lCfg.tier === 2 ? 'D2 · ' : 'D1 · '}
+                                {lCfg.targetClubCount} ทีม
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Club List Grid (Responsive 3-col PC layout with smooth hover & selection transition) */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto p-1 pr-1.5">
                   {leagueClubs.map((c) => {
                     const isSelected = c.id === activeClub?.id;
                     return (
@@ -463,21 +632,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                           setSelectedClubId(c.id);
                           if (!customEditedName) setManagerName(c.aiManager.name);
                         }}
-                        className={`p-2.5 rounded-lg border text-left transition-colors cursor-pointer ${
+                        className={`p-2.5 rounded-xl border text-left transition-all duration-200 ease-out cursor-pointer ${
                           isSelected
-                            ? 'bg-slate-800 border-emerald-500 text-white'
-                            : 'bg-slate-950/80 border-slate-800/80 text-slate-300 hover:border-slate-700'
+                            ? 'bg-slate-800/95 border-emerald-500 text-white ring-1 ring-emerald-500/40 shadow-md -translate-y-0.5'
+                            : 'bg-slate-950/80 border-slate-800/80 text-slate-300 hover:bg-slate-900 hover:border-slate-700 hover:-translate-y-0.5'
                         }`}
                       >
                         <div className="flex items-center gap-2 mb-1">
-                          <span
-                            className="w-3 h-3 rounded-sm shrink-0"
-                            style={{ backgroundColor: c.primaryColor }}
-                          />
+                          <ClubBadge club={c} size="xs" />
                           <span className="text-xs font-semibold truncate">{c.name}</span>
                         </div>
-                        <div className="text-[11px] text-slate-400 font-mono tabular-nums">
-                          Rep {c.reputation} · €{(c.finances.transferBudget / 1_000_000).toFixed(1)}M
+                        <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono tabular-nums">
+                          <span>Rep {c.reputation}</span>
+                          <span className="text-emerald-400/90">
+                            €{(c.finances.transferBudget / 1_000_000).toFixed(1)}M
+                          </span>
                         </div>
                       </button>
                     );
@@ -486,16 +655,24 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
                 {/* Selected Club Summary */}
                 {activeClub && (
-                  <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="text-base font-bold text-white">{activeClub.name}</div>
-                        <div className="text-xs text-slate-400">
-                          {activeClub.city} · สนาม {activeClub.stadiumName} ({activeClub.stadiumCapacity.toLocaleString()} ที่นั่ง)
+                  <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2 transition-all duration-200">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <ClubBadge club={activeClub} size="md" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-base font-bold text-white">{activeClub.name}</span>
+                            <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-emerald-400">
+                              {LEAGUES_CONFIG[activeClub.leagueId]?.name}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {activeClub.city} · สนาม {activeClub.stadiumName} ({activeClub.stadiumCapacity.toLocaleString()} ที่นั่ง)
+                          </div>
                         </div>
                       </div>
                       <div className="text-right font-mono tabular-nums">
-                        <div className="text-xs text-emerald-400">
+                        <div className="text-xs text-emerald-400 font-semibold">
                           งบซื้อขาย: €{(activeClub.finances.transferBudget / 1_000_000).toFixed(1)}M
                         </div>
                         <div className="text-xs text-slate-400">
@@ -515,7 +692,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               <button
                 type="button"
                 onClick={() => setShowSetupModal(false)}
-                className="px-4 py-2 text-xs text-slate-300 hover:text-white cursor-pointer"
+                className="px-4 py-2 text-xs text-slate-300 hover:text-white transition-colors duration-150 cursor-pointer"
               >
                 ยกเลิก
               </button>
@@ -534,7 +711,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     activeClub.id
                   );
                 }}
-                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer whitespace-nowrap"
+                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap shadow-lg shadow-emerald-950/50"
               >
                 เซ็นสัญญาเริ่มคุมสโมสร {activeClub?.shortName}
               </button>

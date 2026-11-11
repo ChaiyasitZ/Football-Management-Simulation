@@ -1325,8 +1325,11 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
   const modifiedPlayers: Record<string, Player> = {};
   const playerDiffs: Record<string, PlayerDelta> = {};
 
+  const userLeagueId = compacted.clubs[compacted.controlledClubId]?.leagueId;
+
   for (const [id, p] of Object.entries(compacted.players)) {
     const basePlayer = baseline.players[id];
+    const pLeagueId = compacted.clubs[p.clubId]?.leagueId;
     if (
       !basePlayer ||
       p.clubId === compacted.controlledClubId ||
@@ -1334,13 +1337,15 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     ) {
       modifiedPlayers[id] = p;
     } else if (
-      p.stats.appearances > 0 ||
+      p.stats.goals > 0 ||
+      p.stats.assists > 0 ||
       p.currentAbility !== basePlayer.currentAbility ||
       p.injuryStatus.isInjured !== basePlayer.injuryStatus.isInjured ||
       p.wagePerWeek !== basePlayer.wagePerWeek ||
       p.contractEndDate !== basePlayer.contractEndDate ||
       p.transferListed !== basePlayer.transferListed ||
-      p.loanListed !== basePlayer.loanListed
+      p.loanListed !== basePlayer.loanListed ||
+      (pLeagueId === userLeagueId && p.stats.appearances > 0)
     ) {
       playerDiffs[id] = {
         clubId: p.clubId,
@@ -1428,7 +1433,10 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     players: rehydratedPlayers,
     staff: rehydratedStaff,
     fixtures: rehydratedFixtures,
-    standings: cs.standings || baseline.standings,
+    standings: {
+      ...baseline.standings,
+      ...(cs.standings || {}),
+    },
     transferOffers: cs.transferOffers || [],
     shortlistPlayerIds: cs.shortlistPlayerIds || [],
     scoutAssignments: cs.scoutAssignments || [],
@@ -1471,7 +1479,7 @@ export async function saveWorldStateToFirestoreSlot(
     clubName: (club?.name || 'Club').slice(0, 100),
     managerName: (state.manager.name || 'Manager').slice(0, 80),
     gameDate: state.gameDate.slice(0, 10),
-    season: (state.currentSeason || '2026/27').slice(0, 16),
+    season: (state.currentSeason || '2025/26').slice(0, 16),
     lastSavedAtIso,
     randomSeed: state.randomSeed,
     controlledClubId: state.controlledClubId.slice(0, 64),

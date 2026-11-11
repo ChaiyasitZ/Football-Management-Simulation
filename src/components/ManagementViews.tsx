@@ -13,6 +13,7 @@ import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { getLeaguePlayerLeaders } from '../engine/leagueEngine';
 import { getAgeAtDate, SaveSlotMeta } from '../engine/worldSimulationService';
 import { getPositionGroup } from './SquadAndProfileModal';
+import { ClubBadge } from './ClubBadge';
 import type { User } from '../firebase';
 
 export type NavTab =
@@ -138,16 +139,26 @@ export const DashboardView: React.FC<{
             {nextFixture && nextOpponent ? (
               <div className="p-4 rounded-lg bg-slate-950 border border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
-                  <div>
-                    <div className="text-base font-bold text-white">
-                      {nextFixture.homeClubId === club.id
-                        ? `${club.name} vs ${nextOpponent.name}`
-                        : `${nextOpponent.name} vs ${club.name}`}
-                    </div>
-                    <div className="text-xs text-slate-400 mt-0.5">
-                      {nextFixture.homeClubId === club.id ? 'เกมเหย้า' : 'เกมเยือน'} · แผนคู่แข่ง {nextOpponent.primaryTactic.formation} · ชื่อเสียง {nextOpponent.reputation}
+                  <div className="flex items-center gap-3">
+                    <ClubBadge
+                      club={nextFixture.homeClubId === club.id ? club : nextOpponent}
+                      size="sm"
+                    />
+                    <div>
+                      <div className="text-base font-bold text-white">
+                        {nextFixture.homeClubId === club.id
+                          ? `${club.name} vs ${nextOpponent.name}`
+                          : `${nextOpponent.name} vs ${club.name}`}
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5">
+                        {nextFixture.homeClubId === club.id ? 'เกมเหย้า' : 'เกมเยือน'} · แผนคู่แข่ง {nextOpponent.primaryTactic.formation} · ชื่อเสียง {nextOpponent.reputation}
+                      </div>
                     </div>
                   </div>
+                  <ClubBadge
+                    club={nextFixture.homeClubId === club.id ? nextOpponent : club}
+                    size="sm"
+                  />
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-1">
@@ -281,7 +292,12 @@ export const DashboardView: React.FC<{
                       className={isMine ? 'bg-emerald-950/40 text-emerald-300 font-semibold' : 'text-slate-300'}
                     >
                       <td className="py-1.5 pr-2">{idx + 1}</td>
-                      <td className="py-1.5 font-sans truncate max-w-[110px]">{c?.name}</td>
+                      <td className="py-1.5 font-sans">
+                        <div className="flex items-center gap-1.5 truncate max-w-[115px]">
+                          <ClubBadge club={c} size="xs" />
+                          <span className="truncate">{c?.name}</span>
+                        </div>
+                      </td>
                       <td className="py-1.5 text-right">{row.played}</td>
                       <td className="py-1.5 text-right">{row.goalDifference}</td>
                       <td className="py-1.5 text-right font-bold text-white">{row.points}</td>
@@ -653,7 +669,7 @@ export const ScoutingView: React.FC<{
               เครือข่ายแมวมองยุโรป (European Scouting Network)
             </h3>
             <p className="text-xs text-slate-400">
-              ค้นหานักเตะจากทั้ง 96 สโมสรใน 5 ลีกใหญ่ หรือส่งแมวมองลงพื้นที่ค้นหาดาวรุ่ง
+              ค้นหานักเตะจากทั้ง 280 สโมสรใน 15 ลีกยุโรป หรือส่งแมวมองลงพื้นที่ค้นหาดาวรุ่ง
             </p>
           </div>
           <button
@@ -1133,9 +1149,16 @@ export const CompetitionsAndScheduleView: React.FC<{
                       </span>
                     </td>
                     <td className="py-2 px-3 font-sans font-medium text-white">
-                      {c?.name}
-                      {isUcl && <span className="ml-2 text-[10px] text-emerald-400">UCL</span>}
-                      {isRel && <span className="ml-2 text-[10px] text-red-400">REL</span>}
+                      <div className="flex items-center gap-2">
+                        <ClubBadge club={c} size="xs" />
+                        <span>{c?.name}</span>
+                        {isUcl && (
+                          <span className="text-[10px] text-emerald-400">
+                            {cfg.tier === 2 ? 'PROM' : 'UCL'}
+                          </span>
+                        )}
+                        {isRel && <span className="text-[10px] text-red-400">REL</span>}
+                      </div>
                     </td>
                     <td className="py-2 px-3 text-right">{row.played}</td>
                     <td className="py-2 px-3 text-right">{row.won}</td>

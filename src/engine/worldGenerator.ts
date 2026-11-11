@@ -203,7 +203,8 @@ function buildClubSquadSeeds(
   targetPa: number;
   isYouth: boolean;
 }[] {
-  const fullRoster: RealPlayerSeed[] | undefined = REAL_CLUB_ROSTERS[shortName];
+  const rosterLookupKey = countryId === 'FRA' && shortName === 'BRE' ? 'SB29' : shortName;
+  const fullRoster: RealPlayerSeed[] | undefined = REAL_CLUB_ROSTERS[rosterLookupKey];
   if (fullRoster && fullRoster.length > 0) {
     return fullRoster.map((seed, idx) => {
       const [first, last, pos, nat, age, ca, pa, sec] = seed;
@@ -222,7 +223,7 @@ function buildClubSquadSeeds(
     });
   }
 
-  const coreRoster = REAL_CLUB_CORE_PLAYERS[shortName] || [];
+  const coreRoster = REAL_CLUB_CORE_PLAYERS[rosterLookupKey] || [];
   const results: {
     firstName: string;
     lastName: string;
@@ -319,8 +320,8 @@ export function createInitialWorldState(
   selectedClubId?: string
 ): WorldState {
   const rng = new SeededRNG(seed);
-  const gameDate = '2026-08-10';
-  const currentSeason = '2026/27';
+  const gameDate = '2025-08-10';
+  const currentSeason = '2025/26';
 
   const clubs: Record<string, Club> = {};
   const players: Record<string, Player> = {};
@@ -332,6 +333,16 @@ export function createInitialWorldState(
     GER_BL: [],
     ITA_SA: [],
     FRA_L1: [],
+    POR_LP: [],
+    NED_ED: [],
+    BEL_PL: [],
+    TUR_SL: [],
+    SCO_PR: [],
+    ENG_CH: [],
+    ESP_SD: [],
+    GER_2B: [],
+    ITA_SB: [],
+    FRA_L2: [],
   };
   const transactions: FinanceTransaction[] = [];
 
@@ -355,7 +366,7 @@ export function createInitialWorldState(
 
       squadSeeds.forEach((pSeed, pIdx) => {
         const playerId = `plr_${clubId}_${pIdx + 1}`;
-        const birthYear = 2026 - pSeed.age;
+        const birthYear = 2025 - pSeed.age;
         const birthMonth = String(rng.int(1, 12)).padStart(2, '0');
         const birthDay = String(rng.int(1, 28)).padStart(2, '0');
 
@@ -414,7 +425,7 @@ export function createInitialWorldState(
           clubId,
           loanedFromClubId: null,
           wagePerWeek,
-          contractEndDate: `${2026 + rng.int(1, 5)}-06-30`,
+          contractEndDate: `${2025 + rng.int(1, 5)}-06-30`,
           releaseClause: rng.chance(0.35) ? Math.round(marketValue * 1.45) : null,
           goalBonus: Math.round(wagePerWeek * 0.15),
           marketValue,
@@ -479,6 +490,7 @@ export function createInitialWorldState(
         city: tpl.city,
         primaryColor: tpl.primaryColor,
         secondaryColor: tpl.secondaryColor,
+        logoUrl: tpl.logoUrl,
         stadiumName: tpl.stadiumName,
         stadiumCapacity: tpl.stadiumCapacity,
         reputation: tpl.reputation,
@@ -565,7 +577,7 @@ export function createInitialWorldState(
       config,
       leagueClubIds,
       currentSeason,
-      '2026-08-15',
+      '2025-08-15',
       rng
     );
     fixtures.push(...leagueFixtures);
@@ -648,7 +660,7 @@ export function createInitialWorldState(
     clubId: controlledClub.id,
     category: 'Sponsorship',
     amount: Math.round(controlledClub.finances.sponsorRevenueAnnual / 4),
-    description: 'งบสนับสนุนสโมสรประจำต้นฤดูกาล 2026/27',
+    description: 'งบสนับสนุนสโมสรประจำต้นฤดูกาล 2025/26',
     balanceAfter: controlledClub.finances.balance,
   });
 
@@ -678,7 +690,7 @@ export function createInitialWorldState(
       gameDate,
       category: 'Media',
       title: `งานแถลงข่าวเปิดตัวผู้จัดการทีมของ ${controlledClub.name}`,
-      body: `กองทัพสื่อมวลชนร่วมตั้งคำถามถึงปรัชญาการทำทีมและเป้าหมายของคุณในฤดูกาล 2026/27 กรุณาเลือกคำตอบเพื่อกำหนดทิศทางความเชื่อมั่นของนักเตะและบอร์ดบริหาร`,
+      body: `กองทัพสื่อมวลชนร่วมตั้งคำถามถึงปรัชญาการทำทีมและเป้าหมายของคุณในฤดูกาล 2025/26 กรุณาเลือกคำตอบเพื่อกำหนดทิศทางความเชื่อมั่นของนักเตะและบอร์ดบริหาร`,
       isRead: false,
       isImportant: true,
       relatedClubId: controlledClub.id,

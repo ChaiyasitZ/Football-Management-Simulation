@@ -16,6 +16,7 @@ import {
   WorldState,
 } from './types/game';
 import { createInitialWorldState } from './engine/worldGenerator';
+import { ClubBadge } from './components/ClubBadge';
 import {
   advanceWorldOneDay,
   buildScoutReportForPlayer,
@@ -74,7 +75,7 @@ const NAV_ITEMS: { id: NavTab; label: string; badgeKey?: 'inbox' }[] = [
   { id: 'club', label: '11. Club & Finance' },
   { id: 'staff', label: '12. Staff' },
   { id: 'youth', label: '13. Youth Academy' },
-  { id: 'world', label: '14. World (96 Clubs)' },
+  { id: 'world', label: '14. World (280 Clubs)' },
   { id: 'manager', label: '15. Manager & Save' },
 ];
 
@@ -425,12 +426,7 @@ export default function App() {
           {/* Controlled Club Identity */}
           <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/50">
             <div className="flex items-center gap-2.5">
-              <div
-                className="w-8 h-8 rounded flex items-center justify-center font-display font-bold text-xs text-slate-950 shrink-0"
-                style={{ backgroundColor: controlledClub.primaryColor }}
-              >
-                {controlledClub.shortName}
-              </div>
+              <ClubBadge club={controlledClub} size="md" />
               <div className="truncate">
                 <div className="text-xs font-bold text-white truncate">
                   {controlledClub.name}

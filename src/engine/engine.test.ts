@@ -19,10 +19,10 @@ import {
 } from './worldSimulationService';
 import { analyzeTacticalRisks, calculatePositionFit } from './tacticsEngine';
 
-test('5 Core European Leagues & 96 Clubs configuration and generation', () => {
+test('15 European Leagues & 280 Clubs configuration and generation', () => {
   const world = createInitialWorldState(12345);
   const allClubs = Object.values(world.clubs);
-  assert.equal(allClubs.length, 96, 'World must contain exactly 96 clubs across 5 leagues');
+  assert.equal(allClubs.length, 280, 'World must contain exactly 280 clubs across 15 leagues');
 
   assert.equal(
     allClubs.filter((c) => c.leagueId === 'ENG_PL').length,
@@ -49,21 +49,120 @@ test('5 Core European Leagues & 96 Clubs configuration and generation', () => {
     18,
     'Ligue 1 must have 18 clubs'
   );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'POR_LP').length,
+    18,
+    'Primeira Liga must have 18 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'NED_ED').length,
+    18,
+    'Eredivisie must have 18 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'BEL_PL').length,
+    16,
+    'Belgian Pro League must have 16 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'TUR_SL').length,
+    18,
+    'Süper Lig must have 18 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'SCO_PR').length,
+    12,
+    'Scottish Premiership must have 12 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'ENG_CH').length,
+    24,
+    'EFL Championship must have 24 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'ESP_SD').length,
+    22,
+    'LaLiga Hypermotion must have 22 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'GER_2B').length,
+    18,
+    '2. Bundesliga must have 18 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'ITA_SB').length,
+    20,
+    'Serie B must have 20 clubs'
+  );
+  assert.equal(
+    allClubs.filter((c) => c.leagueId === 'FRA_L2').length,
+    18,
+    'Ligue 2 must have 18 clubs'
+  );
 
-  // Verify real 2026/27 clubs (including promoted clubs) and grounded players exist in the world
+  // Verify real 2025/26 clubs (including promoted clubs) and grounded players exist in the world
   const clubNames = new Set(allClubs.map((c) => c.name));
-  assert.ok(clubNames.has('Arsenal FC'));
+  assert.ok(clubNames.has('Arsenal'));
   assert.ok(clubNames.has('Manchester City'));
-  assert.ok(clubNames.has('Liverpool FC'));
+  assert.ok(clubNames.has('Liverpool'));
+  assert.ok(clubNames.has('Burnley'));
   assert.ok(clubNames.has('Leeds United'));
+  assert.ok(clubNames.has('Sunderland'));
   assert.ok(clubNames.has('Real Madrid'));
-  assert.ok(clubNames.has('FC Barcelona'));
-  assert.ok(clubNames.has('FC Bayern München'));
+  assert.ok(clubNames.has('Barcelona'));
+  assert.ok(clubNames.has('Atlético de Madrid'));
+  assert.ok(clubNames.has('Levante UD'));
+  assert.ok(clubNames.has('Elche CF'));
+  assert.ok(clubNames.has('Real Oviedo'));
+  assert.ok(clubNames.has('Bayern Munich'));
+  assert.ok(clubNames.has('Bayer Leverkusen'));
+  assert.ok(clubNames.has('1. FC Heidenheim'));
   assert.ok(clubNames.has('Hamburger SV'));
   assert.ok(clubNames.has('Inter Milan'));
-  assert.ok(clubNames.has('US Sassuolo'));
+  assert.ok(clubNames.has('Napoli'));
+  assert.ok(clubNames.has('AC Milan'));
+  assert.ok(clubNames.has('Juventus'));
+  assert.ok(clubNames.has('Sassuolo'));
+  assert.ok(clubNames.has('Pisa'));
+  assert.ok(clubNames.has('Cremonese'));
   assert.ok(clubNames.has('Paris Saint-Germain'));
+  assert.ok(clubNames.has('LOSC Lille'));
   assert.ok(clubNames.has('Paris FC'));
+  assert.ok(clubNames.has('FC Lorient'));
+  assert.ok(clubNames.has('FC Metz'));
+  assert.ok(clubNames.has('Angers SCO'));
+  assert.ok(clubNames.has('Le Havre AC'));
+  assert.ok(clubNames.has('SL Benfica'));
+  assert.ok(clubNames.has('Sporting CP'));
+  assert.ok(clubNames.has('FC Porto'));
+  assert.ok(clubNames.has('SC Braga'));
+  assert.ok(clubNames.has('Vitória SC'));
+  assert.ok(clubNames.has('FC Alverca'));
+  assert.ok(clubNames.has('CD Tondela'));
+  assert.ok(clubNames.has('AFC Ajax'));
+  assert.ok(clubNames.has('PSV Eindhoven'));
+  assert.ok(clubNames.has('Feyenoord Rotterdam'));
+  assert.ok(clubNames.has('AZ Alkmaar'));
+  assert.ok(clubNames.has('FC Twente'));
+  assert.ok(clubNames.has('SC Telstar'));
+  assert.ok(clubNames.has('Club Brugge KV'));
+  assert.ok(clubNames.has('Union Saint-Gilloise'));
+  assert.ok(clubNames.has('RSC Anderlecht'));
+  assert.ok(clubNames.has('KRC Genk'));
+  assert.ok(clubNames.has('Royal Antwerp FC'));
+  assert.ok(clubNames.has('KAA Gent'));
+  assert.ok(clubNames.has('RAAL La Louvière'));
+  assert.ok(clubNames.has('Galatasaray SK'));
+  assert.ok(clubNames.has('Fenerbahçe SK'));
+  assert.ok(clubNames.has('Beşiktaş JK'));
+  assert.ok(clubNames.has('Celtic FC'));
+  assert.ok(clubNames.has('Rangers FC'));
+  assert.ok(clubNames.has('Leicester City'));
+  assert.ok(clubNames.has('Wrexham AFC'));
+  assert.ok(clubNames.has('Real Valladolid'));
+  assert.ok(clubNames.has('FC Schalke 04'));
+  assert.ok(clubNames.has('Empoli FC'));
+  assert.ok(clubNames.has('AS Saint-Étienne'));
 
   const playerFullNames = new Set(
     Object.values(world.players).map((p) => `${p.firstName} ${p.lastName}`)
@@ -92,7 +191,7 @@ test('5 Core European Leagues & 96 Clubs configuration and generation', () => {
 test('Double round-robin schedule generator produces exact matchdays with zero duplicate fixtures', () => {
   const plConfig = LEAGUES_CONFIG.ENG_PL;
   const clubIds = Array.from({ length: 20 }, (_, i) => `c_${i + 1}`);
-  const fixtures = generateLeagueSchedule(plConfig, clubIds, '2026/27');
+  const fixtures = generateLeagueSchedule(plConfig, clubIds, '2025/26');
 
   // 20 clubs -> 38 matchdays * 10 matches = 380 fixtures
   assert.equal(fixtures.length, 380);
@@ -325,7 +424,7 @@ test('WorldClockService advances dates cleanly and Cloud Firestore native Map de
     careerState: careerMap,
   });
 
-  assert.equal(Object.keys(rehydrated.clubs).length, 96);
+  assert.equal(Object.keys(rehydrated.clubs).length, 280);
   assert.equal(
     Object.keys(rehydrated.players).length,
     Object.keys(nextState.players).length

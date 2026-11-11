@@ -14,6 +14,7 @@ import {
   simulateMatch,
 } from '../engine/matchEngine';
 import { soundService } from '../engine/soundService';
+import { ClubBadge } from './ClubBadge';
 
 interface MatchCenterViewProps {
   world: WorldState;
@@ -435,12 +436,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4">
           {/* Home Team */}
           <div className="flex items-center gap-3 flex-1">
-            <div
-              className="w-11 h-11 rounded-lg flex items-center justify-center font-display font-bold text-base text-slate-950 shrink-0"
-              style={{ backgroundColor: homeClub.primaryColor }}
-            >
-              {homeClub.shortName}
-            </div>
+            <ClubBadge club={homeClub} size="lg" />
             <div>
               <div className="text-lg font-display font-bold text-white">{homeClub.name}</div>
               <div className="text-xs text-slate-400">
@@ -482,12 +478,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 </span>
               </div>
             </div>
-            <div
-              className="w-11 h-11 rounded-lg flex items-center justify-center font-display font-bold text-base text-slate-950 shrink-0"
-              style={{ backgroundColor: awayClub.primaryColor }}
-            >
-              {awayClub.shortName}
-            </div>
+            <ClubBadge club={awayClub} size="lg" />
           </div>
         </div>
 

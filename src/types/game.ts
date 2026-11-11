@@ -1,5 +1,30 @@
-export type LeagueId = 'ENG_PL' | 'ESP_LL' | 'GER_BL' | 'ITA_SA' | 'FRA_L1';
-export type CupId = 'ENG_CUP' | 'ESP_CUP' | 'GER_CUP' | 'ITA_CUP' | 'FRA_CUP';
+export type LeagueId =
+  | 'ENG_PL'
+  | 'ESP_LL'
+  | 'GER_BL'
+  | 'ITA_SA'
+  | 'FRA_L1'
+  | 'POR_LP'
+  | 'NED_ED'
+  | 'BEL_PL'
+  | 'TUR_SL'
+  | 'SCO_PR'
+  | 'ENG_CH'
+  | 'ESP_SD'
+  | 'GER_2B'
+  | 'ITA_SB'
+  | 'FRA_L2';
+export type CupId =
+  | 'ENG_CUP'
+  | 'ESP_CUP'
+  | 'GER_CUP'
+  | 'ITA_CUP'
+  | 'FRA_CUP'
+  | 'POR_CUP'
+  | 'NED_CUP'
+  | 'BEL_CUP'
+  | 'TUR_CUP'
+  | 'SCO_CUP';
 export type CompetitionId = LeagueId | CupId;
 
 export type PositionCode =
@@ -335,6 +360,7 @@ export interface Club {
   city: string;
   primaryColor: string;
   secondaryColor: string;
+  logoUrl?: string;
   stadiumName: string;
   stadiumCapacity: number;
   reputation: number; // 1-100
@@ -400,6 +426,7 @@ export interface LeagueConfig {
   relegationSpots: number;
   prizePoolTotal: number;
   tvRevenuePerClub: number;
+  tier?: 1 | 2;
 }
 
 export type MatchEventType =
