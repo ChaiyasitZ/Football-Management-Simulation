@@ -13,6 +13,7 @@
   "dependencies": {
     "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@tailwindcss/vite": "^4.3.3",
+    "@vercel/speed-insights": "^2.1.0",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^10.14.0",
     "firebase": "^13.2.0",
