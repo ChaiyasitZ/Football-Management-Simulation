@@ -6,6 +6,7 @@ import {
   LeagueStanding,
   ManagerProfile,
   MatchResult,
+  MatchTeamStats,
   NewsItem,
   Player,
   PositionGroup,
@@ -13,6 +14,7 @@ import {
   ScoutReport,
   StaffMember,
   TransferOffer,
+  UefaCompetitionId,
   WorldState,
 } from '../types/game';
 import {
@@ -38,10 +40,29 @@ import { simulateMatch } from './matchEngine';
 import { SeededRNG } from './random';
 import { autoPickLineup, ROLES_BY_POSITION } from './tacticsEngine';
 import {
+  checkAndAdvanceUefaKnockoutPhase,
+  recomputeUefaStandings,
+  UEFA_COMPETITIONS_CONFIG,
+} from './uefaEngine';
+import {
   calculatePlayerValuation,
   computeCoherentCA,
   createInitialWorldState,
 } from './worldGenerator';
+import { trText } from '../i18n/LanguageContext';
+
+/**
+ * Returns the newest Inbox item that requires a mandatory manager response
+ * (e.g., Press Conference or Interactive Manager Decision) before advancing time.
+ */
+export function getPendingUrgentInboxItem(inbox: NewsItem[]): NewsItem | undefined {
+  return inbox.find(
+    (item) =>
+      Array.isArray(item.pressConferenceOptions) &&
+      item.pressConferenceOptions.length > 0 &&
+      !item.pressConferenceAnsweredId
+  );
+}
 
 export function addDaysToDate(dateStr: string, days: number): string {
   const d = new Date(`${dateStr}T12:00:00Z`);
@@ -115,11 +136,15 @@ export function applyMatchResultToWorld(
   }
 
   // Update players who participated
+  const participatedIds = new Set(Object.keys(result.playerRatings));
+
   for (const [playerId, rating] of Object.entries(result.playerRatings)) {
     const p = updatedPlayers[playerId];
     if (!p) continue;
 
     const isHomePlayer = p.clubId === homeClub.id;
+    const teamClub = isHomePlayer ? homeClub : awayClub;
+    const teamInstructions = teamClub.primaryTactic.instructions;
     const teamWon = isHomePlayer
       ? result.homeGoals > result.awayGoals
       : result.awayGoals > result.homeGoals;
@@ -132,18 +157,55 @@ export function applyMatchResultToWorld(
       ((p.stats.averageRating * prevApps + rating) / newApps).toFixed(2)
     );
 
-    const staminaDrain = Math.max(6, Math.round(16 - p.attributes.physical.stamina * 0.45));
-    const newFitness = Math.max(45, p.fitness - staminaDrain);
+    const pressExtraDrain =
+      teamInstructions.pressingIntensity === 'Very High'
+        ? 5
+        : teamInstructions.pressingIntensity === 'High'
+          ? 3
+          : 0;
+    const tempoExtraDrain =
+      teamInstructions.tempo === 'Much Higher'
+        ? 3
+        : teamInstructions.tempo === 'Higher'
+          ? 2
+          : 0;
+    const staminaDrain = Math.max(
+      6,
+      Math.round(15 - p.attributes.physical.stamina * 0.45 + pressExtraDrain + tempoExtraDrain)
+    );
+    const preMatchFitness = p.fitness;
+    const newFitness = Math.max(38, p.fitness - staminaDrain);
     const moraleShift = teamWon ? 4 : teamDrew ? 0 : -4;
     const newMorale = Math.max(25, Math.min(100, p.morale + moraleShift));
 
-    // Slight chance of post-match knock if fitness low
+    // Muscle injury risk if started with Condition < 70% (1-3 weeks / 7-21 days)
     let injuryStatus = { ...p.injuryStatus };
-    if (!injuryStatus.isInjured && newFitness < 68 && rng.chance(0.06)) {
-      const days = rng.int(5, 18);
+    const startedLowCondition = preMatchFitness < 70;
+    const muscleInjuryChance =
+      preMatchFitness < 60
+        ? 0.34
+        : startedLowCondition
+          ? 0.22
+          : newFitness < 68
+            ? 0.05
+            : 0;
+
+    if (!injuryStatus.isInjured && muscleInjuryChance > 0 && rng.chance(muscleInjuryChance)) {
+      const days = startedLowCondition ? rng.int(7, 21) : rng.int(5, 16);
+      const injType = startedLowCondition
+        ? rng.pick([
+            trText('Grade 2 Hamstring Strain (Muscle Overload)', 'กล้ามเนื้อแฮมสตริงฉีกขาดจากการฝืนลงสนาม'),
+            trText('Calf Muscle Strain (Fatigue Overload)', 'กล้ามเนื้อน่องตึงรุนแรงจากความล้าสะสม'),
+            trText('Quadriceps Muscle Tear', 'กล้ามเนื้อต้นขาด้านหน้าบาดเจ็บ'),
+          ])
+        : rng.pick([
+            trText('Tight Hamstring', 'กล้ามเนื้อต้นขาตึง'),
+            trText('Sprained Ankle', 'ข้อเท้าแพลง'),
+            trText('Impact Bruising', 'ฟกช้ำจากการปะทะ'),
+          ]);
       injuryStatus = {
         isInjured: true,
-        type: rng.pick(['กล้ามเนื้อต้นขาตึง', 'ข้อเท้าแพลง', 'ฟกช้ำจากการปะทะ']),
+        type: injType,
         daysRemaining: days,
       };
       if (p.clubId === state.controlledClubId) {
@@ -151,8 +213,14 @@ export function applyMatchResultToWorld(
           id: `news_inj_${fixtureId}_${p.id}`,
           gameDate: state.gameDate,
           category: 'Injury',
-          title: `รายงานแพทย์: ${p.firstName} ${p.lastName} บาดเจ็บพัก ${days} วัน`,
-          body: `ทีมแพทย์ของ ${ state.clubs[p.clubId].name } ยืนยันว่า ${p.firstName} ${p.lastName} มีอาการ${injuryStatus.type}หลังจบเกมล่าสุด และต้องพักรักษาตัวประมาณ ${days} วัน`,
+          title: trText(
+            `Medical Report: ${p.firstName} ${p.lastName} ruled out for ${days} days`,
+            `รายงานแพทย์: ${p.firstName} ${p.lastName} บาดเจ็บพัก ${days} วัน`
+          ),
+          body: trText(
+            `The ${state.clubs[p.clubId].name} medical staff confirmed that ${p.firstName} ${p.lastName} sustained a ${injType} after playing with ${preMatchFitness}% condition and will be sidelined for ${days} days (approx. ${Math.ceil(days / 7)} weeks).`,
+            `ทีมแพทย์ของ ${state.clubs[p.clubId].name} ยืนยันว่า ${p.firstName} ${p.lastName} มีอาการ${injType} หลังจากลงสนามด้วยสภาพความฟิต ${preMatchFitness}% และต้องพักรักษาตัว ${days} วัน (ราว ${Math.ceil(days / 7)} สัปดาห์)`
+          ),
           isRead: false,
           relatedClubId: p.clubId,
           relatedPlayerId: p.id,
@@ -163,8 +231,10 @@ export function applyMatchResultToWorld(
     updatedPlayers[playerId] = {
       ...p,
       fitness: newFitness,
-      matchSharpness: Math.min(100, p.matchSharpness + 4),
+      matchSharpness: Math.min(100, p.matchSharpness + 5),
       morale: newMorale,
+      satisfaction: Math.min(100, p.satisfaction + 2),
+      consecutiveBenched: 0,
       injuryStatus,
       stats: {
         appearances: newApps,
@@ -184,6 +254,78 @@ export function applyMatchResultToWorld(
     };
   }
 
+  // Update non-participating squad players for both clubs (Sharpness decay / Reserves recovery & Squad Hierarchy 3-match drop rule)
+  for (const p of Object.values(updatedPlayers)) {
+    if (p.clubId !== homeClub.id && p.clubId !== awayClub.id) continue;
+    if (participatedIds.has(p.id)) continue;
+    if (p.injuryStatus.isInjured) continue;
+
+    const newConsecutiveBenched = (p.consecutiveBenched || 0) + 1;
+    const inReserves = Boolean(p.playInReserves);
+    const newSharpness = inReserves
+      ? Math.min(94, p.matchSharpness + 5)
+      : Math.max(50, p.matchSharpness - 3);
+    const newFitness = inReserves ? Math.max(76, p.fitness - 4) : p.fitness;
+
+    let newMorale = p.morale;
+    let newSatisfaction = p.satisfaction;
+    let newTransferListed = p.transferListed;
+
+    const isKeyHierarchy =
+      p.squadStatus === 'Star Player' || p.squadStatus === 'Important Player';
+
+    if (isKeyHierarchy && newConsecutiveBenched >= 3) {
+      newMorale = Math.max(20, p.morale - 12);
+      newSatisfaction = Math.max(15, p.satisfaction - 15);
+      if (newConsecutiveBenched >= 4) {
+        newTransferListed = true;
+      }
+
+      if (p.clubId === state.controlledClubId) {
+        updatedInbox.unshift({
+          id: `news_hier_${fixtureId}_${p.id}`,
+          gameDate: state.gameDate,
+          category: 'Player',
+          title: trText(
+            `Dressing Room Unrest: ${p.firstName} ${p.lastName} (${p.squadStatus}) unhappy over benching`,
+            `นักเตะไม่พอใจ: ${p.firstName} ${p.lastName} (${p.squadStatus}) ไม่พอใจที่ถูกดร็อป ${newConsecutiveBenched} นัดติด`
+          ),
+          body: trText(
+            `${p.firstName} ${p.lastName} holds "${p.squadStatus}" status in the squad hierarchy but has been left out of the starting XI for ${newConsecutiveBenched} consecutive matches despite being fit. His Morale (${newMorale}%) and form have dropped sharply${newConsecutiveBenched >= 4 ? ', and his agent has formally requested a transfer!' : ', and he warns he will request a transfer if he does not start soon.'}`,
+            `${p.firstName} ${p.lastName} มีสถานะเป็น "${p.squadStatus}" ของทีม แต่ถูกดร็อปเป็นสำรองติดต่อกัน ${newConsecutiveBenched} นัดทั้งที่สภาพร่างกายสมบูรณ์ ทำให้ขวัญกำลังใจลดลงเหลือ ${newMorale}% ส่งผลกระทบต่อฟอร์มการเล่น${newConsecutiveBenched >= 4 ? ' และได้ยื่นเรื่องขอย้ายทีมอย่างเป็นทางการแล้ว!' : ' และอาจขอย้ายทีมหากยังไม่ได้รับโอกาสลงสนาม'}`
+          ),
+          isRead: false,
+          isImportant: true,
+          relatedClubId: p.clubId,
+          relatedPlayerId: p.id,
+        });
+      }
+    }
+
+    updatedPlayers[p.id] = {
+      ...p,
+      fitness: newFitness,
+      matchSharpness: newSharpness,
+      morale: newMorale,
+      satisfaction: newSatisfaction,
+      transferListed: newTransferListed,
+      consecutiveBenched: newConsecutiveBenched,
+    };
+  }
+
+  // Grow Tactical Familiarity (+4% per match played in current formation)
+  for (const c of [homeClub, awayClub]) {
+    const newFam = Math.min(100, c.primaryTactic.familiarity + 4);
+    c.primaryTactic = {
+      ...c.primaryTactic,
+      familiarity: newFam,
+    };
+    c.formationFamiliarity = {
+      ...(c.formationFamiliarity || {}),
+      [c.primaryTactic.formation]: newFam,
+    };
+  }
+
   // Home ticket sales income
   const ticketIncome = Math.round(result.attendance * homeClub.finances.ticketPriceAvg);
   homeClub.finances = {
@@ -197,14 +339,24 @@ export function applyMatchResultToWorld(
       clubId: homeClub.id,
       category: 'Ticket Sales',
       amount: ticketIncome,
-      description: `รายได้บัตรผ่านประตูเกมเหย้าพบ ${awayClub.name} (${result.attendance.toLocaleString()} คน)`,
+      description: trText(
+        `Home matchday gate receipts vs ${awayClub.name} (${result.attendance.toLocaleString()} attendance)`,
+        `รายได้บัตรผ่านประตูเกมเหย้าพบ ${awayClub.name} (${result.attendance.toLocaleString()} คน)`
+      ),
       balanceAfter: homeClub.finances.balance,
     });
   }
 
-  // Recompute league standings
+  // Recompute domestic league or UEFA competition standings
   const leagueId = existingFixture.competitionId as LeagueId;
+  const uefaCompId = existingFixture.competitionId as UefaCompetitionId;
   const updatedStandings = { ...state.standings };
+  const updatedUefaStandings: Record<UefaCompetitionId, LeagueStanding[]> = {
+    UEFA_UCL: state.uefaStandings?.UEFA_UCL || [],
+    UEFA_UEL: state.uefaStandings?.UEFA_UEL || [],
+    UEFA_UECL: state.uefaStandings?.UEFA_UECL || [],
+  };
+
   if (LEAGUES_CONFIG[leagueId]) {
     const leagueClubIds = Object.values(updatedClubs)
       .filter((c) => c.leagueId === leagueId)
@@ -216,6 +368,42 @@ export function applyMatchResultToWorld(
       updatedFixtures,
       updatedClubs
     );
+  } else if (UEFA_COMPETITIONS_CONFIG[uefaCompId]) {
+    const uCfg = UEFA_COMPETITIONS_CONFIG[uefaCompId];
+    const participantIds =
+      state.uefaPots?.[uefaCompId]?.flat() ||
+      updatedUefaStandings[uefaCompId].map((s) => s.clubId);
+    if (participantIds.length > 0) {
+      updatedUefaStandings[uefaCompId] = recomputeUefaStandings(
+        uefaCompId,
+        state.currentSeason,
+        participantIds,
+        updatedFixtures,
+        updatedClubs
+      );
+    }
+
+    // UEFA Match Performance Prize Money
+    if (result.homeGoals > result.awayGoals) {
+      homeClub.finances = {
+        ...homeClub.finances,
+        balance: homeClub.finances.balance + uCfg.matchWinBonus,
+      };
+    } else if (result.awayGoals > result.homeGoals) {
+      awayClub.finances = {
+        ...awayClub.finances,
+        balance: awayClub.finances.balance + uCfg.matchWinBonus,
+      };
+    } else {
+      homeClub.finances = {
+        ...homeClub.finances,
+        balance: homeClub.finances.balance + uCfg.matchDrawBonus,
+      };
+      awayClub.finances = {
+        ...awayClub.finances,
+        balance: awayClub.finances.balance + uCfg.matchDrawBonus,
+      };
+    }
   }
 
   // If controlled club played, update manager career & inbox match report
@@ -260,37 +448,57 @@ export function applyMatchResultToWorld(
     const motmPlayer = updatedPlayers[result.manOfTheMatchPlayerId];
     const motmName = motmPlayer
       ? `${motmPlayer.firstName} ${motmPlayer.lastName}`
-      : 'ผู้เล่นยอดเยี่ยม';
+      : trText('Star Performer', 'ผู้เล่นยอดเยี่ยม');
 
     updatedInbox.unshift({
       id: `news_mrep_${fixtureId}`,
       gameDate: state.gameDate,
       category: 'Match Report',
-      title: `สรุปผลหลังเกม: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`,
-      body: `เกมนัดที่ ${existingFixture.matchday} จบลงด้วยสกอร์ ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, ครองบอล ${result.homeStats.possession}% - ${result.awayStats.possession}%) โดย Man of the Match ได้แก่ ${motmName}`,
+      title: trText(
+        `Post-Match Report: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`,
+        `สรุปผลหลังเกม: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`
+      ),
+      body: trText(
+        `Matchday ${existingFixture.matchday} finished ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, Possession: ${result.homeStats.possession}% - ${result.awayStats.possession}%). Man of the Match: ${motmName}. Please address the post-match press conference below.`,
+        `เกมนัดที่ ${existingFixture.matchday} จบลงด้วยสกอร์ ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, ครองบอล ${result.homeStats.possession}% - ${result.awayStats.possession}%) โดย Man of the Match ได้แก่ ${motmName}`
+      ),
       isRead: false,
+      isImportant: true,
       relatedClubId: myClub.id,
       sourceEventId: fixtureId,
+      actionType: 'PressConference',
       pressConferenceOptions: [
         {
           id: 'post_praise',
-          label: `ชื่นชมความทุ่มเทของลูกทีมทุกคนในเกมพบ ${oppClub.shortName}`,
+          label: trText(
+            `Praise the squad's commitment and work rate against ${oppClub.shortName}`,
+            `ชื่นชมความทุ่มเทของลูกทีมทุกคนในเกมพบ ${oppClub.shortName}`
+          ),
           moraleDelta: 3,
           boardDelta: 1,
-          mediaResponse: 'นักเตะในห้องแต่งตัวรู้สึกภูมิใจที่คุณออกโรงปกป้องและชื่นชมทีมต่อหน้าสื่อ',
+          mediaResponse: trText(
+            'The dressing room is proud that you publicly backed and praised the players in front of the media.',
+            'นักเตะในห้องแต่งตัวรู้สึกภูมิใจที่คุณออกโรงปกป้องและชื่นชมทีมต่อหน้าสื่อ'
+          ),
         },
         {
           id: 'post_demand',
-          label: 'เรายังมีรายละเอียดแท็กติกที่ต้องยกระดับขึ้นอีกในนัดต่อไป',
+          label: trText(
+            'We still have tactical details to refine ahead of the next fixture',
+            'เรายังมีรายละเอียดแท็กติกที่ต้องยกระดับขึ้นอีกในนัดต่อไป'
+          ),
           moraleDelta: 0,
           boardDelta: 3,
-          mediaResponse: 'บอร์ดบริหารและสื่อมองว่าคุณมีมาตรฐานสูงและไม่ประมาท',
+          mediaResponse: trText(
+            'The Board of Directors and media respect your high standards and refusal to become complacent.',
+            'บอร์ดบริหารและสื่อมองว่าคุณมีมาตรฐานสูงและไม่ประมาท'
+          ),
         },
       ],
     });
   }
 
-  return {
+  let nextState: WorldState = {
     ...state,
     gameDate:
       existingFixture.kickoffDate > state.gameDate
@@ -300,10 +508,17 @@ export function applyMatchResultToWorld(
     clubs: updatedClubs,
     players: updatedPlayers,
     standings: updatedStandings,
+    uefaStandings: updatedUefaStandings,
     transactions: updatedTransactions,
     inbox: updatedInbox,
     manager: updatedManager,
   };
+
+  if (UEFA_COMPETITIONS_CONFIG[uefaCompId]) {
+    nextState = checkAndAdvanceUefaKnockoutPhase(nextState, uefaCompId);
+  }
+
+  return nextState;
 }
 
 /**
@@ -348,8 +563,9 @@ export function completeUserMatchdayAndSyncWorld(
  */
 export function advanceWorldOneDay(state: WorldState): {
   nextState: WorldState;
-  stoppedReason?: 'USER_MATCHDAY' | 'TRANSFER_OFFER';
+  stoppedReason?: 'USER_MATCHDAY' | 'TRANSFER_OFFER' | 'URGENT_INBOX';
   userFixture?: Fixture;
+  urgentInboxItem?: NewsItem;
 } {
   let current = { ...state };
   const rng = new SeededRNG(current.randomSeed + current.processedDates.length * 97);
@@ -418,8 +634,14 @@ export function advanceWorldOneDay(state: WorldState): {
             id: `news_rec_${nextDate}_${p.id}`,
             gameDate: nextDate,
             category: 'Injury',
-            title: `${p.firstName} ${p.lastName} หายเจ็บกลับมาซ้อมเต็มรูปแบบ`,
-            body: `ข่าวดีสำหรับ ${userClub.name} เมื่อ ${p.firstName} ${p.lastName} ผ่านความฟิตจากทีมแพทย์และพร้อมกลับมาเป็นตัวเลือกในการจัดทัพ`,
+            title: trText(
+              `${p.firstName} ${p.lastName} returns to full training`,
+              `${p.firstName} ${p.lastName} หายเจ็บกลับมาซ้อมเต็มรูปแบบ`
+            ),
+            body: trText(
+              `Good news for ${userClub.name} as ${p.firstName} ${p.lastName} has been cleared by the medical department and is available for selection again.`,
+              `ข่าวดีสำหรับ ${userClub.name} เมื่อ ${p.firstName} ${p.lastName} ผ่านความฟิตจากทีมแพทย์และพร้อมกลับมาเป็นตัวเลือกในการจัดทัพ`
+            ),
             isRead: false,
             relatedClubId: p.clubId,
             relatedPlayerId: p.id,
@@ -498,9 +720,15 @@ export function advanceWorldOneDay(state: WorldState): {
       }
     }
 
+    const matchSharpness =
+      isWeeklyTick && !injuryStatus.isInjured && p.playInReserves
+        ? Math.min(94, p.matchSharpness + 4)
+        : p.matchSharpness;
+
     updatedPlayers[p.id] = {
       ...p,
       fitness,
+      matchSharpness,
       injuryStatus,
       attributes,
       currentAbility,
@@ -517,9 +745,15 @@ export function advanceWorldOneDay(state: WorldState): {
       ...controlled.finances,
       balance: newBal,
     };
+    const famGain = controlled.trainingFocus === 'Match Preparation' ? 4 : 2;
+    const nextPrimaryFam = Math.min(100, controlled.primaryTactic.familiarity + famGain);
     controlled.primaryTactic = {
       ...controlled.primaryTactic,
-      familiarity: Math.min(100, controlled.primaryTactic.familiarity + 2),
+      familiarity: nextPrimaryFam,
+    };
+    controlled.formationFamiliarity = {
+      ...(controlled.formationFamiliarity || {}),
+      [controlled.primaryTactic.formation]: nextPrimaryFam,
     };
     updatedClubs[controlled.id] = controlled;
 
@@ -529,7 +763,10 @@ export function advanceWorldOneDay(state: WorldState): {
       clubId: controlled.id,
       category: 'Player Wages',
       amount: -weeklyWages,
-      description: `จ่ายค่าเหนื่อยนักเตะและทีมงานประจำสัปดาห์ (${nextDate})`,
+      description: trText(
+        `Weekly player and coaching staff wages (${nextDate})`,
+        `จ่ายค่าเหนื่อยนักเตะและทีมงานประจำสัปดาห์ (${nextDate})`
+      ),
       balanceAfter: newBal,
     });
   }
@@ -579,8 +816,14 @@ export function advanceWorldOneDay(state: WorldState): {
           id: `news_sct_${nextDate}_${found.id}`,
           gameDate: nextDate,
           category: 'Scout',
-          title: `รายงานแมวมอง: พบเป้าหมายน่าสนใจ — ${found.firstName} ${found.lastName}`,
-          body: `ทีมแมวมองส่งรายงานการวิเคราะห์ ${found.firstName} ${found.lastName} (${found.positions.join('/')}, ${updatedClubs[found.clubId]?.name}) ประเมินความเหมาะสมอยู่ที่ ${rep.recommendationScore}/100`,
+          title: trText(
+            `Scouting Report: Promising Target Identified — ${found.firstName} ${found.lastName}`,
+            `รายงานแมวมอง: พบเป้าหมายน่าสนใจ — ${found.firstName} ${found.lastName}`
+          ),
+          body: trText(
+            `Your scouting network submitted an assessment on ${found.firstName} ${found.lastName} (${found.positions.join('/')}, ${updatedClubs[found.clubId]?.name}) with a recommendation score of ${rep.recommendationScore}/100.`,
+            `ทีมแมวมองส่งรายงานการวิเคราะห์ ${found.firstName} ${found.lastName} (${found.positions.join('/')}, ${updatedClubs[found.clubId]?.name}) ประเมินความเหมาะสมอยู่ที่ ${rep.recommendationScore}/100`
+          ),
           isRead: false,
           relatedPlayerId: found.id,
           relatedClubId: found.clubId,
@@ -594,6 +837,88 @@ export function advanceWorldOneDay(state: WorldState): {
       reportsGenerated,
     };
   });
+
+  // Check if the day AFTER nextDate has a user fixture (Pre-Match Press Conference on the eve of key fixtures)
+  const dayAfterNext = addDaysToDate(nextDate, 1);
+  const eveUserFixture = current.fixtures.find(
+    (f) =>
+      f.kickoffDate === dayAfterNext &&
+      f.status === 'Scheduled' &&
+      (f.homeClubId === current.controlledClubId || f.awayClubId === current.controlledClubId)
+  );
+
+  let generatedUrgentInbox: NewsItem | undefined;
+
+  if (eveUserFixture && eveUserFixture.matchday % 3 === 1) {
+    const oppId =
+      eveUserFixture.homeClubId === current.controlledClubId
+        ? eveUserFixture.awayClubId
+        : eveUserFixture.homeClubId;
+    const oppClub = updatedClubs[oppId];
+    const prePressId = `news_prepress_${eveUserFixture.id}`;
+    if (!updatedInbox.some((n) => n.id === prePressId)) {
+      const prePressItem: NewsItem = {
+        id: prePressId,
+        gameDate: nextDate,
+        category: 'Media',
+        title: trText(
+          `Pre-Match Press Conference: Ahead of ${oppClub?.name || 'Opponent'} Clash (MD ${eveUserFixture.matchday})`,
+          `งานแถลงข่าวก่อนเกม: เตรียมพร้อมก่อนดวล ${oppClub?.name || 'คู่แข่ง'} (นัดที่ ${eveUserFixture.matchday})`
+        ),
+        body: trText(
+          `Journalists have gathered at the training ground ahead of tomorrow's Matchday ${eveUserFixture.matchday} fixture against ${oppClub?.name} (${oppClub?.primaryTactic.formation}). How do you want to address the media before tomorrow's kick-off?`,
+          `สื่อมวลชนเดินทางมาทำข่าวที่ศูนย์ฝึกซ้อมก่อนเกมนัดที่ ${eveUserFixture.matchday} ที่จะพบกับ ${oppClub?.name} (${oppClub?.primaryTactic.formation}) ในวันพรุ่งนี้ กรุณาเลือกคำตอบเพื่อส่งสัญญาณถึงลูกทีมและสื่อมวลชน`
+        ),
+        isRead: false,
+        isImportant: true,
+        relatedClubId: oppId,
+        actionType: 'PressConference',
+        pressConferenceOptions: [
+          {
+            id: 'pre_confident',
+            label: trText(
+              `We have prepared thoroughly and are confident of taking all three points against ${oppClub?.shortName || 'them'}.`,
+              `เราซ้อมกันมาอย่างสมบูรณ์แบบและมั่นใจว่าจะเก็บชัยชนะเหนือ ${oppClub?.shortName || 'คู่แข่ง'} ได้`
+            ),
+            moraleDelta: 3,
+            boardDelta: 2,
+            mediaResponse: trText(
+              'Your confident message energized the squad ahead of matchday.',
+              'ความมั่นใจของคุณช่วยปลุกเร้าให้นักเตะในทีมฮึกเหิมก่อนลงสนามวันพรุ่งนี้'
+            ),
+          },
+          {
+            id: 'pre_respect',
+            label: trText(
+              `${oppClub?.name || 'Our opponent'} are a dangerous side, so we must stay tactically disciplined for 90 minutes.`,
+              `${oppClub?.name || 'คู่แข่ง'} เป็นทีมที่แข็งแกร่ง เราต้องมีสมาธิและรักษาวินัยแท็กติกตลอด 90 นาที`
+            ),
+            moraleDelta: 1,
+            boardDelta: 3,
+            mediaResponse: trText(
+              'Pundits and the board praised your tactical focus and respect for the opposition.',
+              'สื่อและบอร์ดบริหารชื่นชมความสุขุมและการทำการบ้านด้านแท็กติกของคุณ'
+            ),
+          },
+          {
+            id: 'pre_no_pressure',
+            label: trText(
+              'The pressure is on them — I want my players to go out and express themselves freely.',
+              'ความกดดันอยู่ที่ฝั่งคู่แข่ง ผมต้องการให้นักเตะลงไปเล่นอย่างเป็นธรรมชาติโดยไม่ต้องเกร็ง'
+            ),
+            moraleDelta: 4,
+            boardDelta: 1,
+            mediaResponse: trText(
+              'The players appreciate you taking the media spotlight off their shoulders.',
+              'ลูกทีมรู้สึกผ่อนคลายที่คุณช่วยลดความกดดันจากสื่อมวลชนก่อนเกมสำคัญ'
+            ),
+          },
+        ],
+      };
+      updatedInbox.unshift(prePressItem);
+      generatedUrgentInbox = prePressItem;
+    }
+  }
 
   // Check if the new date has a user fixture
   const nextDayUserFixture = current.fixtures.find(
@@ -615,8 +940,14 @@ export function advanceWorldOneDay(state: WorldState): {
         id: previewId,
         gameDate: nextDate,
         category: 'Match Preview',
-        title: `Matchday ${nextDayUserFixture.matchday}: พร้อมดวลศึก ${oppClub?.name || 'คู่แข่ง'} วันนี้!`,
-        body: `วันนี้เป็นวันแข่งขันนัดที่ ${nextDayUserFixture.matchday} พบกับ ${oppClub?.name} (แผนคู่แข่ง: ${oppClub?.primaryTactic.formation}) กรุณาตรวจสอบความฟิตของ 11 ตัวจริงและเข้าสู่ Match Center เพื่อทำการแข่งขัน`,
+        title: trText(
+          `Matchday ${nextDayUserFixture.matchday}: Ready to face ${oppClub?.name || 'Opponent'} today!`,
+          `Matchday ${nextDayUserFixture.matchday}: พร้อมดวลศึก ${oppClub?.name || 'คู่แข่ง'} วันนี้!`
+        ),
+        body: trText(
+          `Today is Matchday ${nextDayUserFixture.matchday} against ${oppClub?.name} (Opponent Formation: ${oppClub?.primaryTactic.formation}). Check your Starting XI fitness and head to the Match Center for kick-off.`,
+          `วันนี้เป็นวันแข่งขันนัดที่ ${nextDayUserFixture.matchday} พบกับ ${oppClub?.name} (แผนคู่แข่ง: ${oppClub?.primaryTactic.formation}) กรุณาตรวจสอบความฟิตของ 11 ตัวจริงและเข้าสู่ Match Center เพื่อทำการแข่งขัน`
+        ),
         isRead: false,
         isImportant: true,
         relatedClubId: oppId,
@@ -639,8 +970,13 @@ export function advanceWorldOneDay(state: WorldState): {
 
   return {
     nextState,
-    stoppedReason: nextDayUserFixture ? 'USER_MATCHDAY' : undefined,
+    stoppedReason: nextDayUserFixture
+      ? 'USER_MATCHDAY'
+      : generatedUrgentInbox
+        ? 'URGENT_INBOX'
+        : undefined,
     userFixture: nextDayUserFixture,
+    urgentInboxItem: generatedUrgentInbox,
   };
 }
 
@@ -655,17 +991,87 @@ export function buildScoutReportForPlayer(
   const strengths: string[] = [];
   const weaknesses: string[] = [];
 
-  if (player.attributes.physical.pace >= 15) strengths.push('ความเร็วและการกระชากหนีคู่แข่งยอดเยี่ยม');
-  if (player.attributes.technical.passing >= 15) strengths.push('การจ่ายบอลสร้างสรรค์เกมแม่นยำสูง');
-  if (player.attributes.technical.finishing >= 15) strengths.push('จบสกอร์ในกรอบเขตโทษเฉียบคม');
-  if (player.attributes.technical.tackling >= 15) strengths.push('เข้าปะทะและแย่งบอลแข็งแกร่ง');
-  if (player.attributes.mental.decisions >= 15) strengths.push('ตัดสินใจในจังหวะสำคัญได้ฉลาด');
-  if (strengths.length === 0) strengths.push('มีสมดุลค่าพลังพื้นฐานที่ดีและเล่นตามแท็กติกได้');
+  if (player.attributes.physical.pace >= 15) {
+    strengths.push(
+      trText(
+        'Exceptional pace and ability to beat defenders on the dribble',
+        'ความเร็วและการกระชากหนีคู่แข่งยอดเยี่ยม'
+      )
+    );
+  }
+  if (player.attributes.technical.passing >= 15) {
+    strengths.push(
+      trText(
+        'High-precision creative passing and playmaking vision',
+        'การจ่ายบอลสร้างสรรค์เกมแม่นยำสูง'
+      )
+    );
+  }
+  if (player.attributes.technical.finishing >= 15) {
+    strengths.push(
+      trText(
+        'Clinical finishing inside the penalty box',
+        'จบสกอร์ในกรอบเขตโทษเฉียบคม'
+      )
+    );
+  }
+  if (player.attributes.technical.tackling >= 15) {
+    strengths.push(
+      trText(
+        'Strong tackling and ball-winning ability',
+        'เข้าปะทะและแย่งบอลแข็งแกร่ง'
+      )
+    );
+  }
+  if (player.attributes.mental.decisions >= 15) {
+    strengths.push(
+      trText(
+        'Intelligent decision-making in key moments',
+        'ตัดสินใจในจังหวะสำคัญได้ฉลาด'
+      )
+    );
+  }
+  if (strengths.length === 0) {
+    strengths.push(
+      trText(
+        'Well-balanced core attributes and strong tactical discipline',
+        'มีสมดุลค่าพลังพื้นฐานที่ดีและเล่นตามแท็กติกได้'
+      )
+    );
+  }
 
-  if (player.attributes.physical.stamina <= 10) weaknesses.push('ความอึดในการยืนระยะ 90 นาทียังต้องพัฒนา');
-  if (player.attributes.mental.composure <= 10) weaknesses.push('อาจตื่นสนามเมื่อถูกบีบพื้นที่เร็ว');
-  if (player.attributes.physical.strength <= 10) weaknesses.push('เสียเปรียบในการปะทะกับคู่แข่งรูปร่างใหญ่');
-  if (weaknesses.length === 0) weaknesses.push('ไม่มีจุดอ่อนร้ายแรงในการเล่นระดับลีกสูงสุด');
+  if (player.attributes.physical.stamina <= 10) {
+    weaknesses.push(
+      trText(
+        'Stamina over a full 90 minutes still needs improvement',
+        'ความอึดในการยืนระยะ 90 นาทียังต้องพัฒนา'
+      )
+    );
+  }
+  if (player.attributes.mental.composure <= 10) {
+    weaknesses.push(
+      trText(
+        'Can lose composure when pressed aggressively',
+        'อาจตื่นสนามเมื่อถูกบีบพื้นที่เร็ว'
+      )
+    );
+  }
+  if (player.attributes.physical.strength <= 10) {
+    weaknesses.push(
+      trText(
+        'Can be outmuscled in physical duels against stronger opponents',
+        'เสียเปรียบในการปะทะกับคู่แข่งรูปร่างใหญ่'
+      )
+    );
+  }
+  if (weaknesses.length === 0) {
+    weaknesses.push(
+      trText(
+        'No glaring weaknesses for top-flight competition',
+        'ไม่มีจุดอ่อนร้ายแรงในการเล่นระดับลีกสูงสุด'
+      )
+    );
+  }
 
   const recScore = Math.min(99, Math.max(48, Math.round(player.currentAbility * 0.52 + (player.potentialAbility - player.currentAbility) * 0.35)));
 
@@ -707,14 +1113,22 @@ export function submitAndEvaluateTransferOffer(
 ): { nextState: WorldState; outcome: 'COMPLETED' | 'COUNTERED' | 'REJECTED'; message: string } {
   const player = state.players[params.playerId];
   if (!player) {
-    return { nextState: state, outcome: 'REJECTED', message: 'ไม่พบข้อมูลนักเตะในฐานข้อมูล' };
+    return {
+      nextState: state,
+      outcome: 'REJECTED',
+      message: trText('Player not found in database.', 'ไม่พบข้อมูลนักเตะในฐานข้อมูล'),
+    };
   }
 
   const buyingClub = { ...state.clubs[state.controlledClubId] };
   const sellingClub = { ...state.clubs[player.clubId] };
 
   if (buyingClub.id === sellingClub.id) {
-    return { nextState: state, outcome: 'REJECTED', message: 'นักเตะรายนี้อยู่ในสโมสรของคุณอยู่แล้ว' };
+    return {
+      nextState: state,
+      outcome: 'REJECTED',
+      message: trText('This player is already at your club.', 'นักเตะรายนี้อยู่ในสโมสรของคุณอยู่แล้ว'),
+    };
   }
 
   const totalCostUpfront = params.upfrontFee + params.signingBonus;
@@ -722,7 +1136,10 @@ export function submitAndEvaluateTransferOffer(
     return {
       nextState: state,
       outcome: 'REJECTED',
-      message: `งบซื้อขายไม่เพียงพอ (ต้องการ €${(totalCostUpfront / 1_000_000).toFixed(2)}M แต่มีงบ €${(buyingClub.finances.transferBudget / 1_000_000).toFixed(2)}M)`,
+      message: trText(
+        `Insufficient transfer budget (Requires €${(totalCostUpfront / 1_000_000).toFixed(2)}M, Available €${(buyingClub.finances.transferBudget / 1_000_000).toFixed(2)}M).`,
+        `งบซื้อขายไม่เพียงพอ (ต้องการ €${(totalCostUpfront / 1_000_000).toFixed(2)}M แต่มีงบ €${(buyingClub.finances.transferBudget / 1_000_000).toFixed(2)}M)`
+      ),
     };
   }
 
@@ -759,7 +1176,10 @@ export function submitAndEvaluateTransferOffer(
       signingBonus: params.signingBonus,
       agentFee,
       status: 'Rejected',
-      rejectionReason: `ข้อเสนอต่ำกว่ามูลค่าที่ ${sellingClub.name} ตั้งไว้ (€${(requiredValue / 1_000_000).toFixed(1)}M)`,
+      rejectionReason: trText(
+        `Offer is well below ${sellingClub.name}'s valuation (€${(requiredValue / 1_000_000).toFixed(1)}M).`,
+        `ข้อเสนอต่ำกว่ามูลค่าที่ ${sellingClub.name} ตั้งไว้ (€${(requiredValue / 1_000_000).toFixed(1)}M)`
+      ),
     };
 
     return {
@@ -768,7 +1188,10 @@ export function submitAndEvaluateTransferOffer(
         transferOffers: [rejectedOffer, ...state.transferOffers],
       },
       outcome: 'REJECTED',
-      message: `${sellingClub.name} ปฏิเสธข้อเสนอเนื่องจากต่ำกว่าราคาประเมิน (€${(requiredValue / 1_000_000).toFixed(1)}M)`,
+      message: trText(
+        `${sellingClub.name} rejected the offer as it falls below their valuation (€${(requiredValue / 1_000_000).toFixed(1)}M).`,
+        `${sellingClub.name} ปฏิเสธข้อเสนอเนื่องจากต่ำกว่าราคาประเมิน (€${(requiredValue / 1_000_000).toFixed(1)}M)`
+      ),
     };
   }
 
@@ -798,7 +1221,10 @@ export function submitAndEvaluateTransferOffer(
         transferOffers: [counterOffer, ...state.transferOffers],
       },
       outcome: 'COUNTERED',
-      message: `${sellingClub.name} ยื่นข้อเสนอต่อรองที่ €${(requiredValue / 1_000_000).toFixed(2)}M`,
+      message: trText(
+        `${sellingClub.name} submitted a counter-offer of €${(requiredValue / 1_000_000).toFixed(2)}M.`,
+        `${sellingClub.name} ยื่นข้อเสนอต่อรองที่ €${(requiredValue / 1_000_000).toFixed(2)}M`
+      ),
     };
   }
 
@@ -808,7 +1234,10 @@ export function submitAndEvaluateTransferOffer(
     return {
       nextState: state,
       outcome: 'REJECTED',
-      message: `เอเยนต์ของ ${player.firstName} ${player.lastName} ปฏิเสธสัญญาเนื่องจากค่าเหนื่อยต่ำกว่า €${minWageAccepted.toLocaleString()}/สัปดาห์`,
+      message: trText(
+        `${player.firstName} ${player.lastName}'s agent rejected the contract terms (Minimum wage demanded: €${minWageAccepted.toLocaleString()}/wk).`,
+        `เอเยนต์ของ ${player.firstName} ${player.lastName} ปฏิเสธสัญญาเนื่องจากค่าเหนื่อยต่ำกว่า €${minWageAccepted.toLocaleString()}/สัปดาห์`
+      ),
     };
   }
 
@@ -902,7 +1331,10 @@ export function submitAndEvaluateTransferOffer(
     clubId: buyingClub.id,
     category: 'Player Purchase',
     amount: -totalDeducted,
-    description: `คว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} (${params.offerType === 'Loan' ? 'ยืมตัว' : 'ซื้อขาด'})`,
+    description: trText(
+      `Signed ${player.firstName} ${player.lastName} from ${sellingClub.name} (${params.offerType === 'Loan' ? 'Loan' : 'Permanent'})`,
+      `คว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} (${params.offerType === 'Loan' ? 'ยืมตัว' : 'ซื้อขาด'})`
+    ),
     balanceAfter: buyingClub.finances.balance,
   };
 
@@ -910,8 +1342,14 @@ export function submitAndEvaluateTransferOffer(
     id: `news_trf_${offerId}`,
     gameDate: state.gameDate,
     category: 'Transfer',
-    title: `OFFICIAL: ${buyingClub.name} คว้าตัว ${player.firstName} ${player.lastName} ร่วมทัพ!`,
-    body: `${buyingClub.name} บรรลุข้อตกลงคว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} ด้วยมูลค่ารวม €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M พร้อมสัญญาถึงปี ${endYear} รับค่าเหนื่อย €${params.proposedWagePerWeek.toLocaleString()}/สัปดาห์`,
+    title: trText(
+      `OFFICIAL: ${buyingClub.name} complete signing of ${player.firstName} ${player.lastName}!`,
+      `OFFICIAL: ${buyingClub.name} คว้าตัว ${player.firstName} ${player.lastName} ร่วมทัพ!`
+    ),
+    body: trText(
+      `${buyingClub.name} have completed the signing of ${player.firstName} ${player.lastName} from ${sellingClub.name} for a total package of €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M on a contract until ${endYear} worth €${params.proposedWagePerWeek.toLocaleString()}/wk.`,
+      `${buyingClub.name} บรรลุข้อตกลงคว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} ด้วยมูลค่ารวม €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M พร้อมสัญญาถึงปี ${endYear} รับค่าเหนื่อย €${params.proposedWagePerWeek.toLocaleString()}/สัปดาห์`
+    ),
     isRead: false,
     isImportant: true,
     relatedClubId: buyingClub.id,
@@ -932,7 +1370,10 @@ export function submitAndEvaluateTransferOffer(
       inbox: [news, ...state.inbox],
     },
     outcome: 'COMPLETED',
-    message: `คว้าตัว ${player.firstName} ${player.lastName} ร่วมทีม ${buyingClub.name} สำเร็จ!`,
+    message: trText(
+      `Successfully signed ${player.firstName} ${player.lastName} for ${buyingClub.name}!`,
+      `คว้าตัว ${player.firstName} ${player.lastName} ร่วมทีม ${buyingClub.name} สำเร็จ!`
+    ),
   };
 }
 
@@ -948,7 +1389,11 @@ export function renewPlayerContract(
 ): { nextState: WorldState; success: boolean; message: string } {
   const player = state.players[playerId];
   if (!player || player.clubId !== state.controlledClubId) {
-    return { nextState: state, success: false, message: 'ไม่พบนักเตะในสโมสรของคุณ' };
+    return {
+      nextState: state,
+      success: false,
+      message: trText('Player not found at your club.', 'ไม่พบนักเตะในสโมสรของคุณ'),
+    };
   }
 
   const club = { ...state.clubs[state.controlledClubId] };
@@ -957,7 +1402,10 @@ export function renewPlayerContract(
     return {
       nextState: state,
       success: false,
-      message: `เอเยนต์ของ ${player.lastName} ต้องการค่าเหนื่อยอย่างน้อย €${minExpected.toLocaleString()}/สัปดาห์`,
+      message: trText(
+        `${player.lastName}'s agent demands at least €${minExpected.toLocaleString()}/wk.`,
+        `เอเยนต์ของ ${player.lastName} ต้องการค่าเหนื่อยอย่างน้อย €${minExpected.toLocaleString()}/สัปดาห์`
+      ),
     };
   }
 
@@ -985,7 +1433,10 @@ export function renewPlayerContract(
     clubId: club.id,
     category: 'Signing & Agent Fee',
     amount: -signingBonus,
-    description: `โบนัสต่อสัญญาฉบับใหม่ของ ${player.firstName} ${player.lastName} ถึงปี ${endYear}`,
+    description: trText(
+      `Contract extension signing bonus for ${player.firstName} ${player.lastName} until ${endYear}`,
+      `โบนัสต่อสัญญาฉบับใหม่ของ ${player.firstName} ${player.lastName} ถึงปี ${endYear}`
+    ),
     balanceAfter: club.finances.balance,
   };
 
@@ -1000,8 +1451,14 @@ export function renewPlayerContract(
           id: `news_ren_${Date.now()}_${player.id}`,
           gameDate: state.gameDate,
           category: 'Player',
-          title: `${player.firstName} ${player.lastName} ขยายสัญญากับ ${club.name} ถึงปี ${endYear}`,
-          body: `${player.firstName} ${player.lastName} จรดปากกาต่อสัญญาฉบับใหม่กับสโมสร รับค่าเหนื่อย €${newWagePerWeek.toLocaleString()}/สัปดาห์`,
+          title: trText(
+            `${player.firstName} ${player.lastName} extends contract with ${club.name} until ${endYear}`,
+            `${player.firstName} ${player.lastName} ขยายสัญญากับ ${club.name} ถึงปี ${endYear}`
+          ),
+          body: trText(
+            `${player.firstName} ${player.lastName} has signed a new contract extension with the club worth €${newWagePerWeek.toLocaleString()}/wk.`,
+            `${player.firstName} ${player.lastName} จรดปากกาต่อสัญญาฉบับใหม่กับสโมสร รับค่าเหนื่อย €${newWagePerWeek.toLocaleString()}/สัปดาห์`
+          ),
           isRead: false,
           relatedPlayerId: player.id,
           relatedClubId: club.id,
@@ -1010,7 +1467,10 @@ export function renewPlayerContract(
       ],
     },
     success: true,
-    message: `ต่อสัญญา ${player.firstName} ${player.lastName} ถึงปี ${endYear} สำเร็จ!`,
+    message: trText(
+      `Extended ${player.firstName} ${player.lastName}'s contract until ${endYear}!`,
+      `ต่อสัญญา ${player.firstName} ${player.lastName} ถึงปี ${endYear} สำเร็จ!`
+    ),
   };
 }
 
@@ -1102,8 +1562,14 @@ export function recruitYouthAcademyProspect(state: WorldState): WorldState {
         id: `news_yth_${id}`,
         gameDate: state.gameDate,
         category: 'Staff',
-        title: `อคาเดมีดันดาวรุ่งพรสวรรค์สูง: ${firstName} ${lastName} (${pos})`,
-        body: `หัวหน้าศูนย์ฝึกเยาวชนของ ${club.name} รายงานการค้นพบดาวรุ่งวัย 17 ปี ${firstName} ${lastName} (${pos}) ที่มีศักยภาพสูงถึงระดับ ${Math.round(pa / 10)}/20`,
+        title: trText(
+          `Youth Academy High-Potential Prospect: ${firstName} ${lastName} (${pos})`,
+          `อคาเดมีดันดาวรุ่งพรสวรรค์สูง: ${firstName} ${lastName} (${pos})`
+        ),
+        body: trText(
+          `The Head of Youth Development at ${club.name} reports the emergence of 17-year-old prospect ${firstName} ${lastName} (${pos}) with potential rated up to ${Math.round(pa / 10)}/20.`,
+          `หัวหน้าศูนย์ฝึกเยาวชนของ ${club.name} รายงานการค้นพบดาวรุ่งวัย 17 ปี ${firstName} ${lastName} (${pos}) ที่มีศักยภาพสูงถึงระดับ ${Math.round(pa / 10)}/20`
+        ),
         isRead: false,
         relatedPlayerId: id,
         relatedClubId: club.id,
@@ -1122,13 +1588,21 @@ export function hireStaffMember(
 ): { nextState: WorldState; success: boolean; message: string } {
   const member = state.staff[staffId];
   if (!member || member.clubId !== null) {
-    return { nextState: state, success: false, message: 'ทีมงานรายนี้มีสังกัดอยู่แล้ว' };
+    return {
+      nextState: state,
+      success: false,
+      message: trText('This staff member is already employed.', 'ทีมงานรายนี้มีสังกัดอยู่แล้ว'),
+    };
   }
 
   const club = { ...state.clubs[state.controlledClubId] };
   const signingFee = member.wagePerWeek * 4;
   if (club.finances.balance < signingFee) {
-    return { nextState: state, success: false, message: 'งบประมาณสโมสรไม่เพียงพอ' };
+    return {
+      nextState: state,
+      success: false,
+      message: trText('Insufficient club balance.', 'งบประมาณสโมสรไม่เพียงพอ'),
+    };
   }
 
   club.finances = {
@@ -1148,7 +1622,10 @@ export function hireStaffMember(
     clubId: club.id,
     category: 'Staff Wages',
     amount: -signingFee,
-    description: `แต่งตั้ง ${member.name} เข้ารับตำแหน่ง ${member.role}`,
+    description: trText(
+      `Appointed ${member.name} as ${member.role}`,
+      `แต่งตั้ง ${member.name} เข้ารับตำแหน่ง ${member.role}`
+    ),
     balanceAfter: club.finances.balance,
   };
 
@@ -1160,7 +1637,10 @@ export function hireStaffMember(
       transactions: [tx, ...state.transactions],
     },
     success: true,
-    message: `แต่งตั้ง ${member.name} (${member.role}) เข้าสู่ทีมงานสโมสรสำเร็จ!`,
+    message: trText(
+      `Successfully appointed ${member.name} (${member.role}) to the coaching staff!`,
+      `แต่งตั้ง ${member.name} (${member.role}) เข้าสู่ทีมงานสโมสรสำเร็จ!`
+    ),
   };
 }
 
@@ -1194,13 +1674,18 @@ export interface PlayerDelta {
   stats: Player['stats'];
 }
 
+export interface CompactFixtureScore {
+  h: number;
+  a: number;
+}
+
 export interface CareerStateMap {
   processedDates: string[];
   manager: ManagerProfile;
   standings: Record<LeagueId, LeagueStanding[]>;
   clubs: Record<string, Club>;
   staff: Record<string, StaffMember>;
-  completedFixtures: Record<string, Fixture>;
+  completedFixtures: Record<string, Fixture | CompactFixtureScore>;
   modifiedPlayers: Record<string, Player>;
   playerDiffs: Record<string, PlayerDelta>;
   transferOffers: TransferOffer[];
@@ -1248,17 +1733,14 @@ export function compactWorldStateForStorage(state: WorldState): WorldState {
   const controlledId = state.controlledClubId;
 
   const compactFixtures = state.fixtures.map((f) => {
-    if (
-      f.status === 'Completed' &&
-      f.result &&
-      f.homeClubId !== controlledId &&
-      f.awayClubId !== controlledId
-    ) {
+    if (f.status === 'Completed' && f.result) {
+      const isUserMatch =
+        f.homeClubId === controlledId || f.awayClubId === controlledId;
       return {
         ...f,
         result: {
           ...f.result,
-          events: [],
+          events: isUserMatch ? (f.result.events || []).slice(-12) : [],
           playerRatings: {},
         },
       };
@@ -1270,8 +1752,8 @@ export function compactWorldStateForStorage(state: WorldState): WorldState {
   for (const [id, p] of Object.entries(state.players)) {
     compactPlayers[id] = {
       ...p,
-      developmentHistory: p.developmentHistory.slice(-2),
-      transferHistory: p.transferHistory.slice(-3),
+      developmentHistory: p.developmentHistory.slice(-1),
+      transferHistory: p.transferHistory.slice(-2),
     };
   }
 
@@ -1279,75 +1761,134 @@ export function compactWorldStateForStorage(state: WorldState): WorldState {
     ...state,
     fixtures: compactFixtures,
     players: compactPlayers,
-    inbox: state.inbox.slice(0, 35),
-    transactions: state.transactions.slice(0, 60),
+    inbox: state.inbox.slice(0, 25),
+    transactions: state.transactions.slice(0, 30),
   };
 }
 
 export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMap {
   const compacted = compactWorldStateForStorage(state);
+  const controlledId = compacted.controlledClubId;
+  const userClub = compacted.clubs[controlledId];
+  const userLeagueId = userClub?.leagueId;
+
   const baseline = createInitialWorldState(
     compacted.randomSeed,
     compacted.manager,
-    compacted.controlledClubId
+    controlledId
   );
 
+  // 1. Only store controlledClub + clubs whose leagueId or facilities changed (cap non-controlled at 10)
   const modifiedClubs: Record<string, Club> = {};
+  if (userClub) {
+    modifiedClubs[controlledId] = userClub;
+  }
+  let extraClubsCount = 0;
   for (const [id, club] of Object.entries(compacted.clubs)) {
+    if (id === controlledId) continue;
     const baseClub = baseline.clubs[id];
-    if (
+    const leagueChanged = !baseClub || club.leagueId !== baseClub.leagueId;
+    const facilityChanged =
       !baseClub ||
-      id === compacted.controlledClubId ||
-      club.finances.balance !== baseClub.finances.balance ||
-      club.finances.transferBudget !== baseClub.finances.transferBudget ||
       club.trainingFacilities !== baseClub.trainingFacilities ||
-      club.youthFacilities !== baseClub.youthFacilities
-    ) {
+      club.youthFacilities !== baseClub.youthFacilities ||
+      club.finances.transferBudget !== baseClub.finances.transferBudget;
+    if (leagueChanged || (facilityChanged && extraClubsCount < 10)) {
       modifiedClubs[id] = club;
+      if (!leagueChanged) extraClubsCount++;
     }
   }
 
+  // 2. Modified staff (only controlled club or reassigned staff, cap at 30)
   const modifiedStaff: Record<string, StaffMember> = {};
+  let staffCount = 0;
   for (const [id, member] of Object.entries(compacted.staff)) {
     const baseMember = baseline.staff[id];
-    if (!baseMember || member.clubId !== baseMember.clubId) {
+    if (
+      member.clubId === controlledId ||
+      (!baseMember && staffCount < 30) ||
+      (baseMember && member.clubId !== baseMember.clubId && staffCount < 30)
+    ) {
       modifiedStaff[id] = member;
+      staffCount++;
     }
   }
 
-  const completedFixtures: Record<string, Fixture> = {};
+  // 3. Completed fixtures: full Fixture for user matches, compact {h, a} for completed AI matches
+  const baselineFixtureIds = new Set(baseline.fixtures.map((bf) => bf.id));
+  const completedFixtures: Record<string, Fixture | CompactFixtureScore> = {};
   for (const f of compacted.fixtures) {
-    if (f.status !== 'Scheduled') {
+    if (f.status !== 'Completed' || !f.result) continue;
+    const isUserMatch =
+      f.homeClubId === controlledId || f.awayClubId === controlledId;
+    if (isUserMatch) {
+      completedFixtures[f.id] = f;
+    } else if (baselineFixtureIds.has(f.id)) {
+      // Store compact 2-field score for user's league or cup matches (or up to 600 fixtures total)
+      if (
+        f.competitionId === userLeagueId ||
+        String(f.competitionId).endsWith('_CUP') ||
+        String(f.competitionId) === 'EUR_CL' ||
+        Object.keys(completedFixtures).length < 600
+      ) {
+        completedFixtures[f.id] = {
+          h: f.result.homeGoals,
+          a: f.result.awayGoals,
+        };
+      }
+    } else if (Object.keys(completedFixtures).length < 480) {
       completedFixtures[f.id] = f;
     }
   }
 
+  // 4. Modified players & bounded playerDiffs (stay well below Firestore 1MB limit across 15 leagues)
   const modifiedPlayers: Record<string, Player> = {};
-  const playerDiffs: Record<string, PlayerDelta> = {};
-
-  const userLeagueId = compacted.clubs[compacted.controlledClubId]?.leagueId;
+  const diffCandidates: Array<{ id: string; priority: number; delta: PlayerDelta }> = [];
+  const shortlistSet = new Set(compacted.shortlistPlayerIds);
 
   for (const [id, p] of Object.entries(compacted.players)) {
     const basePlayer = baseline.players[id];
     const pLeagueId = compacted.clubs[p.clubId]?.leagueId;
-    if (
-      !basePlayer ||
-      p.clubId === compacted.controlledClubId ||
-      p.clubId !== basePlayer.clubId
-    ) {
+
+    if (p.clubId === controlledId) {
       modifiedPlayers[id] = p;
-    } else if (
+      continue;
+    }
+
+    if (!basePlayer || p.clubId !== basePlayer.clubId) {
+      if (Object.keys(modifiedPlayers).length < 75) {
+        modifiedPlayers[id] = p;
+      }
+      continue;
+    }
+
+    const isTracked = shortlistSet.has(id) || Boolean(compacted.scoutReports[id]);
+    const inUserLeague = pLeagueId === userLeagueId;
+    const hasNotableChange =
       p.stats.goals > 0 ||
       p.stats.assists > 0 ||
       p.currentAbility !== basePlayer.currentAbility ||
       p.injuryStatus.isInjured !== basePlayer.injuryStatus.isInjured ||
-      p.wagePerWeek !== basePlayer.wagePerWeek ||
-      p.contractEndDate !== basePlayer.contractEndDate ||
       p.transferListed !== basePlayer.transferListed ||
       p.loanListed !== basePlayer.loanListed ||
-      (pLeagueId === userLeagueId && p.stats.appearances > 0)
-    ) {
-      playerDiffs[id] = {
+      (inUserLeague && p.stats.appearances > 0);
+
+    if (!hasNotableChange && !isTracked) continue;
+    if (!inUserLeague && !isTracked && p.stats.goals < 2 && p.stats.assists < 2 && !p.transferListed) {
+      continue;
+    }
+
+    const priority =
+      (isTracked ? 1000 : 0) +
+      (inUserLeague ? 500 : 0) +
+      p.stats.goals * 15 +
+      p.stats.assists * 10 +
+      (p.transferListed ? 25 : 0);
+
+    diffCandidates.push({
+      id,
+      priority,
+      delta: {
         clubId: p.clubId,
         wagePerWeek: p.wagePerWeek,
         contractEndDate: p.contractEndDate,
@@ -1359,12 +1900,24 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
         loanListed: p.loanListed,
         injuryStatus: p.injuryStatus,
         stats: p.stats,
-      };
-    }
+      },
+    });
   }
 
-  return sanitizeForFirestore({
-    processedDates: compacted.processedDates.slice(-400),
+  diffCandidates.sort((a, b) => b.priority - a.priority);
+  const playerDiffs: Record<string, PlayerDelta> = {};
+  for (const item of diffCandidates.slice(0, 150)) {
+    playerDiffs[item.id] = item.delta;
+  }
+
+  // Cap scoutReports to 35 entries
+  const limitedScoutReports: Record<string, ScoutReport> = {};
+  for (const [k, v] of Object.entries(compacted.scoutReports).slice(0, 35)) {
+    limitedScoutReports[k] = v;
+  }
+
+  const dehydrated = sanitizeForFirestore({
+    processedDates: compacted.processedDates.slice(-60),
     manager: compacted.manager,
     standings: compacted.standings,
     clubs: modifiedClubs,
@@ -1372,13 +1925,49 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     completedFixtures,
     modifiedPlayers,
     playerDiffs,
-    transferOffers: compacted.transferOffers.slice(0, 60),
-    shortlistPlayerIds: compacted.shortlistPlayerIds.slice(0, 60),
-    scoutAssignments: compacted.scoutAssignments.slice(0, 30),
-    scoutReports: compacted.scoutReports,
-    transactions: compacted.transactions.slice(0, 80),
-    inbox: compacted.inbox.slice(0, 50),
+    transferOffers: compacted.transferOffers.slice(0, 25),
+    shortlistPlayerIds: compacted.shortlistPlayerIds.slice(0, 40),
+    scoutAssignments: compacted.scoutAssignments.slice(0, 20),
+    scoutReports: limitedScoutReports,
+    transactions: compacted.transactions.slice(0, 30),
+    inbox: compacted.inbox.slice(0, 25),
   });
+
+  // Safety guard: guarantee JSON payload is under 300KB so Firestore BSON/proto never approaches 1,048,576 bytes
+  if (JSON.stringify(dehydrated).length > 300_000) {
+    const trimmedDiffs: Record<string, PlayerDelta> = {};
+    for (const [k, v] of Object.entries(dehydrated.playerDiffs).slice(0, 60)) {
+      trimmedDiffs[k] = v;
+    }
+    dehydrated.playerDiffs = trimmedDiffs;
+  }
+
+  return dehydrated;
+}
+
+function buildCompactTeamStats(goals: number, possession: number): MatchTeamStats {
+  const totalShots = goals * 3 + 6;
+  const shotsOnTarget = goals + 2;
+  return {
+    goals,
+    possession,
+    totalShots,
+    shotsOnTarget,
+    blockedShots: 2,
+    xG: Number((goals * 0.92 + 0.35).toFixed(2)),
+    passes: 420,
+    passAccuracy: 82,
+    tackles: 14,
+    interceptions: 9,
+    clearances: 16,
+    fouls: 10,
+    yellowCards: 1,
+    redCards: 0,
+    corners: 4,
+    offsides: 1,
+    saves: 2,
+    bigChances: Math.max(1, goals),
+  };
 }
 
 export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): WorldState {
@@ -1414,9 +2003,51 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
   }
 
   const completedFixturesMap = cs.completedFixtures || {};
-  const rehydratedFixtures = baseline.fixtures.map(
-    (f) => completedFixturesMap[f.id] || f
-  );
+  const baselineFixtureIds = new Set<string>();
+  const rehydratedFixtures: Fixture[] = baseline.fixtures.map((f): Fixture => {
+    baselineFixtureIds.add(f.id);
+    const saved = completedFixturesMap[f.id];
+    if (!saved) return f;
+    if ('h' in saved && typeof saved.h === 'number') {
+      return {
+        ...f,
+        status: 'Completed',
+        result: {
+          homeGoals: saved.h,
+          awayGoals: saved.a,
+          homeStats: buildCompactTeamStats(saved.h, 52),
+          awayStats: buildCompactTeamStats(saved.a, 48),
+          events: [],
+          playerRatings: {},
+          attendance: 32000,
+          manOfTheMatchPlayerId: '',
+        },
+      };
+    }
+    return saved as Fixture;
+  });
+
+  for (const [fid, saved] of Object.entries(completedFixturesMap)) {
+    if (!baselineFixtureIds.has(fid) && 'status' in saved) {
+      rehydratedFixtures.push(saved as Fixture);
+    }
+  }
+
+  const rehydratedUefaStandings: Record<UefaCompetitionId, LeagueStanding[]> = {
+    UEFA_UCL: [],
+    UEFA_UEL: [],
+    UEFA_UECL: [],
+  };
+  for (const uefaId of Object.keys(UEFA_COMPETITIONS_CONFIG) as UefaCompetitionId[]) {
+    const participantIds = baseline.uefaPots?.[uefaId]?.flat() || [];
+    rehydratedUefaStandings[uefaId] = recomputeUefaStandings(
+      uefaId,
+      docData.season,
+      participantIds,
+      rehydratedFixtures,
+      rehydratedClubs
+    );
+  }
 
   return {
     ...baseline,
@@ -1437,6 +2068,8 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
       ...baseline.standings,
       ...(cs.standings || {}),
     },
+    uefaStandings: rehydratedUefaStandings,
+    uefaPots: baseline.uefaPots,
     transferOffers: cs.transferOffers || [],
     shortlistPlayerIds: cs.shortlistPlayerIds || [],
     scoutAssignments: cs.scoutAssignments || [],

@@ -25,7 +25,9 @@ export type CupId =
   | 'BEL_CUP'
   | 'TUR_CUP'
   | 'SCO_CUP';
-export type CompetitionId = LeagueId | CupId;
+export type UefaCompetitionId = 'UEFA_UCL' | 'UEFA_UEL' | 'UEFA_UECL';
+export type CompetitionId = LeagueId | CupId | UefaCompetitionId;
+export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R16' | 'QF' | 'SF' | 'FINAL';
 
 export type PositionCode =
   | 'GK'
@@ -79,6 +81,8 @@ export type PressingIntensity = 'Low' | 'Standard' | 'High' | 'Very High';
 export type DefensiveLine = 'Deep' | 'Standard' | 'High' | 'Very High';
 export type LineOfEngagement = 'Low' | 'Mid' | 'High';
 export type TransitionInstruction = 'Counter-Press' | 'Regroup' | 'Counter' | 'Hold Shape';
+export type PossessionLostInstruction = 'Counter-Press' | 'Regroup';
+export type PossessionWonInstruction = 'Counter' | 'Hold Shape';
 export type DefensiveApproach = 'Zonal Marking' | 'Man Marking';
 export type TimeWasting = 'Never' | 'Sometimes' | 'Often';
 export type TacklingStyle = 'Stay On Feet' | 'Standard' | 'Get Stuck In';
@@ -110,6 +114,7 @@ export type PlayerRole =
   | 'Inverted Winger'
   | 'Inside Forward'
   | 'Wide Playmaker'
+  | 'False 9'
   | 'Deep-Lying Forward'
   | 'Advanced Forward'
   | 'Pressing Forward'
@@ -128,6 +133,8 @@ export type PlayerInstruction =
   | 'Cut Inside'
   | 'Cross More Often'
   | 'Mark Tighter'
+  | 'Tackle Harder'
+  | 'Ease Off Tackles'
   | 'Trigger Press More'
   | 'Trigger Press Less';
 
@@ -250,6 +257,10 @@ export interface Player {
   developmentHistory: DevelopmentPoint[];
   transferHistory: { date: string; fromClubId: string; toClubId: string; fee: number; type: 'Transfer' | 'Loan' | 'Free' }[];
   isYouthAcademy?: boolean;
+  isHomegrown?: boolean;
+  isRegistered?: boolean;
+  consecutiveBenched?: number;
+  playInReserves?: boolean;
 }
 
 export interface TacticalSlot {
@@ -272,6 +283,8 @@ export interface TeamInstructions {
   defensiveLine: DefensiveLine;
   lineOfEngagement: LineOfEngagement;
   transition: TransitionInstruction;
+  whenPossessionLost?: PossessionLostInstruction;
+  whenPossessionWon?: PossessionWonInstruction;
   defensiveApproach: DefensiveApproach;
   timeWasting: TimeWasting;
   offsideTrap: boolean;
@@ -395,6 +408,7 @@ export interface Club {
   };
   primaryTactic: TacticalSystem;
   secondaryTactic: TacticalSystem;
+  formationFamiliarity?: Partial<Record<FormationId, number>>;
   trainingFocus:
     | 'Attacking'
     | 'Defending'
@@ -517,10 +531,13 @@ export interface Fixture {
   awayClubId: string;
   status: 'Scheduled' | 'InProgress' | 'Completed';
   result?: MatchResult;
+  uefaStage?: UefaStage;
+  leg?: 1 | 2;
+  tieIndex?: number;
 }
 
 export interface LeagueStanding {
-  competitionId: LeagueId;
+  competitionId: LeagueId | UefaCompetitionId;
   seasonId: string;
   clubId: string;
   played: number;
@@ -657,6 +674,8 @@ export interface WorldState {
   staff: Record<string, StaffMember>;
   fixtures: Fixture[];
   standings: Record<LeagueId, LeagueStanding[]>;
+  uefaStandings?: Record<UefaCompetitionId, LeagueStanding[]>;
+  uefaPots?: Record<UefaCompetitionId, string[][]>;
   transferOffers: TransferOffer[];
   shortlistPlayerIds: string[];
   scoutAssignments: ScoutAssignment[];

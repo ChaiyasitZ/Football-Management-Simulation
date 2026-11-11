@@ -14,13 +14,27 @@ import {
   PositionCode,
   StaffMember,
   StaffRole,
+  UefaCompetitionId,
   WorldState,
 } from '../types/game';
 import { CLUB_TEMPLATES, LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConfig';
 import { REAL_CLUB_CORE_PLAYERS, REAL_CLUB_ROSTERS, RealPlayerSeed } from './realRostersData';
 import { createInitialStandings, generateLeagueSchedule } from './leagueEngine';
 import { SeededRNG } from './random';
-import { autoPickLineup, ROLES_BY_POSITION } from './tacticsEngine';
+import {
+  autoPickLineup,
+  autoRegisterSquadIds,
+  isPlayerHomegrownForClub,
+  ROLES_BY_POSITION,
+} from './tacticsEngine';
+import { trText } from '../i18n/LanguageContext';
+import {
+  buildUefaFourPots,
+  generateUefaSwissSchedule,
+  recomputeUefaStandings,
+  selectUefaQualifiedClubs,
+  UEFA_COMPETITIONS_CONFIG,
+} from './uefaEngine';
 
 const SQUAD_BLUEPRINT: { pos: PositionCode; secondary: PositionCode[]; isYouth?: boolean }[] = [
   { pos: 'GK', secondary: [] },
@@ -453,11 +467,32 @@ export function createInitialWorldState(
           developmentHistory: [{ date: gameDate, ca: coherentCa, keyAttributeChanges: [] }],
           transferHistory: [],
           isYouthAcademy: Boolean(pSeed.isYouth),
+          isHomegrown:
+            Boolean(pSeed.isYouth) ||
+            pSeed.natCode === config.countryId ||
+            pIdx >= 14,
+          isRegistered: true,
+          consecutiveBenched: 0,
+          playInReserves: Boolean(pSeed.isYouth),
         };
 
         players[playerId] = player;
         clubPlayers.push(player);
       });
+
+      // Ensure at least 8 Homegrown players exist on every club roster
+      let hgCount = clubPlayers.filter((cp) =>
+        isPlayerHomegrownForClub(cp, config.countryId)
+      ).length;
+      if (hgCount < 8) {
+        for (let i = clubPlayers.length - 1; i >= 0 && hgCount < 8; i--) {
+          if (!isPlayerHomegrownForClub(clubPlayers[i], config.countryId)) {
+            clubPlayers[i].isHomegrown = true;
+            players[clubPlayers[i].id].isHomegrown = true;
+            hgCount++;
+          }
+        }
+      }
 
       const primaryFormation = rng.pick(FORMATIONS_POOL);
       const secondaryFormation = rng.pick(FORMATIONS_POOL.filter((f) => f !== primaryFormation));
@@ -480,6 +515,25 @@ export function createInitialWorldState(
       const balance = Math.round(repFactor * 42_000_000);
       const transferBudget = Math.round(repFactor * 28_000_000);
       const wageBudgetPerWeek = Math.round(totalWageUsed * 1.18);
+
+      const starterIdSet = new Set(
+        primaryTactic.lineup.map((s) => s.playerId).filter((id): id is string => Boolean(id))
+      );
+      const registeredIdSet = autoRegisterSquadIds(
+        clubPlayers,
+        config.countryId,
+        starterIdSet
+      );
+      for (const cp of clubPlayers) {
+        const reg = registeredIdSet.has(cp.id);
+        cp.isRegistered = reg;
+        players[cp.id].isRegistered = reg;
+        // Non-starters with < 85% sharpness or youth can default to playing in reserves
+        if (!starterIdSet.has(cp.id) && (cp.matchSharpness < 85 || cp.isYouthAcademy)) {
+          cp.playInReserves = true;
+          players[cp.id].playInReserves = true;
+        }
+      }
 
       const club: Club = {
         id: clubId,
@@ -510,10 +564,19 @@ export function createInitialWorldState(
           cupTarget: idx < 4 ? 'Semi-Final' : idx < 10 ? 'Quarter-Final' : 'Compete',
           clubVision:
             idx < 4
-              ? 'ลุ้นแชมป์ลีกสูงสุดและรักษาสถานะสโมสรชั้นนำของยุโรป'
+              ? trText(
+                  'Compete for the league title and maintain elite European status',
+                  'ลุ้นแชมป์ลีกสูงสุดและรักษาสถานะสโมสรชั้นนำของยุโรป'
+                )
               : idx < 10
-                ? 'ลุ้นพื้นที่ฟุตบอลยุโรปและพัฒนาดาวรุ่งสู่ทีมชุดใหญ่'
-                : 'รักษาสถานะในลีกสูงสุดและบริหารการเงินอย่างยั่งยืน',
+                ? trText(
+                    'Challenge for European qualification and promote youth prospects',
+                    'ลุ้นพื้นที่ฟุตบอลยุโรปและพัฒนาดาวรุ่งสู่ทีมชุดใหญ่'
+                  )
+                : trText(
+                    'Secure top-flight status and maintain long-term financial sustainability',
+                    'รักษาสถานะในลีกสูงสุดและบริหารการเงินอย่างยั่งยืน'
+                  ),
           confidence: {
             overall: 78,
             leaguePerformance: 76,
@@ -529,7 +592,14 @@ export function createInitialWorldState(
           jobSecurity: 80,
         },
         primaryTactic,
-        secondaryTactic,
+        secondaryTactic: {
+          ...secondaryTactic,
+          familiarity: 66,
+        },
+        formationFamiliarity: {
+          [primaryFormation]: 78,
+          [secondaryFormation]: 66,
+        },
         trainingFocus: 'Possession',
         trainingIntensity: 'Standard',
       };
@@ -582,6 +652,34 @@ export function createInitialWorldState(
     );
     fixtures.push(...leagueFixtures);
     standings[leagueId] = createInitialStandings(leagueId, currentSeason, leagueClubIds);
+  }
+
+  // Generate UEFA Club Competitions (New Format: 36 teams per competition, 4 Pots of 9, Swiss League Phase)
+  const uefaQualified = selectUefaQualifiedClubs(clubs);
+  const uefaPots: Record<UefaCompetitionId, string[][]> = {
+    UEFA_UCL: [],
+    UEFA_UEL: [],
+    UEFA_UECL: [],
+  };
+  const uefaStandings: Record<UefaCompetitionId, LeagueStanding[]> = {
+    UEFA_UCL: [],
+    UEFA_UEL: [],
+    UEFA_UECL: [],
+  };
+
+  for (const uefaId of Object.keys(UEFA_COMPETITIONS_CONFIG) as UefaCompetitionId[]) {
+    const qualifiedIds = uefaQualified[uefaId];
+    const pots = buildUefaFourPots(qualifiedIds, clubs);
+    uefaPots[uefaId] = pots;
+    const uefaFixtures = generateUefaSwissSchedule(uefaId, pots, currentSeason, rng);
+    fixtures.push(...uefaFixtures);
+    uefaStandings[uefaId] = recomputeUefaStandings(
+      uefaId,
+      currentSeason,
+      qualifiedIds,
+      uefaFixtures,
+      clubs
+    );
   }
 
   // Real-world Free Agent Staff members for hiring
@@ -660,7 +758,10 @@ export function createInitialWorldState(
     clubId: controlledClub.id,
     category: 'Sponsorship',
     amount: Math.round(controlledClub.finances.sponsorRevenueAnnual / 4),
-    description: 'งบสนับสนุนสโมสรประจำต้นฤดูกาล 2025/26',
+    description: trText(
+      'Initial 2025/26 Season Club Sponsorship Installment',
+      'งบสนับสนุนสโมสรประจำต้นฤดูกาล 2025/26'
+    ),
     balanceAfter: controlledClub.finances.balance,
   });
 
@@ -678,8 +779,14 @@ export function createInitialWorldState(
       id: 'news_welcome_board',
       gameDate,
       category: 'Board',
-      title: `บอร์ดบริหารต้อนรับ ${manager.name} สู่สโมสร ${controlledClub.name}`,
-      body: `ประธานสโมสร ${controlledClub.name} แถลงแต่งตั้ง ${manager.name} เข้ากุมบังเหียนอย่างเป็นทางการ ณ สนาม ${controlledClub.stadiumName} (ความจุ ${controlledClub.stadiumCapacity.toLocaleString()} ที่นั่ง) โดยมีเป้าหมายจบอันดับท็อป ${controlledClub.boardExpectations.targetLeaguePosition} ของลีก และงบประมาณเสริมทัพเริ่มต้น €${(controlledClub.finances.transferBudget / 1_000_000).toFixed(1)}M`,
+      title: trText(
+        `Board of Directors Welcomes ${manager.name} to ${controlledClub.name}`,
+        `บอร์ดบริหารต้อนรับ ${manager.name} สู่สโมสร ${controlledClub.name}`
+      ),
+      body: trText(
+        `The Chairman of ${controlledClub.name} has officially appointed ${manager.name} as first-team manager at ${controlledClub.stadiumName} (Capacity: ${controlledClub.stadiumCapacity.toLocaleString()}). Your primary objective this season is a Top ${controlledClub.boardExpectations.targetLeaguePosition} finish, supported by an initial transfer budget of €${(controlledClub.finances.transferBudget / 1_000_000).toFixed(1)}M.`,
+        `ประธานสโมสร ${controlledClub.name} แถลงแต่งตั้ง ${manager.name} เข้ากุมบังเหียนอย่างเป็นทางการ ณ สนาม ${controlledClub.stadiumName} (ความจุ ${controlledClub.stadiumCapacity.toLocaleString()} ที่นั่ง) โดยมีเป้าหมายจบอันดับท็อป ${controlledClub.boardExpectations.targetLeaguePosition} ของลีก และงบประมาณเสริมทัพเริ่มต้น €${(controlledClub.finances.transferBudget / 1_000_000).toFixed(1)}M`
+      ),
       isRead: false,
       isImportant: true,
       relatedClubId: controlledClub.id,
@@ -689,8 +796,14 @@ export function createInitialWorldState(
       id: 'news_press_intro',
       gameDate,
       category: 'Media',
-      title: `งานแถลงข่าวเปิดตัวผู้จัดการทีมของ ${controlledClub.name}`,
-      body: `กองทัพสื่อมวลชนร่วมตั้งคำถามถึงปรัชญาการทำทีมและเป้าหมายของคุณในฤดูกาล 2025/26 กรุณาเลือกคำตอบเพื่อกำหนดทิศทางความเชื่อมั่นของนักเตะและบอร์ดบริหาร`,
+      title: trText(
+        `Official Unveiling Press Conference — ${controlledClub.name}`,
+        `งานแถลงข่าวเปิดตัวผู้จัดการทีมของ ${controlledClub.name}`
+      ),
+      body: trText(
+        `Members of the media have gathered to ask about your tactical philosophy and ambitions for the 2025/26 campaign. Please select your response below to set the tone with the squad and the board.`,
+        `กองทัพสื่อมวลชนร่วมตั้งคำถามถึงปรัชญาการทำทีมและเป้าหมายของคุณในฤดูกาล 2025/26 กรุณาเลือกคำตอบเพื่อกำหนดทิศทางความเชื่อมั่นของนักเตะและบอร์ดบริหาร`
+      ),
       isRead: false,
       isImportant: true,
       relatedClubId: controlledClub.id,
@@ -698,24 +811,42 @@ export function createInitialWorldState(
       pressConferenceOptions: [
         {
           id: 'opt_attack',
-          label: 'เราจะเล่นฟุตบอลเกมรุกที่ดุดันและสร้างความตื่นตาตื่นใจให้แฟนบอลทุกคน',
+          label: trText(
+            'We will play bold, high-tempo attacking football that excites our supporters.',
+            'เราจะเล่นฟุตบอลเกมรุกที่ดุดันและสร้างความตื่นตาตื่นใจให้แฟนบอลทุกคน'
+          ),
           moraleDelta: 4,
           boardDelta: 3,
-          mediaResponse: 'สื่อชื่นชมความทะเยอทะยานและแนวทางฟุตบอลเกมรุกที่ชัดเจนของคุณ',
+          mediaResponse: trText(
+            'The media praised your ambition and clear commitment to attacking football.',
+            'สื่อชื่นชมความทะเยอทะยานและแนวทางฟุตบอลเกมรุกที่ชัดเจนของคุณ'
+          ),
         },
         {
           id: 'opt_discipline',
-          label: 'รากฐานของความสำเร็จคือวินัยเกมรับและโครงสร้างแท็กติกที่รัดกุม',
+          label: trText(
+            'The foundation of success is defensive discipline and a well-drilled tactical structure.',
+            'รากฐานของความสำเร็จคือวินัยเกมรับและโครงสร้างแท็กติกที่รัดกุม'
+          ),
           moraleDelta: 2,
           boardDelta: 4,
-          mediaResponse: 'บอร์ดบริหารประทับใจในความเป็นมืออาชีพและการวางแผนระยะยาวของคุณ',
+          mediaResponse: trText(
+            'The Board of Directors is impressed by your professionalism and long-term planning.',
+            'บอร์ดบริหารประทับใจในความเป็นมืออาชีพและการวางแผนระยะยาวของคุณ'
+          ),
         },
         {
           id: 'opt_youth',
-          label: 'ผมพร้อมให้โอกาสดาวรุ่งจากอคาเดมีก้าวขึ้นมาเป็นกำลังหลักของสโมสร',
+          label: trText(
+            'I am committed to giving our Youth Academy prospects a pathway into the first team.',
+            'ผมพร้อมให้โอกาสดาวรุ่งจากอคาเดมีก้าวขึ้นมาเป็นกำลังหลักของสโมสร'
+          ),
           moraleDelta: 5,
           boardDelta: 3,
-          mediaResponse: 'ผู้เล่นดาวรุ่งในทีมมีขวัญกำลังใจพุ่งสูงขึ้นหลังได้ฟังคำสัมภาษณ์ของคุณ',
+          mediaResponse: trText(
+            'Young players across the squad received a major morale boost after hearing your comments.',
+            'ผู้เล่นดาวรุ่งในทีมมีขวัญกำลังใจพุ่งสูงขึ้นหลังได้ฟังคำสัมภาษณ์ของคุณ'
+          ),
         },
       ],
     },
@@ -723,8 +854,14 @@ export function createInitialWorldState(
       id: 'news_tactical_briefing',
       gameDate,
       category: 'Staff',
-      title: `รายงานความพร้อมขุมกำลังและวิเคราะห์นัดเปิดสนามพบ ${opponentClub?.name || 'คู่แข่ง'}`,
-      body: `ผู้ช่วยผู้จัดการทีมสรุปความพร้อมของขุมกำลังชุดใหญ่ แผนการเล่นหลักตอนนี้คือ ${controlledClub.primaryTactic.formation} โดยเรามีนัดเปิดสนามวันที่ ${firstFixture?.kickoffDate || '2026-08-15'} แนะนำให้ตรวจสอบตำแหน่งตัวจริงและตั้งค่าการฝึกซ้อมประจำสัปดาห์`,
+      title: trText(
+        `Pre-Season Squad Readiness & Matchday 1 Analysis vs ${opponentClub?.name || 'Opponent'}`,
+        `รายงานความพร้อมขุมกำลังและวิเคราะห์นัดเปิดสนามพบ ${opponentClub?.name || 'คู่แข่ง'}`
+      ),
+      body: trText(
+        `Your Assistant Manager has compiled the first-team readiness report. Our primary formation is currently set to ${controlledClub.primaryTactic.formation}, with our opening match scheduled on ${firstFixture?.kickoffDate || '2025-08-15'}. Review your Starting XI and weekly training focus before kick-off.`,
+        `ผู้ช่วยผู้จัดการทีมสรุปความพร้อมของขุมกำลังชุดใหญ่ แผนการเล่นหลักตอนนี้คือ ${controlledClub.primaryTactic.formation} โดยเรามีนัดเปิดสนามวันที่ ${firstFixture?.kickoffDate || '2026-08-15'} แนะนำให้ตรวจสอบตำแหน่งตัวจริงและตั้งค่าการฝึกซ้อมประจำสัปดาห์`
+      ),
       isRead: false,
       relatedClubId: controlledClub.id,
       actionType: 'GoToTactics',
@@ -748,6 +885,8 @@ export function createInitialWorldState(
     staff,
     fixtures,
     standings,
+    uefaStandings,
+    uefaPots,
     transferOffers: [],
     shortlistPlayerIds: [],
     scoutAssignments: [],

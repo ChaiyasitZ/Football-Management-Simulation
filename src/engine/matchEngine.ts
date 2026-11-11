@@ -9,7 +9,12 @@ import {
   TacticalSystem,
 } from '../types/game';
 import { SeededRNG } from './random';
-import { calculatePositionFit, evaluateRoleSuitability } from './tacticsEngine';
+import {
+  calculatePositionFit,
+  evaluateAttributeSynergy,
+  evaluateRoleSuitability,
+} from './tacticsEngine';
+import { trText } from '../i18n/LanguageContext';
 
 interface TeamMatchStrength {
   attack: number;
@@ -71,14 +76,22 @@ export function evaluateTeamMatchStrength(
 
     const posFit = calculatePositionFit(p, slot.position);
     const roleScore = evaluateRoleSuitability(p, slot.role); // 1-20
-    const fitnessMult = 0.7 + (p.fitness / 100) * 0.3;
-    const moraleMult = 0.88 + (p.morale / 100) * 0.24;
-    const familiarityMult = 0.9 + (tactic.familiarity / 100) * 0.15;
+    const fitnessMult = 0.68 + (p.fitness / 100) * 0.32;
+    const sharpnessMult =
+      p.matchSharpness < 75
+        ? 0.78 + (p.matchSharpness / 75) * 0.14
+        : 0.92 + ((p.matchSharpness - 75) / 25) * 0.1;
+    const moraleMult = 0.86 + (p.morale / 100) * 0.26;
+    const familiarityMult =
+      tactic.familiarity < 65
+        ? 0.82 + (tactic.familiarity / 65) * 0.1
+        : 0.92 + ((tactic.familiarity - 65) / 35) * 0.12;
 
     const effectiveScore =
-      ((p.currentAbility / 10) * 0.6 + roleScore * 0.4) *
+      ((p.currentAbility / 10) * 0.58 + roleScore * 0.42) *
       posFit *
       fitnessMult *
+      sharpnessMult *
       moraleMult *
       familiarityMult;
 
@@ -88,14 +101,33 @@ export function evaluateTeamMatchStrength(
     } else if (['DL', 'DR', 'DC', 'WBL', 'WBR'].includes(slot.position)) {
       defSum += effectiveScore;
       defenders.push(p);
+      // Inverted Wing Back drifts into central midfield to overload the pivot
+      if (slot.role === 'Inverted Wing Back') {
+        midSum += effectiveScore * 0.35;
+      } else if (slot.role === 'Complete Wing Back' || slot.role === 'Wing Back') {
+        atkSum += effectiveScore * 0.22;
+      }
+      if (slot.instructions.includes('Tackle Harder')) {
+        defSum += effectiveScore * 0.06;
+      }
     } else if (['DM', 'MC', 'ML', 'MR', 'AMC'].includes(slot.position)) {
       midSum += effectiveScore;
       midfielders.push(p);
-      if (slot.position === 'AMC') atkSum += effectiveScore * 0.45;
-      if (slot.position === 'DM') defSum += effectiveScore * 0.45;
+      if (slot.position === 'AMC' || slot.role === 'Box-to-Box Midfielder' || slot.role === 'Shadow Striker') {
+        atkSum += effectiveScore * 0.45;
+      }
+      if (slot.position === 'DM' || slot.role === 'Box-to-Box Midfielder' || slot.role === 'Ball Winning Midfielder') {
+        defSum += effectiveScore * 0.42;
+      }
     } else {
-      atkSum += effectiveScore;
       attackers.push(p);
+      // False 9 drops deep into midfield to link play and drag CBs out of position
+      if (slot.role === 'False 9') {
+        midSum += effectiveScore * 0.42;
+        atkSum += effectiveScore * 0.72;
+      } else {
+        atkSum += effectiveScore;
+      }
     }
   }
 
@@ -164,6 +196,7 @@ export function evaluateTeamMatchStrength(
 
   const homeBoost = isHome ? 1.06 : 0.97;
   const { atk: mentAtk, def: mentDef } = getMentalityMultipliers(tactic.instructions.mentality);
+  const synergy = evaluateAttributeSynergy(tactic, playersById);
 
   const tempoModifier =
     tactic.instructions.tempo === 'Much Higher'
@@ -176,7 +209,7 @@ export function evaluateTeamMatchStrength(
             ? 0.85
             : 1.0;
 
-  const pressModifier =
+  const rawPressModifier =
     tactic.instructions.pressingIntensity === 'Very High'
       ? 1.16
       : tactic.instructions.pressingIntensity === 'High'
@@ -185,7 +218,11 @@ export function evaluateTeamMatchStrength(
           ? 0.9
           : 1.0;
 
-  const highLineVulnerability =
+  // If High Press has weak links (low Work Rate / Stamina), pressing breaks down
+  const pressWeakPenalty = Math.max(0.84, 1 - synergy.pressingSynergy.weakLinks.length * 0.05);
+  const pressModifier = rawPressModifier * pressWeakPenalty;
+
+  const baseHighLineVulnerability =
     tactic.instructions.defensiveLine === 'Very High'
       ? 1.18
       : tactic.instructions.defensiveLine === 'High'
@@ -194,9 +231,13 @@ export function evaluateTeamMatchStrength(
           ? 0.9
           : 1.0;
 
+  // Slow centre-backs in a High Line significantly increase vulnerability to counter-attacks
+  const highLineVulnerability =
+    baseHighLineVulnerability + synergy.defensiveLineSynergy.weakLinks.length * 0.11;
+
   return {
     attack: Math.max(25, (atkSum / Math.max(1, attackers.length)) * 5.2 * mentAtk * homeBoost),
-    midfield: Math.max(25, (midSum / Math.max(1, midfielders.length)) * 5.2 * homeBoost),
+    midfield: Math.max(25, (midSum / Math.max(1, midfielders.length)) * 5.2 * homeBoost * pressWeakPenalty),
     defense: Math.max(25, (defSum / Math.max(1, defenders.length)) * 5.2 * mentDef * homeBoost),
     goalkeeping: Math.max(25, gkRating * 5.2 * homeBoost),
     tempoModifier,
@@ -285,7 +326,10 @@ export function simulateMatch(
     minute: 1,
     eventType: 'KickOff',
     teamId: homeClub.id,
-    text: `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`,
+    text: trText(
+      `The referee blows the whistle to kick off the match between ${homeClub.name} and ${awayClub.name}!`,
+      `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`
+    ),
     pitchX: 50,
     pitchY: 50,
   });
@@ -299,7 +343,10 @@ export function simulateMatch(
         minute: 45,
         eventType: 'HalfTime',
         teamId: homeClub.id,
-        text: `จบครึ่งเวลาแรก: ${homeClub.name} ${homeStats.goals} - ${awayStats.goals} ${awayClub.name}`,
+        text: trText(
+          `Half-Time: ${homeClub.name} ${homeStats.goals} - ${awayStats.goals} ${awayClub.name}`,
+          `จบครึ่งเวลาแรก: ${homeClub.name} ${homeStats.goals} - ${awayStats.goals} ${awayClub.name}`
+        ),
         pitchX: 50,
         pitchY: 50,
       });
@@ -351,7 +398,10 @@ export function simulateMatch(
             teamId: defClub.id,
             playerId: defender.id,
             playerName: `${defender.firstName} ${defender.lastName}`,
-            text: `นาที ${minute}': ${defender.lastName} (${defClub.shortName}) เข้าสกัดบอลได้อย่างแม่นยำหน้ากรอบเขตโทษ`,
+            text: trText(
+              `Min ${minute}': ${defender.lastName} (${defClub.shortName}) makes a well-timed tackle on the edge of the penalty area.`,
+              `นาที ${minute}': ${defender.lastName} (${defClub.shortName}) เข้าสกัดบอลได้อย่างแม่นยำหน้ากรอบเขตโทษ`
+            ),
             pitchX: attackZoneX,
             pitchY: attackZoneY,
           });
@@ -375,7 +425,10 @@ export function simulateMatch(
             teamId: defClub.id,
             playerId: defender.id,
             playerName: `${defender.firstName} ${defender.lastName}`,
-            text: `นาที ${minute}': ใบเหลือง! ${defender.firstName} ${defender.lastName} (${defClub.shortName}) ทำฟาวล์ตัดเกมใส่ ${attacker.lastName}`,
+            text: trText(
+              `Min ${minute}': Yellow Card! ${defender.firstName} ${defender.lastName} (${defClub.shortName}) is booked for a tactical foul on ${attacker.lastName}.`,
+              `นาที ${minute}': ใบเหลือง! ${defender.firstName} ${defender.lastName} (${defClub.shortName}) ทำฟาวล์ตัดเกมใส่ ${attacker.lastName}`
+            ),
             pitchX: attackZoneX,
             pitchY: attackZoneY,
             isHighlight: true,
@@ -391,7 +444,10 @@ export function simulateMatch(
             teamId: defClub.id,
             playerId: defender.id,
             playerName: `${defender.firstName} ${defender.lastName}`,
-            text: `นาที ${minute}': ใบแดงโดยตรง! ${defender.firstName} ${defender.lastName} (${defClub.shortName}) เข้าบอลอันตรายถูกไล่ออกจากสนาม!`,
+            text: trText(
+              `Min ${minute}': Straight Red Card! ${defender.firstName} ${defender.lastName} (${defClub.shortName}) is sent off for a reckless challenge!`,
+              `นาที ${minute}': ใบแดงโดยตรง! ${defender.firstName} ${defender.lastName} (${defClub.shortName}) เข้าบอลอันตรายถูกไล่ออกจากสนาม!`
+            ),
             pitchX: attackZoneX,
             pitchY: attackZoneY,
             isHighlight: true,
@@ -414,7 +470,10 @@ export function simulateMatch(
             teamId: atkClub.id,
             playerId: attacker.id,
             playerName: `${attacker.firstName} ${attacker.lastName}`,
-            text: `นาที ${minute}': ${attacker.lastName} (${atkClub.shortName}) ทะลุช่องขึ้นไปแต่ผู้ช่วยผู้ตัดสินยกธงล้ำหน้า`,
+            text: trText(
+              `Min ${minute}': ${attacker.lastName} (${atkClub.shortName}) breaks behind the defense, but the assistant referee raises the flag for offside.`,
+              `นาที ${minute}': ${attacker.lastName} (${atkClub.shortName}) ทะลุช่องขึ้นไปแต่ผู้ช่วยผู้ตัดสินยกธงล้ำหน้า`
+            ),
             pitchX: attackZoneX,
             pitchY: attackZoneY,
           });
@@ -455,7 +514,9 @@ export function simulateMatch(
         ratings[creator.id] = Math.min(10, (ratings[creator.id] || 6.7) + 0.65);
       }
 
-      const assistText = hasAssist ? ` (แอสซิสต์โดย ${creator.lastName})` : '';
+      const assistText = hasAssist
+        ? trText(` (Assist by ${creator.lastName})`, ` (แอสซิสต์โดย ${creator.lastName})`)
+        : '';
       events.push({
         id: `${fixture.id}_ev_${minute}_goal_${atkStats.goals}_${atkClub.id}`,
         fixtureId: fixture.id,
@@ -467,7 +528,10 @@ export function simulateMatch(
         secondaryPlayerId: hasAssist ? creator.id : undefined,
         secondaryPlayerName: hasAssist ? `${creator.firstName} ${creator.lastName}` : undefined,
         xGDelta: shotXg,
-        text: `GOAL! นาที ${minute}': ${attacker.firstName} ${attacker.lastName} ทำประตูให้ ${atkClub.name}!${assistText}`,
+        text: trText(
+          `GOAL! Min ${minute}': ${attacker.firstName} ${attacker.lastName} scores for ${atkClub.name}!${assistText}`,
+          `GOAL! นาที ${minute}': ${attacker.firstName} ${attacker.lastName} ทำประตูให้ ${atkClub.name}!${assistText}`
+        ),
         pitchX: isHomeAttacking ? 95 : 5,
         pitchY: 50 + rng.int(-8, 8),
         isHighlight: true,
@@ -492,7 +556,10 @@ export function simulateMatch(
         secondaryPlayerId: attacker.id,
         secondaryPlayerName: `${attacker.firstName} ${attacker.lastName}`,
         xGDelta: shotXg,
-        text: `นาที ${minute}': เซฟสำคัญ! ${gk.lastName} (${defClub.shortName}) พุ่งปัดลูกยิงของ ${attacker.lastName} ออกหลังไปได้`,
+        text: trText(
+          `Min ${minute}': Crucial save! ${gk.lastName} (${defClub.shortName}) dives to parry ${attacker.lastName}'s effort wide.`,
+          `นาที ${minute}': เซฟสำคัญ! ${gk.lastName} (${defClub.shortName}) พุ่งปัดลูกยิงของ ${attacker.lastName} ออกหลังไปได้`
+        ),
         pitchX: isHomeAttacking ? 92 : 8,
         pitchY: attackZoneY,
         isHighlight: isBigChance,
@@ -514,7 +581,10 @@ export function simulateMatch(
           secondaryPlayerId: defender.id,
           secondaryPlayerName: `${defender.firstName} ${defender.lastName}`,
           xGDelta: shotXg,
-          text: `นาที ${minute}': ${attacker.lastName} (${atkClub.shortName}) ได้ง้างเท้ายิงแต่ติดบล็อกของ ${defender.lastName}`,
+          text: trText(
+            `Min ${minute}': ${attacker.lastName} (${atkClub.shortName}) pulls the trigger, but ${defender.lastName} makes a vital block.`,
+            `นาที ${minute}': ${attacker.lastName} (${atkClub.shortName}) ได้ง้างเท้ายิงแต่ติดบล็อกของ ${defender.lastName}`
+          ),
           pitchX: attackZoneX,
           pitchY: attackZoneY,
         });
@@ -532,7 +602,10 @@ export function simulateMatch(
           playerId: attacker.id,
           playerName: `${attacker.firstName} ${attacker.lastName}`,
           xGDelta: shotXg,
-          text: `นาที ${minute}': โอกาสทองของ ${atkClub.shortName}! ${attacker.lastName} สับไกยิงเฉียดเสาออกไปนิดเดียว`,
+          text: trText(
+            `Min ${minute}': Big chance for ${atkClub.shortName}! ${attacker.lastName} fires just wide of the post.`,
+            `นาที ${minute}': โอกาสทองของ ${atkClub.shortName}! ${attacker.lastName} สับไกยิงเฉียดเสาออกไปนิดเดียว`
+          ),
           pitchX: attackZoneX,
           pitchY: attackZoneY,
           isHighlight: isBigChance,
@@ -547,7 +620,10 @@ export function simulateMatch(
     minute: 90,
     eventType: 'FullTime',
     teamId: homeClub.id,
-    text: `จบการแข่งขัน 90 นาที: ${homeClub.name} ${homeStats.goals} - ${awayStats.goals} ${awayClub.name}`,
+    text: trText(
+      `Full-Time (90'): ${homeClub.name} ${homeStats.goals} - ${awayStats.goals} ${awayClub.name}`,
+      `จบการแข่งขัน 90 นาที: ${homeClub.name} ${homeStats.goals} - ${awayStats.goals} ${awayClub.name}`
+    ),
     pitchX: 50,
     pitchY: 50,
     isHighlight: true,
@@ -613,7 +689,10 @@ export function reconcileMatchResultEventsAndStats(
       minute: 1,
       eventType: 'KickOff',
       teamId: homeClub.id,
-      text: `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`,
+      text: trText(
+        `The referee blows the whistle to kick off the match between ${homeClub.name} and ${awayClub.name}!`,
+        `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`
+      ),
       pitchX: 50,
       pitchY: 50,
     },
@@ -628,7 +707,10 @@ export function reconcileMatchResultEventsAndStats(
         minute: 45,
         eventType: 'HalfTime',
         teamId: homeClub.id,
-        text: `จบครึ่งเวลาแรก: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`,
+        text: trText(
+          `Half-Time: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`,
+          `จบครึ่งเวลาแรก: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`
+        ),
         pitchX: 50,
         pitchY: 50,
       });
@@ -649,26 +731,47 @@ export function reconcileMatchResultEventsAndStats(
       const scoringClub = isHomeGoal ? homeClub : awayClub;
       const scorerLabel = ev.playerName || scoringClub.shortName;
       const assistSuffix = ev.secondaryPlayerName
-        ? ` (แอสซิสต์โดย ${ev.secondaryPlayerName})`
+        ? trText(
+            ` (Assist by ${ev.secondaryPlayerName})`,
+            ` (แอสซิสต์โดย ${ev.secondaryPlayerName})`
+          )
         : '';
 
       let actionPhrase: string;
       if (prevScoring === 0 && oppScore === 0) {
-        actionPhrase = `ยิงประตูเบิกร่องให้ ${scoringClub.name} ขึ้นนำ`;
+        actionPhrase = trText(
+          `opens the scoring to put ${scoringClub.name} ahead`,
+          `ยิงประตูเบิกร่องให้ ${scoringClub.name} ขึ้นนำ`
+        );
       } else if (newScoring === oppScore) {
-        actionPhrase = `ซัดประตูตีเสมอให้ ${scoringClub.name}`;
+        actionPhrase = trText(
+          `fires home the equalizer for ${scoringClub.name}`,
+          `ซัดประตูตีเสมอให้ ${scoringClub.name}`
+        );
       } else if (prevScoring === oppScore && newScoring === oppScore + 1) {
-        actionPhrase = `ยิงประตูสุดสวยให้ ${scoringClub.name} แซงขึ้นนำ`;
+        actionPhrase = trText(
+          `strikes to put ${scoringClub.name} in front`,
+          `ยิงประตูสุดสวยให้ ${scoringClub.name} แซงขึ้นนำ`
+        );
       } else if (newScoring > oppScore + 1) {
-        actionPhrase = `บวกประตูฉีกหนีให้ ${scoringClub.name}`;
+        actionPhrase = trText(
+          `extends ${scoringClub.name}'s lead`,
+          `บวกประตูฉีกหนีให้ ${scoringClub.name}`
+        );
       } else {
-        actionPhrase = `ยิงประตูตีตื้นให้ ${scoringClub.name}`;
+        actionPhrase = trText(
+          `pulls a goal back for ${scoringClub.name}`,
+          `ยิงประตูตีตื้นให้ ${scoringClub.name}`
+        );
       }
 
       reconciledEvents.push({
         ...ev,
         id: `${fixture.id}_ev_${ev.minute}_goal_${runningHome}_${runningAway}_${idx}`,
-        text: `GOAL! นาที ${ev.minute}' [${runningHome} - ${runningAway}]: ${scorerLabel} ${actionPhrase}!${assistSuffix}`,
+        text: trText(
+          `GOAL! Min ${ev.minute}' [${runningHome} - ${runningAway}]: ${scorerLabel} ${actionPhrase}!${assistSuffix}`,
+          `GOAL! นาที ${ev.minute}' [${runningHome} - ${runningAway}]: ${scorerLabel} ${actionPhrase}!${assistSuffix}`
+        ),
         isHighlight: true,
       });
     } else {
@@ -686,7 +789,10 @@ export function reconcileMatchResultEventsAndStats(
       minute: 45,
       eventType: 'HalfTime',
       teamId: homeClub.id,
-      text: `จบครึ่งเวลาแรก: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`,
+      text: trText(
+        `Half-Time: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`,
+        `จบครึ่งเวลาแรก: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`
+      ),
       pitchX: 50,
       pitchY: 50,
     });
@@ -698,7 +804,10 @@ export function reconcileMatchResultEventsAndStats(
     minute: 90,
     eventType: 'FullTime',
     teamId: homeClub.id,
-    text: `จบการแข่งขัน 90 นาที: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`,
+    text: trText(
+      `Full-Time (90'): ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`,
+      `จบการแข่งขัน 90 นาที: ${homeClub.name} ${runningHome} - ${runningAway} ${awayClub.name}`
+    ),
     pitchX: 50,
     pitchY: 50,
     isHighlight: true,

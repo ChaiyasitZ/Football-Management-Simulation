@@ -15,6 +15,7 @@ import {
 } from '../engine/matchEngine';
 import { soundService } from '../engine/soundService';
 import { ClubBadge } from './ClubBadge';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface MatchCenterViewProps {
   world: WorldState;
@@ -31,6 +32,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   onUpdateClubTactic,
   onSelectPlayer,
 }) => {
+  const { tr } = useLanguage();
   const myClub = world.clubs[world.controlledClubId];
 
   const initialFixture =
@@ -359,7 +361,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       },
     };
     onUpdateClubTactic(updatedTactic);
-    // If match is in progress before 90', recompute future events with new mentality
     if (targetFixture && currentMinute > 0 && currentMinute < 90) {
       const reSeed = world.randomSeed + currentMinute * 313 + newMentality.length * 19;
       const newSim = simulateMatch(
@@ -371,7 +372,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         isUserHome ? updatedTactic : undefined,
         !isUserHome ? updatedTactic : undefined
       );
-      // Preserve past events up to currentMinute, splice future events, and reconcile all scorelines & commentary
       const pastEvents = (simResult?.events || []).filter((e) => e.minute <= currentMinute);
       const futureEvents = newSim.events.filter((e) => e.minute > currentMinute);
       const mergedEvents: MatchEvent[] = [
@@ -382,7 +382,10 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           minute: currentMinute,
           eventType: 'TacticalChange',
           teamId: myClub.id,
-          text: `นาที ${currentMinute}': ${myClub.shortName} ปรับแท็กติก Mentality เป็น "${newMentality}" ข้างสนาม`,
+          text: tr(
+            `Minute ${currentMinute}': ${myClub.shortName} adjusted touchline Mentality to "${newMentality}"`,
+            `นาที ${currentMinute}': ${myClub.shortName} ปรับแท็กติก Mentality เป็น "${newMentality}" ข้างสนาม`
+          ),
           pitchX: 50,
           pitchY: 50,
         },
@@ -422,10 +425,19 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     const goalEvents = visibleEvents.filter((e) => e.eventType === 'Goal');
     const scorersText =
       goalEvents.length > 0
-        ? `จังหวะทำประตูสำคัญเกิดขึ้นในนาทีที่ ${goalEvents.map((g) => `${g.minute}'`).join(', ')}`
-        : 'ทั้งสองทีมยังสู้กันอย่างสูสีในแดนกลางและยังไม่มีประตูเกิดขึ้น';
+        ? tr(
+            `Key goals scored at ${goalEvents.map((g) => `${g.minute}'`).join(', ')}`,
+            `จังหวะทำประตูสำคัญเกิดขึ้นในนาทีที่ ${goalEvents.map((g) => `${g.minute}'`).join(', ')}`
+          )
+        : tr(
+            'Both sides remain locked in a tight midfield battle with no goals yet',
+            'ทั้งสองทีมยังสู้กันอย่างสูสีในแดนกลางและยังไม่มีประตูเกิดขึ้น'
+          );
     setTacticalSummary(
-      `สรุปภาพรวมแท็กติก (นาที ${currentMinute}'): ${homeClub.name} ${visibleHomeGoals} - ${visibleAwayGoals} ${awayClub.name} · ครองบอล ${homePoss}% ต่อ ${awayPoss}% · ค่าคาดหวังประตู (xG) ${homeXG} ต่อ ${awayXG} · ${scorersText}`
+      tr(
+        `Tactical Overview (${currentMinute}'): ${homeClub.name} ${visibleHomeGoals} - ${visibleAwayGoals} ${awayClub.name} · Possession ${homePoss}% vs ${awayPoss}% · Expected Goals (xG) ${homeXG} vs ${awayXG} · ${scorersText}`,
+        `สรุปภาพรวมแท็กติก (นาที ${currentMinute}'): ${homeClub.name} ${visibleHomeGoals} - ${visibleAwayGoals} ${awayClub.name} · ครองบอล ${homePoss}% ต่อ ${awayPoss}% · ค่าคาดหวังประตู (xG) ${homeXG} ต่อ ${awayXG} · ${scorersText}`
+      )
     );
   };
 
@@ -440,7 +452,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             <div>
               <div className="text-lg font-display font-bold text-white">{homeClub.name}</div>
               <div className="text-xs text-slate-400">
-                เจ้าบ้าน · แผน {homeClub.primaryTactic.formation} · xG{' '}
+                {tr('Home', 'เจ้าบ้าน')} · {homeClub.primaryTactic.formation} · xG{' '}
                 <span className="font-mono tabular-nums text-emerald-400">
                   {simResult ? (simResult.homeStats.xG * progressRatio).toFixed(2) : '0.00'}
                 </span>
@@ -454,16 +466,16 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               {currentMinute === 0
                 ? `Matchday ${targetFixture?.matchday || 1} · Pre-Match`
                 : currentMinute === 45 && !isPlaying
-                  ? 'HALF-TIME (พักครึ่ง 45’)'
+                  ? tr('HALF-TIME (45’)', 'HALF-TIME (พักครึ่ง 45’)')
                   : currentMinute >= 90
-                    ? 'FULL-TIME (จบเกม 90’)'
-                    : `LIVE · นาที ${currentMinute}'`}
+                    ? tr('FULL-TIME (90’)', 'FULL-TIME (จบเกม 90’)')
+                    : tr(`LIVE · ${currentMinute}'`, `LIVE · นาที ${currentMinute}'`)}
             </div>
             <div className="text-3xl font-display font-bold text-white tracking-wider font-mono tabular-nums">
               {visibleHomeGoals} : {visibleAwayGoals}
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">
-              สนาม {homeClub.stadiumName}
+              {homeClub.stadiumName}
             </div>
           </div>
 
@@ -472,7 +484,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             <div>
               <div className="text-lg font-display font-bold text-white">{awayClub.name}</div>
               <div className="text-xs text-slate-400">
-                ทีมเยือน · แผน {awayClub.primaryTactic.formation} · xG{' '}
+                {tr('Away', 'ทีมเยือน')} · {awayClub.primaryTactic.formation} · xG{' '}
                 <span className="font-mono tabular-nums text-sky-400">
                   {simResult ? (simResult.awayStats.xG * progressRatio).toFixed(2) : '0.00'}
                 </span>
@@ -492,12 +504,12 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
               {currentMinute === 0
-                ? 'เริ่มการแข่งขัน (Kick Off)'
+                ? tr('Kick Off', 'เริ่มการแข่งขัน (Kick Off)')
                 : isPlaying
-                  ? 'หยุดเกมชั่วคราว (Pause)'
+                  ? tr('Pause Match', 'หยุดเกมชั่วคราว (Pause)')
                   : currentMinute >= 90
-                    ? 'จบการแข่งขันแล้ว'
-                    : 'เล่นต่อ (Resume Match)'}
+                    ? tr('Match Completed', 'จบการแข่งขันแล้ว')
+                    : tr('Resume Match', 'เล่นต่อ (Resume Match)')}
             </button>
 
             <button
@@ -506,7 +518,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               disabled={currentMinute >= 90}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-100 font-medium text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
-              จำลองผลทันที (Instant Result)
+              {tr('Instant Result', 'จำลองผลทันที (Instant Result)')}
             </button>
 
             {currentMinute >= 90 &&
@@ -517,7 +529,10 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   onClick={() => setLockedFixtureId(nextScheduledFixture.id)}
                   className="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                 >
-                  เตรียมพร้อมนัดถัดไป (Matchday {nextScheduledFixture.matchday}) →
+                  {tr(
+                    `Prepare Next Fixture (Matchday ${nextScheduledFixture.matchday}) →`,
+                    `เตรียมพร้อมนัดถัดไป (Matchday ${nextScheduledFixture.matchday}) →`
+                  )}
                 </button>
               )}
 
@@ -543,7 +558,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           {/* Live Touchline Tactical Mentality Adjuster */}
           <div className="flex items-center gap-2">
             <label htmlFor="live-mentality-select" className="text-xs text-slate-400">
-              สั่งการข้างสนาม (Mentality):
+              {tr('Touchline Mentality:', 'สั่งการข้างสนาม (Mentality):')}
             </label>
             <select
               id="live-mentality-select"
@@ -552,13 +567,13 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               disabled={currentMinute >= 90}
               className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100"
             >
-              <option value="Very Defensive">Very Defensive (อุดเต็มสูบ)</option>
-              <option value="Defensive">Defensive (รัดกุม)</option>
-              <option value="Cautious">Cautious (ระมัดระวัง)</option>
-              <option value="Balanced">Balanced (สมดุล)</option>
-              <option value="Positive">Positive (เดินหน้าบุก)</option>
-              <option value="Attacking">Attacking (เปิดเกมรุก)</option>
-              <option value="Very Attacking">Very Attacking (ลุยแหลก)</option>
+              <option value="Very Defensive">{tr('Very Defensive', 'Very Defensive (อุดเต็มสูบ)')}</option>
+              <option value="Defensive">{tr('Defensive', 'Defensive (รัดกุม)')}</option>
+              <option value="Cautious">{tr('Cautious', 'Cautious (ระมัดระวัง)')}</option>
+              <option value="Balanced">{tr('Balanced', 'Balanced (สมดุล)')}</option>
+              <option value="Positive">{tr('Positive', 'Positive (เดินหน้าบุก)')}</option>
+              <option value="Attacking">{tr('Attacking', 'Attacking (เปิดเกมรุก)')}</option>
+              <option value="Very Attacking">{tr('Very Attacking', 'Very Attacking (ลุยแหลก)')}</option>
             </select>
 
             {currentMinute > 0 && (
@@ -567,7 +582,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 onClick={handleGenerateTacticalSummary}
                 className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-xs rounded-lg cursor-pointer whitespace-nowrap"
               >
-                สรุปบทวิเคราะห์เกม
+                {tr('Tactical Analysis', 'สรุปบทวิเคราะห์เกม')}
               </button>
             )}
           </div>
@@ -578,17 +593,17 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           <div className="mt-4 p-4 rounded-lg bg-slate-950 border border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div>
               <div className="text-xs font-semibold text-emerald-400">
-                Half-Time Team Talk (พูดคุยในห้องแต่งตัวช่วงพักครึ่ง)
+                {tr('Half-Time Team Talk', 'Half-Time Team Talk (พูดคุยในห้องแต่งตัวช่วงพักครึ่ง)')}
               </div>
               <div className="text-xs text-slate-300">
-                เลือกคำพูดปลุกใจลูกทีมก่อนเริ่มครึ่งเวลาหลัง
+                {tr('Choose your dressing room message before the second half kicks off:', 'เลือกคำพูดปลุกใจลูกทีมก่อนเริ่มครึ่งเวลาหลัง')}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               {[
-                { id: 'encourage', label: 'กระตุ้นให้สู้เต็มที่ (Encourage)' },
-                { id: 'praise', label: 'ชมเชยฟอร์มการเล่น (Praise)' },
-                { id: 'demand', label: 'เรียกร้องความมุ่งมั่นเพิ่ม (Demand More)' },
+                { id: 'encourage', label: tr('Encourage Squad', 'กระตุ้นให้สู้เต็มที่ (Encourage)') },
+                { id: 'praise', label: tr('Praise Performance', 'ชมเชยฟอร์มการเล่น (Praise)') },
+                { id: 'demand', label: tr('Demand More', 'เรียกร้องความมุ่งมั่นเพิ่ม (Demand More)') },
               ].map((talk) => (
                 <button
                   key={talk.id}
@@ -608,7 +623,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
 
         {tacticalSummary && (
           <div className="mt-3 p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 leading-relaxed">
-            <span className="font-semibold text-emerald-400">บทวิเคราะห์แท็กติกหลังเกม: </span>
+            <span className="font-semibold text-emerald-400">
+              {tr('Post-Match Tactical Summary: ', 'บทวิเคราะห์แท็กติกหลังเกม: ')}
+            </span>
             {tacticalSummary}
           </div>
         )}
@@ -621,10 +638,10 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-semibold text-slate-300">
-                2D Tactical Pitch Radar (มุมมองแท็กติกในสนาม)
+                {tr('2D Tactical Pitch Radar', '2D Tactical Pitch Radar (มุมมองแท็กติกในสนาม)')}
               </h3>
               <span className="text-[11px] text-slate-400 font-mono tabular-nums">
-                {homeClub.shortName} (ซ้าย) vs {awayClub.shortName} (ขวา)
+                {homeClub.shortName} ({tr('Left', 'ซ้าย')}) vs {awayClub.shortName} ({tr('Right', 'ขวา')})
               </span>
             </div>
             <canvas
@@ -639,46 +656,46 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           {/* Match Statistics Comparison */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5">
             <h3 className="text-xs font-semibold text-slate-300 mb-2">
-              สถิติการแข่งขัน (Match Statistics)
+              {tr('Match Statistics', 'สถิติการแข่งขัน (Match Statistics)')}
             </h3>
             {[
               {
-                label: 'การครองบอล (Possession %)',
+                label: tr('Possession %', 'การครองบอล (Possession %)'),
                 home: simResult ? simResult.homeStats.possession : 50,
                 away: simResult ? simResult.awayStats.possession : 50,
               },
               {
-                label: 'โอกาสยิงทั้งหมด (Total Shots)',
+                label: tr('Total Shots', 'โอกาสยิงทั้งหมด (Total Shots)'),
                 home: simResult ? Math.round(simResult.homeStats.totalShots * progressRatio) : 0,
                 away: simResult ? Math.round(simResult.awayStats.totalShots * progressRatio) : 0,
               },
               {
-                label: 'ยิงเข้ากรอบ (Shots on Target)',
+                label: tr('Shots on Target', 'ยิงเข้ากรอบ (Shots on Target)'),
                 home: simResult ? Math.round(simResult.homeStats.shotsOnTarget * progressRatio) : 0,
                 away: simResult ? Math.round(simResult.awayStats.shotsOnTarget * progressRatio) : 0,
               },
               {
-                label: 'โอกาสทอง (Big Chances)',
+                label: tr('Big Chances', 'โอกาสทอง (Big Chances)'),
                 home: simResult ? Math.round(simResult.homeStats.bigChances * progressRatio) : 0,
                 away: simResult ? Math.round(simResult.awayStats.bigChances * progressRatio) : 0,
               },
               {
-                label: 'ความแม่นยำการจ่ายบอล (Pass %)',
+                label: tr('Pass Accuracy %', 'ความแม่นยำการจ่ายบอล (Pass %)'),
                 home: simResult ? simResult.homeStats.passAccuracy : 84,
                 away: simResult ? simResult.awayStats.passAccuracy : 82,
               },
               {
-                label: 'การเข้าสกัด (Tackles)',
+                label: tr('Tackles', 'การเข้าสกัด (Tackles)'),
                 home: simResult ? Math.round(simResult.homeStats.tackles * progressRatio) : 0,
                 away: simResult ? Math.round(simResult.awayStats.tackles * progressRatio) : 0,
               },
               {
-                label: 'เตะมุม (Corners)',
+                label: tr('Corners', 'เตะมุม (Corners)'),
                 home: simResult ? Math.round(simResult.homeStats.corners * progressRatio) : 0,
                 away: simResult ? Math.round(simResult.awayStats.corners * progressRatio) : 0,
               },
               {
-                label: 'ฟาวล์ (Fouls)',
+                label: tr('Fouls', 'ฟาวล์ (Fouls)'),
                 home: simResult ? Math.round(simResult.homeStats.fouls * progressRatio) : 0,
                 away: simResult ? Math.round(simResult.awayStats.fouls * progressRatio) : 0,
               },
@@ -712,15 +729,20 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col h-[560px]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-semibold text-slate-300">
-              Match Commentary & Timeline ({visibleEvents.length} เหตุการณ์)
+              {tr(
+                `Match Commentary & Timeline (${visibleEvents.length} events)`,
+                `Match Commentary & Timeline (${visibleEvents.length} เหตุการณ์)`
+              )}
             </h3>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1">
             {visibleEvents.length === 0 ? (
               <div className="text-center py-16 text-xs text-slate-400">
-                กดปุ่ม <span className="text-emerald-400 font-semibold">"เริ่มการแข่งขัน (Kick Off)"</span> หรือ{' '}
-                <span className="text-slate-200 font-semibold">"จำลองผลทันที"</span> ด้านบนเพื่อเริ่มจำลองเกมการแข่งขัน
+                {tr(
+                  'Click "Kick Off" or "Instant Result" above to start simulating the match.',
+                  'กดปุ่ม "เริ่มการแข่งขัน (Kick Off)" หรือ "จำลองผลทันที" ด้านบนเพื่อเริ่มจำลองเกมการแข่งขัน'
+                )}
               </div>
             ) : (
               [...visibleEvents].reverse().map((ev) => {
@@ -738,7 +760,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     }`}
                   >
                     <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono tabular-nums mb-0.5">
-                      <span>นาที {ev.minute}'</span>
+                      <span>{tr(`Min ${ev.minute}'`, `นาที ${ev.minute}'`)}</span>
                       <span>{ev.eventType}</span>
                     </div>
                     <div>{ev.text}</div>
@@ -752,7 +774,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         {/* Right 3 Cols: Player Ratings & Lineups */}
         <div className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col h-[560px]">
           <h3 className="text-xs font-semibold text-slate-300 mb-3">
-            คะแนนผู้เล่นในสนาม (Player Ratings)
+            {tr('Live Player Ratings', 'คะแนนผู้เล่นในสนาม (Player Ratings)')}
           </h3>
           <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
             {[homeClub, awayClub].map((club) => {

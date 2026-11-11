@@ -16,6 +16,7 @@ import {
   WorldState,
 } from './types/game';
 import { createInitialWorldState } from './engine/worldGenerator';
+import { autoRegisterSquadIds } from './engine/tacticsEngine';
 import { ClubBadge } from './components/ClubBadge';
 import {
   advanceWorldOneDay,
@@ -23,6 +24,7 @@ import {
   completeUserMatchdayAndSyncWorld,
   deleteSavedSlot,
   deleteSaveSlotFromFirestore,
+  getPendingUrgentInboxItem,
   getSavedSlotsList,
   hireStaffMember,
   loadWorldStateFromFirestoreSlot,
@@ -58,28 +60,30 @@ import {
   TrainingView,
   TransfersView,
 } from './components/ManagementViews';
+import { LanguageProvider, LanguageSwitcher, useLanguage } from './i18n/LanguageContext';
 
 type ShellState = 'title' | 'playing' | 'paused';
 
-const NAV_ITEMS: { id: NavTab; label: string; badgeKey?: 'inbox' }[] = [
-  { id: 'dashboard', label: '01. Dashboard' },
-  { id: 'inbox', label: '02. Inbox & Media', badgeKey: 'inbox' },
-  { id: 'squad', label: '03. Squad' },
-  { id: 'tactics', label: '04. Tactics' },
-  { id: 'match', label: '05. Match Center' },
-  { id: 'training', label: '06. Training' },
-  { id: 'scouting', label: '07. Scouting' },
-  { id: 'transfers', label: '08. Transfers' },
-  { id: 'schedule', label: '09. Schedule' },
-  { id: 'competitions', label: '10. Competitions' },
-  { id: 'club', label: '11. Club & Finance' },
-  { id: 'staff', label: '12. Staff' },
-  { id: 'youth', label: '13. Youth Academy' },
-  { id: 'world', label: '14. World (280 Clubs)' },
-  { id: 'manager', label: '15. Manager & Save' },
+const NAV_ITEMS: { id: NavTab; labelEn: string; labelTh: string; badgeKey?: 'inbox' }[] = [
+  { id: 'dashboard', labelEn: '01. Dashboard', labelTh: '01. หน้าหลัก (Dashboard)' },
+  { id: 'inbox', labelEn: '02. Inbox & Media', labelTh: '02. กล่องข้อความ & สื่อ', badgeKey: 'inbox' },
+  { id: 'squad', labelEn: '03. Squad', labelTh: '03. ขุมกำลัง (Squad)' },
+  { id: 'tactics', labelEn: '04. Tactics', labelTh: '04. แท็กติก (Tactics)' },
+  { id: 'match', labelEn: '05. Match Center', labelTh: '05. สนามแข่งขัน (Match)' },
+  { id: 'training', labelEn: '06. Training', labelTh: '06. การฝึกซ้อม (Training)' },
+  { id: 'scouting', labelEn: '07. Scouting', labelTh: '07. แมวมอง (Scouting)' },
+  { id: 'transfers', labelEn: '08. Transfers', labelTh: '08. ตลาดซื้อขาย (Transfers)' },
+  { id: 'schedule', labelEn: '09. Schedule', labelTh: '09. โปรแกรมแข่ง (Schedule)' },
+  { id: 'competitions', labelEn: '10. Competitions', labelTh: '10. ลีก & ถ้วยยุโรป (UEFA)' },
+  { id: 'club', labelEn: '11. Club & Finance', labelTh: '11. สโมสร & การเงิน' },
+  { id: 'staff', labelEn: '12. Staff', labelTh: '12. ทีมงานสตาฟฟ์ (Staff)' },
+  { id: 'youth', labelEn: '13. Youth Academy', labelTh: '13. ศูนย์ฝึกเยาวชน (U19)' },
+  { id: 'world', labelEn: '14. World (280 Clubs)', labelTh: '14. สโมสรโลก (280 ทีม)' },
+  { id: 'manager', labelEn: '15. Settings & Save', labelTh: '15. ตั้งค่าภาษา & เซฟเกม' },
 ];
 
-export default function App() {
+function TouchlineShell() {
+  const { tr, trDynamic } = useLanguage();
   const isAutostart =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('autostart') === '1';
@@ -89,6 +93,7 @@ export default function App() {
   );
   const [world, setWorld] = useState<WorldState>(() => createInitialWorldState(20261110));
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [focusedNewsId, setFocusedNewsId] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [saveSlots, setSaveSlots] = useState<SaveSlotMeta[]>(() => getSavedSlotsList());
   const [authUser, setAuthUser] = useState<User | null>(null);
@@ -130,9 +135,17 @@ export default function App() {
       setAuthUser(user);
       const cloudSlots = await syncUserSaveSlotsFromFirestore();
       setSaveSlots(cloudSlots);
-      showToast(`เข้าสู่ระบบด้วย Gmail (${user.email || user.displayName}) สำเร็จ! ซิงก์เซฟเกมบน Cloud แล้ว`);
+      showToast(
+        tr(
+          `Signed in with Gmail (${user.email || user.displayName})! Cloud saves synced.`,
+          `เข้าสู่ระบบด้วย Gmail (${user.email || user.displayName}) สำเร็จ! ซิงก์เซฟเกมบน Cloud แล้ว`
+        )
+      );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้';
+      const msg =
+        err instanceof Error
+          ? err.message
+          : tr('Could not sign in with Google', 'ไม่สามารถเข้าสู่ระบบด้วย Google ได้');
       showToast(msg);
     }
   };
@@ -141,7 +154,9 @@ export default function App() {
     try {
       await signOutFromGoogle();
       setAuthUser(null);
-      showToast('ออกจากระบบบัญชี Google / Gmail เรียบร้อยแล้ว');
+      showToast(
+        tr('Signed out from Google / Gmail account.', 'ออกจากระบบบัญชี Google / Gmail เรียบร้อยแล้ว')
+      );
     } catch (err) {
       console.error(err);
     }
@@ -195,24 +210,64 @@ export default function App() {
     setSaveSlots(updatedSlots);
     setActiveTab('dashboard');
     setShellState('playing');
-    showToast(`เริ่มต้นอาชีพผู้จัดการทีมกับสโมสร ${freshWorld.clubs[clubId].name}!`);
+    showToast(
+      tr(
+        `Started managerial career with ${freshWorld.clubs[clubId].name}!`,
+        `เริ่มต้นอาชีพผู้จัดการทีมกับสโมสร ${freshWorld.clubs[clubId].name}!`
+      )
+    );
   };
 
   const handleAdvanceDay = () => {
     if (isAdvancingRef.current) return;
+
+    const pendingUrgent = getPendingUrgentInboxItem(world.inbox);
+    if (pendingUrgent) {
+      soundService.playClick();
+      setActiveTab('inbox');
+      setFocusedNewsId(pendingUrgent.id);
+      showToast(
+        tr(
+          `Action Required: Please respond to "${trDynamic(pendingUrgent.title)}" in your Inbox before continuing.`,
+          `มีเรื่องสำคัญที่ต้องตอบ: กรุณาตอบกลับ "${trDynamic(pendingUrgent.title)}" ใน Inbox ก่อนเดินเวลาต่อ`
+        )
+      );
+      return;
+    }
+
     isAdvancingRef.current = true;
     try {
       soundService.playAdvanceDay();
-      const { nextState, stoppedReason } = advanceWorldOneDay(world);
+      const { nextState, stoppedReason, urgentInboxItem } = advanceWorldOneDay(world);
       setWorld(nextState);
       const updatedSlots = saveWorldStateToSlot('slot_autosave', nextState);
       setSaveSlots(updatedSlots);
 
-      if (stoppedReason === 'USER_MATCHDAY') {
+      if (stoppedReason === 'URGENT_INBOX') {
+        const targetItem = urgentInboxItem || getPendingUrgentInboxItem(nextState.inbox);
+        setActiveTab('inbox');
+        if (targetItem) setFocusedNewsId(targetItem.id);
+        showToast(
+          tr(
+            `Urgent Inbox Item: "${trDynamic(targetItem?.title || '')}" requires your response.`,
+            `มีเรื่องด่วนใน Inbox: "${trDynamic(targetItem?.title || '')}" รอการตอบกลับจากคุณ`
+          )
+        );
+      } else if (stoppedReason === 'USER_MATCHDAY') {
         setActiveTab('match');
-        showToast(`ถึงวันแข่งขัน (Matchday) แล้ว! พร้อมลงสนามใน Match Center`);
+        showToast(
+          tr(
+            'Matchday has arrived! Ready for kick-off in Match Center.',
+            'ถึงวันแข่งขัน (Matchday) แล้ว! พร้อมลงสนามใน Match Center'
+          )
+        );
       } else {
-        showToast(`เดินเวลาสู่วันที่ ${nextState.gameDate} (Auto-saved)`);
+        showToast(
+          tr(
+            `Advanced to ${nextState.gameDate} (Auto-saved)`,
+            `เดินเวลาสู่วันที่ ${nextState.gameDate} (Auto-saved)`
+          )
+        );
       }
     } finally {
       isAdvancingRef.current = false;
@@ -221,24 +276,61 @@ export default function App() {
 
   const handleAdvanceToNextMatchday = () => {
     if (isAdvancingRef.current) return;
+
+    const pendingUrgent = getPendingUrgentInboxItem(world.inbox);
+    if (pendingUrgent) {
+      soundService.playClick();
+      setActiveTab('inbox');
+      setFocusedNewsId(pendingUrgent.id);
+      showToast(
+        tr(
+          `Action Required: Please respond to "${trDynamic(pendingUrgent.title)}" in your Inbox before skipping to Matchday.`,
+          `มีเรื่องสำคัญที่ต้องตอบ: กรุณาตอบกลับ "${trDynamic(pendingUrgent.title)}" ใน Inbox ก่อนข้ามไปวันแข่ง`
+        )
+      );
+      return;
+    }
+
     isAdvancingRef.current = true;
     try {
       soundService.playAdvanceDay();
       let curr = world;
       let steps = 0;
+      let lastStoppedReason: 'USER_MATCHDAY' | 'TRANSFER_OFFER' | 'URGENT_INBOX' | undefined;
+      let lastUrgentItem = undefined;
       while (steps < 10) {
         const res = advanceWorldOneDay(curr);
         curr = res.nextState;
         steps += 1;
-        if (res.stoppedReason === 'USER_MATCHDAY') {
+        lastStoppedReason = res.stoppedReason;
+        lastUrgentItem = res.urgentInboxItem;
+        if (res.stoppedReason === 'USER_MATCHDAY' || res.stoppedReason === 'URGENT_INBOX') {
           break;
         }
       }
       setWorld(curr);
       const updatedSlots = saveWorldStateToSlot('slot_autosave', curr);
       setSaveSlots(updatedSlots);
-      setActiveTab('match');
-      showToast(`เดินเวลาสู่วันแข่งขัน ${curr.gameDate} เรียบร้อยแล้ว`);
+
+      if (lastStoppedReason === 'URGENT_INBOX') {
+        const targetItem = lastUrgentItem || getPendingUrgentInboxItem(curr.inbox);
+        setActiveTab('inbox');
+        if (targetItem) setFocusedNewsId(targetItem.id);
+        showToast(
+          tr(
+            `Stopped at ${curr.gameDate}: Urgent Inbox item "${trDynamic(targetItem?.title || '')}" requires your response!`,
+            `หยุดเวลาที่ ${curr.gameDate}: มีเรื่องสำคัญใน Inbox "${trDynamic(targetItem?.title || '')}" ที่ต้องตอบกลับ!`
+          )
+        );
+      } else {
+        setActiveTab('match');
+        showToast(
+          tr(
+            `Advanced to Matchday ${curr.gameDate}`,
+            `เดินเวลาสู่วันแข่งขัน ${curr.gameDate} เรียบร้อยแล้ว`
+          )
+        );
+      }
     } finally {
       isAdvancingRef.current = false;
     }
@@ -249,7 +341,12 @@ export default function App() {
     setWorld(updated);
     const slots = saveWorldStateToSlot('slot_autosave', updated);
     setSaveSlots(slots);
-    showToast(`บันทึกผลการแข่งขันและอัปเดตตารางคะแนนทั้ง 5 ลีกเรียบร้อยแล้ว!`);
+    showToast(
+      tr(
+        'Match result recorded and all league & UEFA standings updated!',
+        'บันทึกผลการแข่งขันและอัปเดตตารางคะแนนเรียบร้อยแล้ว!'
+      )
+    );
   };
 
   const handleUpdateTactic = (tactic: TacticalSystem, isSecondary = false) => {
@@ -258,6 +355,10 @@ export default function App() {
       ...myClub,
       primaryTactic: isSecondary ? myClub.primaryTactic : tactic,
       secondaryTactic: isSecondary ? tactic : myClub.secondaryTactic,
+      formationFamiliarity: {
+        ...(myClub.formationFamiliarity || {}),
+        [tactic.formation]: tactic.familiarity,
+      },
     };
     setWorld({
       ...world,
@@ -316,7 +417,12 @@ export default function App() {
         },
       },
     });
-    showToast(`อัปเดตตารางซ้อมรายบุคคลของ ${p.firstName} ${p.lastName} แล้ว`);
+    showToast(
+      tr(
+        `Updated individual training for ${p.firstName} ${p.lastName}`,
+        `อัปเดตตารางซ้อมรายบุคคลของ ${p.firstName} ${p.lastName} แล้ว`
+      )
+    );
   };
 
   const handleToggleShortlist = (playerId: string) => {
@@ -325,7 +431,11 @@ export default function App() {
       ? world.shortlistPlayerIds.filter((id) => id !== playerId)
       : [...world.shortlistPlayerIds, playerId];
     setWorld({ ...world, shortlistPlayerIds: updated });
-    showToast(exists ? 'นำออกจาก Shortlist แล้ว' : 'เพิ่มเข้าสู่ Shortlist แล้ว');
+    showToast(
+      exists
+        ? tr('Removed from Shortlist', 'นำออกจาก Shortlist แล้ว')
+        : tr('Added to Shortlist', 'เพิ่มเข้าสู่ Shortlist แล้ว')
+    );
   };
 
   const handleGenerateScoutReport = (playerId: string) => {
@@ -339,13 +449,23 @@ export default function App() {
         [playerId]: rep,
       },
     });
-    showToast(`ออกรายงานแมวมองของ ${p.firstName} ${p.lastName} เรียบร้อยแล้ว`);
+    showToast(
+      tr(
+        `Scout report generated for ${p.firstName} ${p.lastName}`,
+        `ออกรายงานแมวมองของ ${p.firstName} ${p.lastName} เรียบร้อยแล้ว`
+      )
+    );
   };
 
   const handleBoardRequest = (type: 'budget' | 'training_facility' | 'youth_facility') => {
     const club = { ...world.clubs[world.controlledClubId] };
     if (club.boardExpectations.confidence.overall < 60) {
-      showToast('บอร์ดบริหารปฏิเสธคำร้องเนื่องจากต้องการเห็นผลงานในสนามที่ดีขึ้นก่อน');
+      showToast(
+        tr(
+          'The Board rejected the request as they want to see stronger on-pitch results first.',
+          'บอร์ดบริหารปฏิเสธคำร้องเนื่องจากต้องการเห็นผลงานในสนามที่ดีขึ้นก่อน'
+        )
+      );
       return;
     }
     if (type === 'budget') {
@@ -353,23 +473,39 @@ export default function App() {
         ...club.finances,
         transferBudget: club.finances.transferBudget + 5_000_000,
       };
-      showToast('บอร์ดบริหารอนุมัติงบซื้อขายเพิ่มเติม +€5.0M!');
+      showToast(
+        tr('Board approved +€5.0M additional transfer budget!', 'บอร์ดบริหารอนุมัติงบซื้อขายเพิ่มเติม +€5.0M!')
+      );
     } else if (type === 'training_facility') {
       if (club.finances.balance < 3_500_000 || club.trainingFacilities >= 20) {
-        showToast('ไม่สามารถอัปเกรดศูนย์ฝึกซ้อมได้ในขณะนี้');
+        showToast(
+          tr('Cannot upgrade training facilities at this time.', 'ไม่สามารถอัปเกรดศูนย์ฝึกซ้อมได้ในขณะนี้')
+        );
         return;
       }
       club.finances = { ...club.finances, balance: club.finances.balance - 3_500_000 };
       club.trainingFacilities = Math.min(20, club.trainingFacilities + 1);
-      showToast(`อัปเกรดศูนย์ฝึกซ้อมสู่ระดับ ${club.trainingFacilities}/20 สำเร็จ!`);
+      showToast(
+        tr(
+          `Training facilities upgraded to Level ${club.trainingFacilities}/20!`,
+          `อัปเกรดศูนย์ฝึกซ้อมสู่ระดับ ${club.trainingFacilities}/20 สำเร็จ!`
+        )
+      );
     } else {
       if (club.finances.balance < 2_500_000 || club.youthFacilities >= 20) {
-        showToast('ไม่สามารถอัปเกรดศูนย์ฝึกเยาวชนได้ในขณะนี้');
+        showToast(
+          tr('Cannot upgrade youth academy at this time.', 'ไม่สามารถอัปเกรดศูนย์ฝึกเยาวชนได้ในขณะนี้')
+        );
         return;
       }
       club.finances = { ...club.finances, balance: club.finances.balance - 2_500_000 };
       club.youthFacilities = Math.min(20, club.youthFacilities + 1);
-      showToast(`อัปเกรดศูนย์ฝึกเยาวชนสู่ระดับ ${club.youthFacilities}/20 สำเร็จ!`);
+      showToast(
+        tr(
+          `Youth Academy upgraded to Level ${club.youthFacilities}/20!`,
+          `อัปเกรดศูนย์ฝึกเยาวชนสู่ระดับ ${club.youthFacilities}/20 สำเร็จ!`
+        )
+      );
     }
     setWorld({ ...world, clubs: { ...world.clubs, [club.id]: club } });
   };
@@ -391,7 +527,9 @@ export default function App() {
           if (loaded) {
             setWorld(loaded);
             setShellState('playing');
-            showToast(`โหลดเซฟเกม ${loaded.saveName} สำเร็จ!`);
+            showToast(
+              tr(`Loaded career save: ${loaded.saveName}`, `โหลดเซฟเกม ${loaded.saveName} สำเร็จ!`)
+            );
           }
         }}
         onDeleteSlot={async (slotId) => {
@@ -406,7 +544,9 @@ export default function App() {
 
   const controlledClub = world.clubs[world.controlledClubId];
   const unreadCount = world.inbox.filter((n) => !n.isRead).length;
+  const pendingUrgentInboxItem = getPendingUrgentInboxItem(world.inbox);
   const selectedPlayer = selectedPlayerId ? world.players[selectedPlayerId] : null;
+  const currentNavItem = NAV_ITEMS.find((n) => n.id === activeTab);
 
   return (
     <div className="w-screen h-screen bg-slate-950 text-slate-100 flex overflow-hidden select-none">
@@ -456,14 +596,18 @@ export default function App() {
                       : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                   }`}
                 >
-                  <span>{item.label}</span>
-                  {item.badgeKey === 'inbox' && unreadCount > 0 && (
+                  <span>{tr(item.labelEn, item.labelTh)}</span>
+                  {item.badgeKey === 'inbox' && (unreadCount > 0 || pendingUrgentInboxItem) && (
                     <span
                       className={`font-mono text-[11px] tabular-nums ${
-                        active ? 'text-slate-950 font-bold' : 'text-emerald-400 font-semibold'
+                        active
+                          ? 'text-slate-950 font-bold'
+                          : pendingUrgentInboxItem
+                            ? 'text-amber-400 font-bold'
+                            : 'text-emerald-400 font-semibold'
                       }`}
                     >
-                      ({unreadCount})
+                      {pendingUrgentInboxItem ? `! (${unreadCount || 1})` : `(${unreadCount})`}
                     </span>
                   )}
                 </button>
@@ -505,36 +649,49 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header Bar: Context Breadcrumb, Date & Primary Continue Action */}
+        {/* Top Header Bar: Context Breadcrumb, Date, Language Switcher & Primary Continue Action */}
         <header className="h-16 bg-slate-900 border-b border-slate-800 px-6 flex items-center justify-between gap-6 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             <h1 className="text-lg font-display font-bold text-white truncate">
-              {NAV_ITEMS.find((n) => n.id === activeTab)?.label.replace(/^\d+\.\s*/, '')}
+              {currentNavItem
+                ? tr(currentNavItem.labelEn, currentNavItem.labelTh).replace(/^\d+\.\s*/, '')
+                : ''}
             </h1>
             <span className="text-slate-600" aria-hidden="true">·</span>
             <span className="text-xs text-slate-400 font-mono tabular-nums whitespace-nowrap">
-              วันที่ในเกม: <strong className="text-slate-100">{world.gameDate}</strong>
+              {tr('Date:', 'วันที่ในเกม:')} <strong className="text-slate-100">{world.gameDate}</strong>
             </span>
             <span className="hidden md:inline text-slate-600" aria-hidden="true">·</span>
             <span className="hidden md:inline text-xs text-slate-400 font-mono tabular-nums whitespace-nowrap">
-              งบซื้อขาย: <strong className="text-emerald-400">€{(controlledClub.finances.transferBudget / 1_000_000).toFixed(1)}M</strong>
+              {tr('Transfer Budget:', 'งบซื้อขาย:')}{' '}
+              <strong className="text-emerald-400">
+                €{(controlledClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+              </strong>
             </span>
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            <LanguageSwitcher />
+
             <button
               type="button"
               onClick={handleAdvanceToNextMatchday}
               className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
-              ข้ามไปวันแข่ง (Next Matchday)
+              {tr('Skip to Matchday', 'ข้ามไปวันแข่ง (Next Matchday)')}
             </button>
             <button
               type="button"
               onClick={handleAdvanceDay}
-              className="px-5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+              className={`px-5 py-2 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                pendingUrgentInboxItem
+                  ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
+                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+              }`}
             >
-              เดินเวลาต่อ (Continue) →
+              {pendingUrgentInboxItem
+                ? tr('Respond in Inbox ! →', 'ตอบข้อความสำคัญ ! →')
+                : tr('Continue →', 'เดินเวลาต่อ (Continue) →')}
             </button>
           </div>
         </header>
@@ -553,6 +710,7 @@ export default function App() {
           {activeTab === 'inbox' && (
             <InboxView
               world={world}
+              focusedNewsId={focusedNewsId}
               onMarkRead={(newsId) => {
                 setWorld({
                   ...world,
@@ -620,14 +778,109 @@ export default function App() {
                     ...world.inbox,
                   ],
                 });
-                showToast('เพิ่มสกู๊ปข่าวใหม่ใน Inbox แล้ว');
+                showToast(tr('New Sports Desk report added to Inbox', 'เพิ่มสกู๊ปข่าวใหม่ใน Inbox แล้ว'));
               }}
               onNavigate={setActiveTab}
             />
           )}
 
           {activeTab === 'squad' && (
-            <SquadView world={world} onSelectPlayer={setSelectedPlayerId} />
+            <SquadView
+              world={world}
+              onSelectPlayer={setSelectedPlayerId}
+              onToggleRegistration={(playerId) => {
+                const p = world.players[playerId];
+                if (!p) return;
+                const nextReg = p.isRegistered === false ? true : false;
+                setWorld({
+                  ...world,
+                  players: {
+                    ...world.players,
+                    [playerId]: { ...p, isRegistered: nextReg },
+                  },
+                });
+                showToast(
+                  nextReg
+                    ? tr(
+                        `Registered ${p.firstName} ${p.lastName} in 25-man Squad`,
+                        `ลงทะเบียน ${p.firstName} ${p.lastName} เข้าสู่โควตา 25 คนแล้ว`
+                      )
+                    : tr(
+                        `Unregistered ${p.firstName} ${p.lastName} from 25-man Squad`,
+                        `ถอดชื่อ ${p.firstName} ${p.lastName} ออกจากโควตา 25 คนแล้ว`
+                      )
+                );
+              }}
+              onAutoRegisterSquad={() => {
+                const clubPlayers = Object.values(world.players).filter(
+                  (p) => p.clubId === controlledClub.id
+                );
+                const starterIds = new Set(
+                  controlledClub.primaryTactic.lineup
+                    .map((s) => s.playerId)
+                    .filter((id): id is string => Boolean(id))
+                );
+                const regIds = autoRegisterSquadIds(
+                  clubPlayers,
+                  controlledClub.countryId,
+                  starterIds
+                );
+                const updatedPlayers = { ...world.players };
+                for (const cp of clubPlayers) {
+                  updatedPlayers[cp.id] = {
+                    ...cp,
+                    isRegistered: regIds.has(cp.id),
+                  };
+                }
+                setWorld({ ...world, players: updatedPlayers });
+                showToast(
+                  tr(
+                    'Auto-registered 25 players meeting the 8+ Homegrown quota!',
+                    'คัดเลือกและลงทะเบียนนักเตะ 25 คนตามกฎโควตา Homegrown 8+ คนเรียบร้อยแล้ว!'
+                  )
+                );
+              }}
+              onTogglePlayInReserves={(playerId) => {
+                const p = world.players[playerId];
+                if (!p) return;
+                const nextRes = !p.playInReserves;
+                setWorld({
+                  ...world,
+                  players: {
+                    ...world.players,
+                    [playerId]: { ...p, playInReserves: nextRes },
+                  },
+                });
+                showToast(
+                  nextRes
+                    ? tr(
+                        `${p.firstName} ${p.lastName} assigned to Reserves (U23) to build Match Sharpness.`,
+                        `ส่ง ${p.firstName} ${p.lastName} ลงเล่นทีมสำรอง (U23) เพื่อเรียกความเฉียบคม (Match Sharpness)`
+                      )
+                    : tr(
+                        `${p.firstName} ${p.lastName} recalled from Reserves (U23) duty.`,
+                        `ยกเลิกการส่ง ${p.firstName} ${p.lastName} ลงเล่นทีมสำรอง (U23)`
+                      )
+                );
+              }}
+              onUpdateSquadStatus={(playerId, status) => {
+                const p = world.players[playerId];
+                if (!p) return;
+                setWorld({
+                  ...world,
+                  players: {
+                    ...world.players,
+                    [playerId]: { ...p, squadStatus: status },
+                  },
+                });
+                showToast(
+                  tr(
+                    `Updated ${p.firstName} ${p.lastName} squad hierarchy to ${status}`,
+                    `ปรับสถานะในทีมของ ${p.firstName} ${p.lastName} เป็น ${status}`
+                  )
+                );
+              }}
+            />
           )}
 
           {activeTab === 'tactics' && (
@@ -662,7 +915,12 @@ export default function App() {
                     },
                   },
                 });
-                showToast(`ตั้งค่าการซ้อมทีมเป็น ${focus} (${intensity}) เรียบร้อยแล้ว`);
+                showToast(
+                  tr(
+                    `Team training set to ${focus} (${intensity})`,
+                    `ตั้งค่าการซ้อมทีมเป็น ${focus} (${intensity}) เรียบร้อยแล้ว`
+                  )
+                );
               }}
               onSelectPlayer={setSelectedPlayerId}
             />
@@ -695,7 +953,12 @@ export default function App() {
                     ...world.scoutAssignments,
                   ],
                 });
-                showToast('ส่งทีมแมวมองออกค้นหานักเตะตามเงื่อนไขที่กำหนดแล้ว');
+                showToast(
+                  tr(
+                    'Scouting team dispatched with your criteria.',
+                    'ส่งทีมแมวมองออกค้นหานักเตะตามเงื่อนไขที่กำหนดแล้ว'
+                  )
+                );
               }}
               onGenerateScoutReport={handleGenerateScoutReport}
             />
@@ -735,7 +998,12 @@ export default function App() {
               onRecruitYouth={() => {
                 const next = recruitYouthAcademyProspect(world);
                 setWorld(next);
-                showToast('คัดเลือกดาวรุ่งใหม่เข้าสู่ศูนย์ฝึกเยาวชน U19 เรียบร้อยแล้ว!');
+                showToast(
+                  tr(
+                    'Recruited new youth prospect into U19 Academy!',
+                    'คัดเลือกดาวรุ่งใหม่เข้าสู่ศูนย์ฝึกเยาวชน U19 เรียบร้อยแล้ว!'
+                  )
+                );
               }}
               onPromoteYouth={(playerId) => {
                 const p = world.players[playerId];
@@ -751,7 +1019,12 @@ export default function App() {
                     },
                   },
                 });
-                showToast(`ดัน ${p.firstName} ${p.lastName} ขึ้นสู่ทีมชุดใหญ่เรียบร้อยแล้ว!`);
+                showToast(
+                  tr(
+                    `Promoted ${p.firstName} ${p.lastName} to the Senior Squad!`,
+                    `ดัน ${p.firstName} ${p.lastName} ขึ้นสู่ทีมชุดใหญ่เรียบร้อยแล้ว!`
+                  )
+                );
               }}
               onSaveToSlot={async (slotId) => {
                 const slots = authUser
@@ -760,8 +1033,11 @@ export default function App() {
                 setSaveSlots(slots);
                 showToast(
                   authUser
-                    ? `บันทึกเกมลง Cloud Firestore (${slotId}) สำเร็จ!`
-                    : `บันทึกเกมลงช่อง ${slotId} สำเร็จ!`
+                    ? tr(
+                        `Saved career to Cloud Firestore (${slotId})!`,
+                        `บันทึกเกมลง Cloud Firestore (${slotId}) สำเร็จ!`
+                      )
+                    : tr(`Saved career to ${slotId}!`, `บันทึกเกมลงช่อง ${slotId} สำเร็จ!`)
                 );
               }}
               onLoadSlot={async (slotId) => {
@@ -770,7 +1046,9 @@ export default function App() {
                   : loadWorldStateFromSlot(slotId);
                 if (loaded) {
                   setWorld(loaded);
-                  showToast(`โหลดเซฟเกมจาก ${slotId} เรียบร้อยแล้ว!`);
+                  showToast(
+                    tr(`Loaded career from ${slotId}!`, `โหลดเซฟเกมจาก ${slotId} เรียบร้อยแล้ว!`)
+                  );
                 }
               }}
             />
@@ -806,8 +1084,15 @@ export default function App() {
                 TOUCHLINE — GAME PAUSED
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                {controlledClub.name} · วันที่ในเกม {world.gameDate}
+                {controlledClub.name} · {tr('Game Date:', 'วันที่ในเกม')} {world.gameDate}
               </p>
+            </div>
+
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-lg bg-slate-950 border border-slate-800 text-xs">
+              <span className="text-slate-300 font-medium">
+                {tr('Display Language', 'ภาษาที่แสดงผล (Language)')}
+              </span>
+              <LanguageSwitcher />
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-center font-mono tabular-nums">
@@ -837,26 +1122,28 @@ export default function App() {
                 onClick={() => setShellState('playing')}
                 className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
               >
-                กลับเข้าสู่เกม (Resume Career)
+                {tr('Resume Career', 'กลับเข้าสู่เกม (Resume Career)')}
               </button>
               <button
                 type="button"
                 onClick={() => {
                   const slots = saveWorldStateToSlot('slot_1', world);
                   setSaveSlots(slots);
-                  showToast('บันทึกเกมลง Save Slot #1 สำเร็จ!');
+                  showToast(
+                    tr('Saved career to Save Slot #1!', 'บันทึกเกมลง Save Slot #1 สำเร็จ!')
+                  );
                   setShellState('playing');
                 }}
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-medium text-xs rounded-lg cursor-pointer"
               >
-                บันทึกเกมด่วน (Quick Save Slot #1)
+                {tr('Quick Save (Slot #1)', 'บันทึกเกมด่วน (Quick Save Slot #1)')}
               </button>
               <button
                 type="button"
                 onClick={() => setShellState('title')}
                 className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs rounded-lg cursor-pointer"
               >
-                กลับสู่หน้าจอหลัก (Title Screen)
+                {tr('Return to Title Screen', 'กลับสู่หน้าจอหลัก (Title Screen)')}
               </button>
             </div>
           </div>
@@ -874,5 +1161,13 @@ export default function App() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <LanguageProvider>
+      <TouchlineShell />
+    </LanguageProvider>
   );
 }

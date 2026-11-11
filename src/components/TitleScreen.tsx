@@ -4,6 +4,7 @@ import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
 import type { User } from '../firebase';
 import { ClubBadge } from './ClubBadge';
+import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 
 interface TitleScreenProps {
   world: WorldState;
@@ -28,6 +29,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onLoadSlot,
   onDeleteSlot,
 }) => {
+  const { tr } = useLanguage();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [showSetupModal, setShowSetupModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
@@ -214,7 +216,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       />
       <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/90 to-slate-950/40 pointer-events-none" />
 
-      {/* Top row: minimal version & world summary + Google Gmail Cloud Auth */}
+      {/* Top row: minimal version & world summary + Language Switcher + Google Gmail Cloud Auth */}
       <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3 text-xs text-slate-400 font-mono tabular-nums">
           <span>TOUCHLINE SIMULATION ENGINE</span>
@@ -227,6 +229,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          <LanguageSwitcher />
+
           {authUser ? (
             <div className="flex items-center gap-3 px-3.5 py-1.5 rounded-lg bg-slate-900/90 border border-emerald-500/40 text-xs">
               <span className="text-emerald-400 font-mono">Gmail Cloud Save:</span>
@@ -238,7 +242,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 onClick={onGoogleSignOut}
                 className="text-slate-400 hover:text-white underline cursor-pointer ml-1"
               >
-                ออกจากระบบ
+                {tr('Sign Out', 'ออกจากระบบ')}
               </button>
             </div>
           ) : (
@@ -247,7 +251,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               onClick={onGoogleSignIn}
               className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-emerald-500/50 text-emerald-400 hover:text-emerald-300 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap"
             >
-              เข้าสู่ระบบด้วย Google / Gmail (Cloud Save)
+              {tr('Sign in with Google / Gmail (Cloud Save)', 'เข้าสู่ระบบด้วย Google / Gmail (Cloud Save)')}
             </button>
           )}
         </div>
@@ -310,29 +314,20 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
 
         <p className="text-slate-300 text-base leading-relaxed mb-8 max-w-xl">
-          เกมจำลองการบริหารสโมสรฟุตบอลระดับลึกบนเว็บ วางระบบแท็กติก บริหารขุมกำลัง พัฒนาดาวรุ่ง เจรจาซื้อขายนักเตะ และพาทีมคว้าแชมป์เหนือ 280 สโมสรจาก 15 ลีกฟุตบอลยุโรป (ทั้งลีกสูงสุดและลีกรอง)
+          {tr(
+            'Deep web-based football management simulation. Build tactical systems, manage squad dynamics, develop youth prospects, negotiate transfers, and lead your club to glory across 280 clubs in 15 European leagues and UEFA competitions.',
+            'เกมจำลองการบริหารสโมสรฟุตบอลระดับลึกบนเว็บ วางระบบแท็กติก บริหารขุมกำลัง พัฒนาดาวรุ่ง เจรจาซื้อขายนักเตะ และพาทีมคว้าแชมป์เหนือ 280 สโมสรจาก 15 ลีกฟุตบอลยุโรป (ทั้งลีกสูงสุดและลีกรอง)'
+          )}
         </p>
 
-        {/* Primary & Secondary CTAs (<= 3 actions) */}
+        {/* Primary & Secondary CTAs */}
         <div className="flex flex-wrap items-center gap-4">
-          <button
-            type="button"
-            data-start="true"
-            onClick={(e) => {
-              e.currentTarget.blur();
-              onQuickStart();
-            }}
-            className="px-7 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 shadow-lg shadow-emerald-950/50"
-          >
-            เริ่มคุมทีมทันที (Start Career)
-          </button>
-
           <button
             type="button"
             onClick={() => setShowSetupModal(true)}
             className="px-6 py-3.5 bg-slate-900 hover:bg-slate-800 text-slate-100 border border-slate-700 font-medium text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            เลือกสโมสรและสร้างผู้จัดการทีม (280 สโมสร)
+            {tr('Select Club & Create Manager (280 Clubs)', 'เลือกสโมสรและสร้างผู้จัดการทีม (280 สโมสร)')}
           </button>
 
           <button
@@ -340,14 +335,19 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             onClick={() => setShowLoadModal(true)}
             className="px-5 py-3.5 bg-slate-900/70 hover:bg-slate-800 text-slate-300 border border-slate-800 font-medium text-sm rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
           >
-            โหลดเซฟเกม ({saveSlots.length})
+            {tr(`Load Saved Career (${saveSlots.length})`, `โหลดเซฟเกม (${saveSlots.length})`)}
           </button>
         </div>
       </div>
 
       {/* Bottom Safe Margin: Single flat borderless control-hint line */}
       <div className="relative z-10 flex items-center justify-between text-xs text-slate-400 font-mono">
-        <span>Enter / Space เริ่มเกมทันที · C เดินเวลาวันถัดไป · M ปิด/เปิดเสียง · Esc เมนูหลักและเซฟเกม</span>
+        <span>
+          {tr(
+            'Enter / Space Quick Start · C Advance Day · M Mute/Unmute · Esc Game Menu & Save',
+            'Enter / Space เริ่มเกมทันที · C เดินเวลาวันถัดไป · M ปิด/เปิดเสียง · Esc เมนูหลักและเซฟเกม'
+          )}
+        </span>
         <span className="hidden sm:inline text-slate-500">Deterministic Match Engine · 15 European Leagues</span>
       </div>
 
@@ -363,7 +363,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
               <div className="flex items-center gap-3">
                 <h2 id="setup-modal-title" className="text-xl font-display font-bold text-slate-100">
-                  สร้างโปรไฟล์ผู้จัดการทีมและเลือกสโมสร (15 ลีกยุโรป · 280 สโมสร)
+                  {tr(
+                    'Create Manager Profile & Select Club (15 European Leagues · 280 Clubs)',
+                    'สร้างโปรไฟล์ผู้จัดการทีมและเลือกสโมสร (15 ลีกยุโรป · 280 สโมสร)'
+                  )}
                 </h2>
                 <span className="hidden md:inline-block px-2.5 py-0.5 text-[11px] font-mono rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                   SEASON 2025/26
@@ -374,18 +377,20 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 onClick={() => setShowSetupModal(false)}
                 className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors duration-150 cursor-pointer"
               >
-                ปิดหน้าต่าง (Esc)
+                {tr('Close (Esc)', 'ปิดหน้าต่าง (Esc)')}
               </button>
             </div>
 
             <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
               {/* Left Column: Manager Profile */}
               <div className="lg:col-span-4 space-y-4">
-                <h3 className="text-sm font-semibold text-emerald-400">1. ข้อมูลผู้จัดการทีม (Manager Profile)</h3>
+                <h3 className="text-sm font-semibold text-emerald-400">
+                  {tr('1. Manager Profile', '1. ข้อมูลผู้จัดการทีม (Manager Profile)')}
+                </h3>
 
                 <div>
                   <label htmlFor="mgr-name-input" className="block text-xs text-slate-400 mb-1">
-                    ชื่อ-นามสกุล ผู้จัดการทีม
+                    {tr('Manager Full Name', 'ชื่อ-นามสกุล ผู้จัดการทีม')}
                   </label>
                   <input
                     id="mgr-name-input"
@@ -396,14 +401,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       setCustomEditedName(true);
                     }}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
-                    placeholder="เช่น Mikel Arteta, Pep Guardiola"
+                    placeholder={tr('e.g. Mikel Arteta, Pep Guardiola', 'เช่น Mikel Arteta, Pep Guardiola')}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label htmlFor="mgr-age-input" className="block text-xs text-slate-400 mb-1">
-                      อายุ
+                      {tr('Age', 'อายุ')}
                     </label>
                     <input
                       id="mgr-age-input"
@@ -417,7 +422,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   </div>
                   <div>
                     <label htmlFor="mgr-nat-select" className="block text-xs text-slate-400 mb-1">
-                      สัญชาติ
+                      {tr('Nationality', 'สัญชาติ')}
                     </label>
                     <select
                       id="mgr-nat-select"
@@ -442,7 +447,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
                 <div>
                   <label htmlFor="mgr-coaching-select" className="block text-xs text-slate-400 mb-1">
-                    รูปแบบการโค้ช (Coaching Style)
+                    {tr('Coaching Style', 'รูปแบบการโค้ช (Coaching Style)')}
                   </label>
                   <select
                     id="mgr-coaching-select"
@@ -450,16 +455,24 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     onChange={(e) => setCoachingStyle(e.target.value as ManagerProfile['coachingStyle'])}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
                   >
-                    <option value="Tactician">Tactician (เชี่ยวชาญการแก้เกมและระบบแท็กติก)</option>
-                    <option value="Motivator">Motivator (กระตุ้นขวัญกำลังใจนักเตะยอดเยี่ยม)</option>
-                    <option value="Youth Developer">Youth Developer (ปั้นดาวรุ่งพัฒนาไว)</option>
-                    <option value="Tracksuit Coach">Tracksuit Coach (เน้นการฝึกซ้อมภาคสนามเข้มข้น)</option>
+                    <option value="Tactician">
+                      {tr('Tactician (Master of tactical systems & adjustments)', 'Tactician (เชี่ยวชาญการแก้เกมและระบบแท็กติก)')}
+                    </option>
+                    <option value="Motivator">
+                      {tr('Motivator (Boosts squad morale & mentality)', 'Motivator (กระตุ้นขวัญกำลังใจนักเตะยอดเยี่ยม)')}
+                    </option>
+                    <option value="Youth Developer">
+                      {tr('Youth Developer (Accelerates young player growth)', 'Youth Developer (ปั้นดาวรุ่งพัฒนาไว)')}
+                    </option>
+                    <option value="Tracksuit Coach">
+                      {tr('Tracksuit Coach (Intensive on-pitch training)', 'Tracksuit Coach (เน้นการฝึกซ้อมภาคสนามเข้มข้น)')}
+                    </option>
                   </select>
                 </div>
 
                 <div>
                   <label htmlFor="mgr-tactical-select" className="block text-xs text-slate-400 mb-1">
-                    ปรัชญาฟุตบอลหลัก (Tactical Philosophy)
+                    {tr('Tactical Philosophy', 'ปรัชญาฟุตบอลหลัก (Tactical Philosophy)')}
                   </label>
                   <select
                     id="mgr-tactical-select"
@@ -467,11 +480,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     onChange={(e) => setTacticalStyle(e.target.value as AIManagerStyle)}
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 transition-colors duration-150"
                   >
-                    <option value="Possession-focused Manager">Possession-focused (เน้นครองบอลทำชิ่ง)</option>
-                    <option value="Attacking Manager">Attacking Football (เปิดเกมรุกกดดันสูง)</option>
-                    <option value="Counter-attacking Manager">Direct Counter-Attack (รับแน่นโต้กลับเร็ว)</option>
-                    <option value="Youth Developer">Youth & Dynamic Press (พลังหนุ่มบีบพื้นที่)</option>
-                    <option value="Pragmatic Manager">Pragmatic Balance (ยืดหยุ่นตามคู่แข่ง)</option>
+                    <option value="Possession-focused Manager">
+                      {tr('Possession-focused (Short passing & control)', 'Possession-focused (เน้นครองบอลทำชิ่ง)')}
+                    </option>
+                    <option value="Attacking Manager">
+                      {tr('Attacking Football (High-tempo offensive pressure)', 'Attacking Football (เปิดเกมรุกกดดันสูง)')}
+                    </option>
+                    <option value="Counter-attacking Manager">
+                      {tr('Direct Counter-Attack (Compact defense & fast transitions)', 'Direct Counter-Attack (รับแน่นโต้กลับเร็ว)')}
+                    </option>
+                    <option value="Youth Developer">
+                      {tr('Youth & Dynamic Press (High-energy pressing)', 'Youth & Dynamic Press (พลังหนุ่มบีบพื้นที่)')}
+                    </option>
+                    <option value="Pragmatic Manager">
+                      {tr('Pragmatic Balance (Adaptable to opponents)', 'Pragmatic Balance (ยืดหยุ่นตามคู่แข่ง)')}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -480,10 +503,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               <div className="lg:col-span-8 space-y-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold text-emerald-400">
-                    2. เลือกประเทศ ลีก และสโมสรต้นสังกัด
+                    {tr('2. Select Country, League & Club', '2. เลือกประเทศ ลีก และสโมสรต้นสังกัด')}
                   </h3>
                   <span className="text-xs font-mono text-slate-400">
-                    {currentLeagueConfig.countryFlag} · {currentLeagueConfig.name} ({allClubsInSelectedLeague.length} สโมสร)
+                    {currentLeagueConfig.countryFlag} · {currentLeagueConfig.name} ({allClubsInSelectedLeague.length} {tr('Clubs', 'สโมสร')})
                   </span>
                 </div>
 
@@ -494,7 +517,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     {/* 1. Country Dropdown */}
                     <div className="md:col-span-4">
                       <label htmlFor="picker-country-select" className="block text-[11px] text-slate-400 mb-1">
-                        ประเทศ (Country)
+                        {tr('Country', 'ประเทศ (Country)')}
                       </label>
                       <select
                         id="picker-country-select"
@@ -504,7 +527,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       >
                         {countriesList.map((c) => (
                           <option key={c.countryId} value={c.countryId}>
-                            {c.countryFlag} · {c.countryName} ({c.leagues.length} ลีก)
+                            {c.countryFlag} · {c.countryName} ({c.leagues.length} {tr(c.leagues.length > 1 ? 'Leagues' : 'League', 'ลีก')})
                           </option>
                         ))}
                       </select>
@@ -513,7 +536,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     {/* 2. League / Division Dropdown (All 15 Leagues or Country Tier) */}
                     <div className="md:col-span-5">
                       <label htmlFor="picker-league-select" className="block text-[11px] text-slate-400 mb-1">
-                        ลีกในประเทศ / ระดับดิวิชั่น (League & Tier)
+                        {tr('League & Division Tier', 'ลีกในประเทศ / ระดับดิวิชั่น (League & Tier)')}
                       </label>
                       <select
                         id="picker-league-select"
@@ -528,7 +551,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                           >
                             {country.leagues.map((lCfg) => (
                               <option key={lCfg.id} value={lCfg.id}>
-                                {lCfg.tier === 2 ? 'Tier 2 (ลีกรอง)' : 'Tier 1 (ลีกสูงสุด)'}: {lCfg.name} ({lCfg.targetClubCount} ทีม)
+                                {lCfg.tier === 2
+                                  ? tr('Tier 2 (2nd Division)', 'Tier 2 (ลีกรอง)')
+                                  : tr('Tier 1 (Top Flight)', 'Tier 1 (ลีกสูงสุด)')}
+                                : {lCfg.name} ({lCfg.targetClubCount} {tr('clubs', 'ทีม')})
                               </option>
                             ))}
                           </optgroup>
@@ -539,14 +565,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     {/* 3. Quick Club Filter Input */}
                     <div className="md:col-span-3">
                       <label htmlFor="picker-club-search" className="block text-[11px] text-slate-400 mb-1">
-                        ค้นหาชื่อสโมสร
+                        {tr('Search Club', 'ค้นหาชื่อสโมสร')}
                       </label>
                       <input
                         id="picker-club-search"
                         type="text"
                         value={clubSearchQuery}
                         onChange={(e) => setClubSearchQuery(e.target.value)}
-                        placeholder="พิมพ์ชื่อทีม..."
+                        placeholder={tr('Filter club name...', 'พิมพ์ชื่อทีม...')}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-700/80 focus:border-emerald-500 focus:outline-none rounded-lg text-xs text-slate-100 placeholder:text-slate-500 transition-all duration-150"
                       />
                     </div>
@@ -591,7 +617,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   {countryLeagues.length > 1 && (
                     <div className="flex items-center gap-2 pt-1.5 border-t border-slate-800/80 animate-fadeIn">
                       <span className="text-[11px] text-slate-400 font-medium shrink-0">
-                        เลือกระดับลีกของ {currentLeagueConfig.countryName}:
+                        {tr(`Select ${currentLeagueConfig.countryName} Division:`, `เลือกระดับลีกของ ${currentLeagueConfig.countryName}:`)}
                       </span>
                       <div className="grid grid-cols-2 gap-2 flex-1">
                         {countryLeagues.map((lCfg) => {
@@ -610,7 +636,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                               <span className="truncate">{lCfg.name}</span>
                               <span className="text-[10px] font-mono opacity-80 ml-2 shrink-0">
                                 {lCfg.tier === 2 ? 'D2 · ' : 'D1 · '}
-                                {lCfg.targetClubCount} ทีม
+                                {lCfg.targetClubCount} {tr('clubs', 'ทีม')}
                               </span>
                             </button>
                           );
@@ -667,21 +693,24 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                             </span>
                           </div>
                           <div className="text-xs text-slate-400">
-                            {activeClub.city} · สนาม {activeClub.stadiumName} ({activeClub.stadiumCapacity.toLocaleString()} ที่นั่ง)
+                            {activeClub.city} · {tr('Stadium:', 'สนาม')} {activeClub.stadiumName} ({activeClub.stadiumCapacity.toLocaleString()} {tr('seats', 'ที่นั่ง')})
                           </div>
                         </div>
                       </div>
                       <div className="text-right font-mono tabular-nums">
                         <div className="text-xs text-emerald-400 font-semibold">
-                          งบซื้อขาย: €{(activeClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+                          {tr('Transfer Budget:', 'งบซื้อขาย:')} €{(activeClub.finances.transferBudget / 1_000_000).toFixed(1)}M
                         </div>
                         <div className="text-xs text-slate-400">
-                          เพดานค่าเหนื่อย: €{(activeClub.finances.wageBudgetPerWeek / 1_000).toFixed(0)}K/สัปดาห์
+                          {tr('Wage Budget:', 'เพดานค่าเหนื่อย:')} €{(activeClub.finances.wageBudgetPerWeek / 1_000).toFixed(0)}K/{tr('wk', 'สัปดาห์')}
                         </div>
                       </div>
                     </div>
                     <div className="text-xs text-slate-300">
-                      เป้าหมายบอร์ดบริหาร: อันดับท็อป {activeClub.boardExpectations.targetLeaguePosition} ของลีก — {activeClub.boardExpectations.clubVision}
+                      {tr(
+                        `Board Expectation: Top ${activeClub.boardExpectations.targetLeaguePosition} League Finish — ${activeClub.boardExpectations.clubVision}`,
+                        `เป้าหมายบอร์ดบริหาร: อันดับท็อป ${activeClub.boardExpectations.targetLeaguePosition} ของลีก — ${activeClub.boardExpectations.clubVision}`
+                      )}
                     </div>
                   </div>
                 )}
@@ -694,7 +723,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 onClick={() => setShowSetupModal(false)}
                 className="px-4 py-2 text-xs text-slate-300 hover:text-white transition-colors duration-150 cursor-pointer"
               >
-                ยกเลิก
+                {tr('Cancel', 'ยกเลิก')}
               </button>
               <button
                 type="button"
@@ -713,7 +742,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 }}
                 className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap shadow-lg shadow-emerald-950/50"
               >
-                เซ็นสัญญาเริ่มคุมสโมสร {activeClub?.shortName}
+                {tr(`Sign Contract & Manage ${activeClub?.shortName}`, `เซ็นสัญญาเริ่มคุมสโมสร ${activeClub?.shortName}`)}
               </button>
             </div>
           </div>
@@ -731,34 +760,40 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-xl overflow-hidden shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
               <h2 id="load-modal-title" className="text-lg font-display font-bold text-slate-100">
-                โหลดเซฟเกม (Saved Careers)
+                {tr('Load Saved Career', 'โหลดเซฟเกม (Saved Careers)')}
               </h2>
               <button
                 type="button"
                 onClick={() => setShowLoadModal(false)}
                 className="px-3 py-1 text-xs text-slate-400 hover:text-white cursor-pointer"
               >
-                ปิดหน้าต่าง
+                {tr('Close', 'ปิดหน้าต่าง')}
               </button>
             </div>
             <div className="p-6 max-h-96 overflow-y-auto space-y-3">
               {!authUser && (
                 <div className="p-4 rounded-lg bg-slate-950 border border-emerald-500/40 flex items-center justify-between gap-4">
                   <div className="text-xs text-slate-300">
-                    เข้าสู่ระบบด้วยบัญชี <strong className="text-emerald-400">Google / Gmail</strong> เพื่อซิงก์และโหลดข้อมูลเซฟเกมบน Cloud Firestore โดยตรง
+                    {tr(
+                      'Sign in with your Google / Gmail account to sync and load career saves directly from Cloud Firestore.',
+                      'เข้าสู่ระบบด้วยบัญชี Google / Gmail เพื่อซิงก์และโหลดข้อมูลเซฟเกมบน Cloud Firestore โดยตรง'
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={onGoogleSignIn}
                     className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer whitespace-nowrap shrink-0"
                   >
-                    เข้าสู่ระบบด้วย Gmail
+                    {tr('Sign in with Gmail', 'เข้าสู่ระบบด้วย Gmail')}
                   </button>
                 </div>
               )}
               {saveSlots.length === 0 ? (
                 <div className="text-center py-8 text-sm text-slate-400">
-                  ยังไม่มีข้อมูลเซฟเกมที่บันทึกไว้ เริ่มต้นอาชีพผู้จัดการทีมใหม่เพื่อบันทึกความก้าวหน้าลง Cloud ได้เลย
+                  {tr(
+                    'No saved careers found yet. Start a new managerial career to save your progress to the Cloud.',
+                    'ยังไม่มีข้อมูลเซฟเกมที่บันทึกไว้ เริ่มต้นอาชีพผู้จัดการทีมใหม่เพื่อบันทึกความก้าวหน้าลง Cloud ได้เลย'
+                  )}
                 </div>
               ) : (
                 saveSlots.map((slot) => (
@@ -769,7 +804,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     <div>
                       <div className="text-sm font-semibold text-white">{slot.clubName}</div>
                       <div className="text-xs text-slate-400 font-mono tabular-nums">
-                        ผู้จัดการ: {slot.managerName} · วันที่ในเกม: {slot.gameDate} · ฤดูกาล {slot.season}
+                        {tr(
+                          `Manager: ${slot.managerName} · Game Date: ${slot.gameDate} · Season ${slot.season}`,
+                          `ผู้จัดการ: ${slot.managerName} · วันที่ในเกม: ${slot.gameDate} · ฤดูกาล ${slot.season}`
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -778,14 +816,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                         onClick={() => onLoadSlot(slot.slotId)}
                         className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded cursor-pointer"
                       >
-                        โหลดเซฟ
+                        {tr('Load', 'โหลดเซฟ')}
                       </button>
                       <button
                         type="button"
                         onClick={() => onDeleteSlot(slot.slotId)}
                         className="px-2.5 py-1.5 bg-slate-800 hover:bg-red-950 text-slate-300 hover:text-red-300 text-xs rounded cursor-pointer"
                       >
-                        ลบ
+                        {tr('Delete', 'ลบ')}
                       </button>
                     </div>
                   </div>

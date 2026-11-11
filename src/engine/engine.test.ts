@@ -17,7 +17,15 @@ import {
   saveWorldStateToSlot,
   submitAndEvaluateTransferOffer,
 } from './worldSimulationService';
-import { analyzeTacticalRisks, calculatePositionFit } from './tacticsEngine';
+import {
+  analyzeTacticalRisks,
+  calculatePositionFit,
+  evaluateAttributeSynergy,
+  evaluatePlayerInjuryRisk,
+  evaluateRoleSuitability,
+  evaluateSquadRegistration,
+  togglePlayerInstructionWithExclusions,
+} from './tacticsEngine';
 
 test('15 European Leagues & 280 Clubs configuration and generation', () => {
   const world = createInitialWorldState(12345);
@@ -306,12 +314,12 @@ test('Match Engine deterministic simulation, event coherence, mid-match splice r
   const splicedFt = spliced.events.find((e) => e.eventType === 'FullTime')!;
   assert.equal(
     splicedFt.text,
-    `จบการแข่งขัน 90 นาที: ${homeClub.name} 3 - 3 ${awayClub.name}`
+    `Full-Time (90'): ${homeClub.name} 3 - 3 ${awayClub.name}`
   );
   const lastGoal = spliced.events.filter((e) => e.eventType === 'Goal').slice(-1)[0];
   assert.ok(
-    lastGoal.text.includes('[3 - 3]') && lastGoal.text.includes('ซัดประตูตีเสมอ'),
-    `90th-minute equalizer must state [3 - 3] and ตีเสมอ, got: ${lastGoal.text}`
+    lastGoal.text.includes('[3 - 3]') && lastGoal.text.includes('equalizer'),
+    `90th-minute equalizer must state [3 - 3] and equalizer, got: ${lastGoal.text}`
   );
 
   // Apply match result and check standings
@@ -402,40 +410,252 @@ test('WorldClockService advances dates cleanly and Cloud Firestore native Map de
   const fit = calculatePositionFit(firstPlayer, firstPlayer.positions[0]);
   assert.equal(fit, 1.0);
 
+  // Simulate 28 days of multi-league fixtures and weekly finance updates across 280 clubs
+  let multiWeekState = nextState;
+  for (let d = 0; d < 28; d++) {
+    multiWeekState = advanceWorldOneDay(multiWeekState).nextState;
+  }
+
   // Verify Cloud Firestore native Map dehydration and rehydration round-trip
-  const careerMap = dehydrateWorldStateToCareerMap(nextState);
+  const careerMap = dehydrateWorldStateToCareerMap(multiWeekState);
   const approxByteSize = Buffer.byteLength(JSON.stringify(careerMap), 'utf8');
   assert.ok(
-    approxByteSize < 350_000,
-    `Cloud Firestore careerState map must be well under 1MB limit (got ${approxByteSize} bytes)`
+    approxByteSize < 250_000,
+    `Cloud Firestore careerState map must be well under 1MB limit after multi-week simulation (got ${approxByteSize} bytes)`
   );
 
   const rehydrated = rehydrateWorldStateFromCareerDoc({
     ownerId: 'user_test_1',
     slotId: 'slot_autosave',
-    saveName: nextState.saveName,
+    saveName: multiWeekState.saveName,
     clubName: club.name,
-    managerName: nextState.manager.name,
-    gameDate: nextState.gameDate,
-    season: nextState.currentSeason,
+    managerName: multiWeekState.manager.name,
+    gameDate: multiWeekState.gameDate,
+    season: multiWeekState.currentSeason,
     lastSavedAtIso: '2026-11-10T10:00:00.000Z',
-    randomSeed: nextState.randomSeed,
-    controlledClubId: nextState.controlledClubId,
+    randomSeed: multiWeekState.randomSeed,
+    controlledClubId: multiWeekState.controlledClubId,
     careerState: careerMap,
   });
 
   assert.equal(Object.keys(rehydrated.clubs).length, 280);
   assert.equal(
     Object.keys(rehydrated.players).length,
-    Object.keys(nextState.players).length
+    Object.keys(multiWeekState.players).length
   );
-  assert.equal(rehydrated.gameDate, nextState.gameDate);
+  assert.equal(rehydrated.gameDate, multiWeekState.gameDate);
 
   // Verify saveWorldStateToSlot and loadWorldStateFromSlot work with zero localStorage
-  const metas = saveWorldStateToSlot('slot_autosave', nextState);
+  const metas = saveWorldStateToSlot('slot_autosave', multiWeekState);
   assert.ok(metas.length >= 1);
   const loaded = loadWorldStateFromSlot('slot_autosave');
   assert.ok(loaded);
-  assert.equal(loaded?.controlledClubId, nextState.controlledClubId);
+  assert.equal(loaded?.controlledClubId, multiWeekState.controlledClubId);
 });
+
+test('UEFA New Format (36-team Swiss League Phase, 4 Pots, 10-country quotas, and Knockout progression)', () => {
+  const world = createInitialWorldState(202526);
+  const uclStandings = world.uefaStandings?.UEFA_UCL ?? [];
+  const uelStandings = world.uefaStandings?.UEFA_UEL ?? [];
+  const ueclStandings = world.uefaStandings?.UEFA_UECL ?? [];
+
+  assert.equal(uclStandings.length, 36, 'UCL must have 36 teams in single League Phase table');
+  assert.equal(uelStandings.length, 36, 'UEL must have 36 teams in single League Phase table');
+  assert.equal(ueclStandings.length, 36, 'UECL must have 36 teams in single League Phase table');
+
+  // Ensure all 108 European clubs across UCL, UEL, UECL are distinct
+  const allUefaClubIds = new Set([
+    ...uclStandings.map((r) => r.clubId),
+    ...uelStandings.map((r) => r.clubId),
+    ...ueclStandings.map((r) => r.clubId),
+  ]);
+  assert.equal(allUefaClubIds.size, 108, '108 distinct clubs must qualify across UCL, UEL, UECL');
+
+  // Verify 4 pots of 9 teams each per competition
+  for (const compId of ['UEFA_UCL', 'UEFA_UEL', 'UEFA_UECL'] as const) {
+    const pots = world.uefaPots?.[compId] ?? [];
+    assert.equal(pots.length, 4);
+    for (const pot of pots) {
+      assert.equal(pot.length, 9);
+    }
+  }
+
+  // Verify UCL and UEL have 8 matches per team (4 Home, 4 Away) = 144 League Phase fixtures each
+  for (const compId of ['UEFA_UCL', 'UEFA_UEL'] as const) {
+    const compFixtures = world.fixtures.filter(
+      (f) => f.competitionId === compId && f.uefaStage === 'LEAGUE_PHASE'
+    );
+    assert.equal(compFixtures.length, 144, `${compId} League Phase must have 144 fixtures`);
+
+    const pots = world.uefaPots![compId];
+    const clubToPot = new Map<string, number>();
+    pots.forEach((pot, idx) => pot.forEach((cid) => clubToPot.set(cid, idx)));
+
+    for (const cid of pots.flat()) {
+      const myHome = compFixtures.filter((f) => f.homeClubId === cid);
+      const myAway = compFixtures.filter((f) => f.awayClubId === cid);
+      assert.equal(myHome.length, 4, `${compId} club ${cid} must play 4 home matches`);
+      assert.equal(myAway.length, 4, `${compId} club ${cid} must play 4 away matches`);
+
+      const opponents = new Set([
+        ...myHome.map((f) => f.awayClubId),
+        ...myAway.map((f) => f.homeClubId),
+      ]);
+      assert.equal(opponents.size, 8, `${compId} club ${cid} must face 8 distinct opponents`);
+
+      // Verify 1 Home and 1 Away against each of the 4 pots
+      for (let p = 0; p < 4; p++) {
+        const homeVsPot = myHome.filter((f) => clubToPot.get(f.awayClubId) === p).length;
+        const awayVsPot = myAway.filter((f) => clubToPot.get(f.homeClubId) === p).length;
+        assert.equal(homeVsPot, 1, `${compId} club ${cid} must play 1 Home match vs Pot ${p + 1}`);
+        assert.equal(awayVsPot, 1, `${compId} club ${cid} must play 1 Away match vs Pot ${p + 1}`);
+      }
+    }
+  }
+
+  // Verify UECL has 6 matches per team (3 Home, 3 Away) = 108 League Phase fixtures
+  const ueclFixtures = world.fixtures.filter(
+    (f) => f.competitionId === 'UEFA_UECL' && f.uefaStage === 'LEAGUE_PHASE'
+  );
+  assert.equal(ueclFixtures.length, 108, 'UECL League Phase must have 108 fixtures');
+  for (const cid of world.uefaPots!.UEFA_UECL.flat()) {
+    const myHome = ueclFixtures.filter((f) => f.homeClubId === cid);
+    const myAway = ueclFixtures.filter((f) => f.awayClubId === cid);
+    assert.equal(myHome.length, 3, `UECL club ${cid} must play 3 home matches`);
+    assert.equal(myAway.length, 3, `UECL club ${cid} must play 3 away matches`);
+    const opponents = new Set([
+      ...myHome.map((f) => f.awayClubId),
+      ...myAway.map((f) => f.homeClubId),
+    ]);
+    assert.equal(opponents.size, 6, `UECL club ${cid} must face 6 distinct opponents`);
+  }
+});
+
+test('Deep Squad Management & Tactics: 25-man / 8-HG Registration, Attribute Synergy, False 9, and 3-match Star Benching', () => {
+  const world = createInitialWorldState(991122);
+  const club = world.clubs[world.controlledClubId];
+  const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
+
+  // 1. Verify initial Squad Registration meets Max 25 & Min 8 Homegrown rules
+  const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId);
+  assert.ok(regSummary.registeredCount <= 25, `Registered count (${regSummary.registeredCount}) must be <= 25`);
+  assert.ok(
+    regSummary.homegrownRegisteredCount >= 8,
+    `Homegrown registered count (${regSummary.homegrownRegisteredCount}) must be >= 8`
+  );
+  assert.equal(regSummary.isCompliant, true, 'Initial squad registration must be compliant');
+
+  // 2. Verify Mutual Exclusion in Individual Instructions (Shoot Less vs Shoot More, Tackle Harder vs Ease Off Tackles)
+  let inst = togglePlayerInstructionWithExclusions([], 'Shoot More');
+  assert.deepEqual(inst, ['Shoot More']);
+  inst = togglePlayerInstructionWithExclusions(inst, 'Shoot Less');
+  assert.deepEqual(inst, ['Shoot Less'], 'Shoot Less must automatically remove Shoot More');
+  inst = togglePlayerInstructionWithExclusions(inst, 'Tackle Harder');
+  assert.deepEqual(inst, ['Shoot Less', 'Tackle Harder']);
+  inst = togglePlayerInstructionWithExclusions(inst, 'Ease Off Tackles');
+  assert.deepEqual(inst, ['Shoot Less', 'Ease Off Tackles']);
+
+  // 3. Verify False 9 & Inverted Wing Back role suitability and Attribute Synergy detection
+  const stSlot = club.primaryTactic.lineup.find((s) => s.position === 'ST')!;
+  const stPlayer = world.players[stSlot.playerId!];
+  const f9Score = evaluateRoleSuitability(stPlayer, 'False 9');
+  assert.ok(f9Score >= 1 && f9Score <= 20, 'False 9 suitability must be on 1-20 scale');
+
+  // Inject a slow centre-back in a Very High Defensive Line and a low-stamina forward in a Very High Press
+  const dcSlot = club.primaryTactic.lineup.find((s) => s.position === 'DC')!;
+  const dcPlayer = world.players[dcSlot.playerId!];
+  const modifiedPlayers = {
+    ...world.players,
+    [dcPlayer.id]: {
+      ...dcPlayer,
+      fitness: 64, // <70% Condition triggers High Muscle Injury Risk
+      attributes: {
+        ...dcPlayer.attributes,
+        physical: { ...dcPlayer.attributes.physical, pace: 8, acceleration: 8 },
+      },
+    },
+    [stPlayer.id]: {
+      ...stPlayer,
+      attributes: {
+        ...stPlayer.attributes,
+        mental: { ...stPlayer.attributes.mental, workRate: 7 },
+        physical: { ...stPlayer.attributes.physical, stamina: 8 },
+      },
+    },
+  };
+
+  const highLinePressTactic = {
+    ...club.primaryTactic,
+    familiarity: 48, // Low familiarity after switching formations
+    instructions: {
+      ...club.primaryTactic.instructions,
+      defensiveLine: 'Very High' as const,
+      pressingIntensity: 'Very High' as const,
+    },
+  };
+
+  const synergy = evaluateAttributeSynergy(highLinePressTactic, modifiedPlayers);
+  assert.ok(
+    synergy.defensiveLineSynergy.weakLinks.some((w) => w.playerId === dcPlayer.id),
+    'Slow CB must be flagged in Very High Defensive Line synergy'
+  );
+  assert.ok(
+    synergy.pressingSynergy.weakLinks.some((w) => w.playerId === stPlayer.id),
+    'Low Work Rate / Stamina forward must be flagged in Very High Pressing synergy'
+  );
+
+  const injRisk = evaluatePlayerInjuryRisk(modifiedPlayers[dcPlayer.id], 'Very High');
+  assert.equal(injRisk.level, 'High', 'Player with 64% Condition must have High muscle injury risk');
+
+  const alerts = analyzeTacticalRisks(highLinePressTactic, modifiedPlayers);
+  assert.ok(
+    alerts.some((a) => a.message.includes('Low Tactical Familiarity')),
+    'Must warn about low tactical familiarity (<65%)'
+  );
+  assert.ok(
+    alerts.some((a) => a.message.includes('Injury Risk')),
+    'Must warn about starting a player with <70% Condition'
+  );
+
+  // 4. Verify Squad Hierarchy 3-match consecutive benching drops Star Player morale & triggers Inbox unrest
+  const starPlayer = clubPlayers.find((p) => p.squadStatus === 'Star Player')!;
+  const userFixture = world.fixtures.find(
+    (f) => f.status === 'Scheduled' && (f.homeClubId === club.id || f.awayClubId === club.id)
+  )!;
+  const home = world.clubs[userFixture.homeClubId];
+  const away = world.clubs[userFixture.awayClubId];
+  const simRes = simulateMatch(userFixture, home, away, world.players, 777);
+
+  // Remove starPlayer from playerRatings to simulate being benched for the 3rd consecutive match
+  const ratingsWithoutStar = { ...simRes.playerRatings };
+  delete ratingsWithoutStar[starPlayer.id];
+
+  const stateWithStarBenchedTwice = {
+    ...world,
+    players: {
+      ...world.players,
+      [starPlayer.id]: {
+        ...starPlayer,
+        consecutiveBenched: 2,
+        morale: 85,
+      },
+    },
+  };
+
+  const after3rdBench = applyMatchResultToWorld(stateWithStarBenchedTwice, userFixture.id, {
+    ...simRes,
+    playerRatings: ratingsWithoutStar,
+  });
+
+  const updatedStar = after3rdBench.players[starPlayer.id];
+  assert.equal(updatedStar.consecutiveBenched, 3, 'Consecutive benched count must increment to 3');
+  assert.ok(updatedStar.morale <= 73, `Star player morale must drop sharply after 3rd benching (got ${updatedStar.morale})`);
+  assert.ok(
+    after3rdBench.inbox.some((n) => n.id.includes(`news_hier_${userFixture.id}_${starPlayer.id}`)),
+    'Must generate Dressing Room Unrest inbox item when Star Player is benched 3 matches in a row'
+  );
+});
+
+
+
 
