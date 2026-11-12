@@ -1,6 +1,7 @@
 import {
   AIManagerStyle,
   Club,
+  CustomClubConfig,
   FinanceTransaction,
   Fixture,
   FormationId,
@@ -13,6 +14,7 @@ import {
   PlayerAttributes,
   PlayerRole,
   PositionCode,
+  ScenarioChallengeId,
   SeasonAwardRecord,
   StaffMember,
   StaffRole,
@@ -24,6 +26,7 @@ import { CLUB_TEMPLATES, LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConf
 import { REAL_CLUB_CORE_PLAYERS, REAL_CLUB_ROSTERS, RealPlayerSeed } from './realRostersData';
 import {
   createInitialStandings,
+  generateEuropeanNationsCupFixtures,
   generateInitialDomesticCupFixtures,
   generateLeagueSchedule,
 } from './leagueEngine';
@@ -498,7 +501,9 @@ function buildClubSquadSeeds(
 export function createInitialWorldState(
   seed = 20261110,
   customManager?: Partial<ManagerProfile>,
-  selectedClubId?: string
+  selectedClubId?: string,
+  scenarioChallenge: ScenarioChallengeId = 'STANDARD',
+  customClubConfig?: CustomClubConfig | null
 ): WorldState {
   const rng = new SeededRNG(seed);
   const gameDate = '2025-08-10';
@@ -929,8 +934,161 @@ export function createInitialWorldState(
     };
   });
 
+  // Generate European Nations Cup (INT_EURO) Quarter-Finals for May 2026
+  const euroFixtures = generateEuropeanNationsCupFixtures(currentSeason, 2026, clubs);
+  fixtures.push(...euroFixtures);
+
   const controlledClubId = selectedClubId && clubs[selectedClubId] ? selectedClubId : 'club_eng_pl_1';
   const controlledClub = clubs[controlledClubId];
+
+  // Checkpoint 17: Apply Create-a-Club custom overrides if enabled
+  if (customClubConfig && customClubConfig.enabled) {
+    if (customClubConfig.name.trim()) {
+      controlledClub.name = customClubConfig.name.trim();
+    }
+    if (customClubConfig.shortName.trim()) {
+      controlledClub.shortName = customClubConfig.shortName.trim().toUpperCase().slice(0, 4);
+    }
+    if (customClubConfig.primaryColor) {
+      controlledClub.primaryColor = customClubConfig.primaryColor;
+    }
+    if (customClubConfig.secondaryColor) {
+      controlledClub.secondaryColor = customClubConfig.secondaryColor;
+    }
+    if (customClubConfig.stadiumName.trim()) {
+      controlledClub.stadiumName = customClubConfig.stadiumName.trim();
+    }
+  }
+
+  // Checkpoint 17: Apply FM Scenario Challenge Modes
+  if (scenarioChallenge === 'POINTS_DEDUCTION') {
+    controlledClub.pointsDeduction = 10;
+    controlledClub.finances.transferBudget = Math.min(
+      5_000_000,
+      Math.round(controlledClub.finances.transferBudget * 0.25)
+    );
+    standings[controlledClub.leagueId] = standings[controlledClub.leagueId].map((row) =>
+      row.clubId === controlledClub.id
+        ? { ...row, points: -10, pointsDeduction: 10 }
+        : row
+    );
+  } else if (scenarioChallenge === 'INJURY_CRISIS') {
+    const clubStars = Object.values(players)
+      .filter((p) => p.clubId === controlledClub.id && p.positions[0] !== 'GK')
+      .sort((a, b) => b.currentAbility - a.currentAbility)
+      .slice(0, 5);
+    const injuryTypes = [
+      'Hamstring Tear (Grade 2)',
+      'Ankle Ligament Sprain',
+      'Knee Meniscus Strain',
+      'Groin Muscle Strain',
+      'Calf Muscle Strain',
+    ];
+    clubStars.forEach((star, idx) => {
+      players[star.id] = {
+        ...star,
+        fitness: 58,
+        injuryStatus: {
+          isInjured: true,
+          type: injuryTypes[idx % injuryTypes.length],
+          daysRemaining: 21 + idx * 4,
+        },
+      };
+    });
+    const healthyPlayers = Object.values(players).filter((p) => p.clubId === controlledClub.id);
+    controlledClub.primaryTactic = autoPickLineup(
+      controlledClub.primaryTactic.formation,
+      healthyPlayers,
+      controlledClub.primaryTactic.instructions,
+      controlledClub.primaryTactic.id,
+      controlledClub.primaryTactic.name
+    );
+  } else if (scenarioChallenge === 'YOUTH_ONLY') {
+    controlledClub.transferEmbargoUntil = '2099-12-31';
+    controlledClub.youthFacilities = 20;
+    controlledClub.juniorCoaching = 20;
+    controlledClub.youthRecruitment = 20;
+
+    // Seed 3 elite Class of '27 Wonderkids directly into the squad
+    const wkPositions: PositionCode[] = ['ST', 'AMC', 'DC'];
+    const pool = NATIONALITY_POOLS[controlledClub.countryId] || NATIONALITY_POOLS.ENG;
+    wkPositions.forEach((pos, idx) => {
+      const wkId = `plr_${controlledClub.id}_wk_challenge_${idx + 1}`;
+      const fName = capitalizeName(rng.pick(pool.firstNames));
+      const lName = capitalizeName(rng.pick(pool.lastNames));
+      const attrs = generateAttributesForPosition(pos, 134 + idx * 2, rng);
+      const ca = computeCoherentCA(attrs);
+      const pa = 186 + idx * 3;
+      const { marketValue, wagePerWeek } = calculatePlayerValuation(
+        ca,
+        pa,
+        17,
+        controlledClub.reputation
+      );
+      const wkPlayer: Player = {
+        id: wkId,
+        firstName: fName,
+        lastName: lName,
+        dateOfBirth: '2008-05-14',
+        nationality: LEAGUES_CONFIG[controlledClub.leagueId]?.countryName || 'England',
+        nationalityCode: controlledClub.countryId,
+        heightCm: 179 + idx * 3,
+        weightKg: 71 + idx * 2,
+        preferredFoot: idx === 1 ? 'Left' : 'Right',
+        positions: [pos],
+        preferredRole: pos === 'ST' ? 'Advanced Forward' : pos === 'AMC' ? 'Advanced Playmaker' : 'Ball Playing Defender',
+        currentAbility: ca,
+        potentialAbility: pa,
+        potentialRange: [pa - 6, Math.min(200, pa + 4)],
+        attributes: attrs,
+        fitness: 99,
+        matchSharpness: 90,
+        morale: 96,
+        tacticalFamiliarity: 88,
+        squadStatus: 'Breakthrough Prospect',
+        satisfaction: 95,
+        personality: 'Model Citizen',
+        professionalism: 19,
+        clubId: controlledClub.id,
+        loanedFromClubId: null,
+        wagePerWeek: Math.min(6_000, wagePerWeek),
+        contractEndDate: '2030-06-30',
+        releaseClause: marketValue * 2,
+        goalBonus: 500,
+        marketValue,
+        askingPrice: Math.round(marketValue * 1.6),
+        transferListed: false,
+        loanListed: false,
+        injuryStatus: { isInjured: false, daysRemaining: 0 },
+        individualTraining: {
+          attributeFocus: 'Balanced',
+          roleFocus: pos === 'ST' ? 'Advanced Forward' : pos === 'AMC' ? 'Advanced Playmaker' : 'Ball Playing Defender',
+          intensity: 'Medium',
+        },
+        stats: {
+          appearances: 0,
+          starts: 0,
+          goals: 0,
+          assists: 0,
+          yellowCards: 0,
+          redCards: 0,
+          cleanSheets: 0,
+          minutesPlayed: 0,
+          averageRating: 7.1,
+          manOfTheMatch: 0,
+        },
+        developmentHistory: [{ date: gameDate, ca, keyAttributeChanges: [] }],
+        transferHistory: [],
+        isYouthAcademy: true,
+        isHomegrown: true,
+        isRegistered: true,
+        youthSquad: 'u21',
+        contractType: 'professional',
+        isWonderkid: true,
+      };
+      players[wkId] = wkPlayer;
+    });
+  }
 
   const manager: ManagerProfile = {
     id: 'mgr_user_1',
@@ -1256,6 +1414,9 @@ export function createInitialWorldState(
     mentoringGroups,
     trophyHistory,
     seasonAwardsHistory,
+    controlledNationalTeamCode: null,
+    scenarioChallenge,
+    customClubConfig: customClubConfig || null,
   };
 }
 

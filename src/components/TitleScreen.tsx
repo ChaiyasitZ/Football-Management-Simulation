@@ -1,5 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AIManagerStyle, Club, LeagueId, ManagerProfile, WorldState } from '../types/game';
+import {
+  AIManagerStyle,
+  Club,
+  CustomClubConfig,
+  LeagueId,
+  ManagerProfile,
+  ScenarioChallengeId,
+  WorldState,
+} from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
 import type { User } from '../firebase';
@@ -13,7 +21,12 @@ interface TitleScreenProps {
   onGoogleSignIn: () => void;
   onGoogleSignOut: () => void;
   onQuickStart: () => void;
-  onStartCustomCareer: (manager: Partial<ManagerProfile>, clubId: string) => void;
+  onStartCustomCareer: (
+    manager: Partial<ManagerProfile>,
+    clubId: string,
+    scenarioChallenge?: ScenarioChallengeId,
+    customClubConfig?: CustomClubConfig | null
+  ) => void;
   onLoadSlot: (slotId: string) => void;
   onDeleteSlot: (slotId: string) => void;
 }
@@ -44,6 +57,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const [selectedLeague, setSelectedLeague] = useState<LeagueId>('ENG_PL');
   const [selectedClubId, setSelectedClubId] = useState<string>('club_eng_pl_1');
   const [clubSearchQuery, setClubSearchQuery] = useState<string>('');
+
+  // Checkpoint 17: Scenario Challenge Mode & Create-a-Club state
+  const [scenarioChallenge, setScenarioChallenge] = useState<ScenarioChallengeId>('STANDARD');
+  const [createClubEnabled, setCreateClubEnabled] = useState<boolean>(false);
+  const [customClubName, setCustomClubName] = useState<string>('Touchline FC');
+  const [customShortName, setCustomShortName] = useState<string>('TFC');
+  const [customPrimaryColor, setCustomPrimaryColor] = useState<string>('#10b981');
+  const [customSecondaryColor, setCustomSecondaryColor] = useState<string>('#0f172a');
+  const [customStadiumName, setCustomStadiumName] = useState<string>('Touchline Arena');
 
   const allLeagueConfigs = Object.values(LEAGUES_CONFIG);
   const currentLeagueConfig = LEAGUES_CONFIG[selectedLeague];
@@ -382,7 +404,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             </div>
 
             <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Column: Manager Profile */}
+              {/* Left Column: Manager Profile + Create-a-Club + Scenario Challenges */}
               <div className="lg:col-span-4 space-y-4">
                 <h3 className="text-sm font-semibold text-emerald-400">
                   {tr('1. Manager Profile', '1. ข้อมูลผู้จัดการทีม (Manager Profile)')}
@@ -496,6 +518,120 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       {tr('Pragmatic Balance (Adaptable to opponents)', 'Pragmatic Balance (ยืดหยุ่นตามคู่แข่ง)')}
                     </option>
                   </select>
+                </div>
+
+                {/* Checkpoint 17A: FM Scenario Challenge Modes */}
+                <div className="pt-2 border-t border-slate-800 space-y-2" data-testid="scenario-challenge-selector">
+                  <label htmlFor="scenario-challenge-select" className="block text-xs font-semibold text-amber-400">
+                    {tr('3. FM Scenario Challenge Mode', '3. โหมดภารกิจท้าทาย (FM Scenario Challenge)')}
+                  </label>
+                  <select
+                    id="scenario-challenge-select"
+                    value={scenarioChallenge}
+                    onChange={(e) => setScenarioChallenge(e.target.value as ScenarioChallengeId)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 focus:border-amber-400 focus:outline-none rounded-lg text-xs text-slate-100"
+                  >
+                    <option value="STANDARD">
+                      {tr('Standard Managerial Career (Default)', 'โหมดอาชีพผู้จัดการทีมมาตรฐาน (Standard Career)')}
+                    </option>
+                    <option value="POINTS_DEDUCTION">
+                      {tr('⚠️ Financial Crisis (-10 Points Deduction & Tight Budget)', '⚠️ วิกฤตการเงิน (โดนตัด -10 แต้มตั้งแต่เปิดฤดูกาล)')}
+                    </option>
+                    <option value="INJURY_CRISIS">
+                      {tr('🚑 Injury Crisis (Top 5 Stars Out Injured for 3–5 Weeks)', '🚑 วิกฤตแข้งเจ็บระนาว (ตัวหลัก 5 คนเจ็บยาวเปิดซีซั่น)')}
+                    </option>
+                    <option value="YOUTH_ONLY">
+                      {tr('🌱 Class of ’27 Academy Challenge (20/20 Youth + Transfer Ban)', '🌱 ปั้นเด็กอคาเดมีล้วน (อคาเดมี 20/20 + ห้ามซื้อนักเตะ)')}
+                    </option>
+                  </select>
+                </div>
+
+                {/* Checkpoint 17B: Create-a-Club Customizer */}
+                <div className="pt-2 border-t border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-sky-400">
+                      {tr('4. Create-a-Club Customizer', '4. สร้างสโมสรของคุณเอง (Create-a-Club)')}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="create-a-club-toggle"
+                      onClick={() => setCreateClubEnabled(!createClubEnabled)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-mono font-semibold cursor-pointer ${
+                        createClubEnabled
+                          ? 'bg-sky-500 text-slate-950'
+                          : 'bg-slate-950 text-slate-400 border border-slate-800'
+                      }`}
+                    >
+                      {createClubEnabled ? tr('ENABLED', 'เปิดใช้งาน') : tr('OFF', 'ปิด')}
+                    </button>
+                  </div>
+
+                  {createClubEnabled && (
+                    <div className="p-3 rounded-xl bg-slate-950 border border-sky-500/40 space-y-2.5 text-xs">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label htmlFor="custom-club-name" className="block text-[10px] text-slate-400 mb-0.5">
+                            {tr('Custom Club Name', 'ชื่อสโมสรใหม่')}
+                          </label>
+                          <input
+                            id="custom-club-name"
+                            type="text"
+                            value={customClubName}
+                            onChange={(e) => setCustomClubName(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="custom-short-name" className="block text-[10px] text-slate-400 mb-0.5">
+                            {tr('3-Letter Code', 'ตัวย่อ 3 ตัว')}
+                          </label>
+                          <input
+                            id="custom-short-name"
+                            type="text"
+                            maxLength={4}
+                            value={customShortName}
+                            onChange={(e) => setCustomShortName(e.target.value.toUpperCase())}
+                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-white uppercase"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="col-span-2">
+                          <label htmlFor="custom-stadium-name" className="block text-[10px] text-slate-400 mb-0.5">
+                            {tr('Stadium Name', 'ชื่อสนามเหย้า')}
+                          </label>
+                          <input
+                            id="custom-stadium-name"
+                            type="text"
+                            value={customStadiumName}
+                            onChange={(e) => setCustomStadiumName(e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs text-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 mb-0.5">
+                            {tr('Club Colors', 'สีประจำสโมสร')}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              aria-label="Primary Club Color"
+                              value={customPrimaryColor}
+                              onChange={(e) => setCustomPrimaryColor(e.target.value)}
+                              className="w-7 h-7 rounded bg-slate-900 border border-slate-700 cursor-pointer"
+                            />
+                            <input
+                              type="color"
+                              aria-label="Secondary Club Color"
+                              value={customSecondaryColor}
+                              onChange={(e) => setCustomSecondaryColor(e.target.value)}
+                              className="w-7 h-7 rounded bg-slate-900 border border-slate-700 cursor-pointer"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -729,6 +865,16 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 type="button"
                 onClick={() => {
                   const trimmed = managerName.trim() || activeClub?.aiManager.name || 'Mikel Arteta';
+                  const customCfg: CustomClubConfig | null = createClubEnabled
+                    ? {
+                        enabled: true,
+                        name: customClubName.trim() || 'Touchline FC',
+                        shortName: (customShortName.trim() || 'TFC').slice(0, 4).toUpperCase(),
+                        primaryColor: customPrimaryColor,
+                        secondaryColor: customSecondaryColor,
+                        stadiumName: customStadiumName.trim() || 'Touchline Arena',
+                      }
+                    : null;
                   onStartCustomCareer(
                     {
                       name: trimmed,
@@ -737,12 +883,17 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       coachingStyle,
                       tacticalStyle,
                     },
-                    activeClub.id
+                    activeClub.id,
+                    scenarioChallenge,
+                    customCfg
                   );
                 }}
                 className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap shadow-lg shadow-emerald-950/50"
               >
-                {tr(`Sign Contract & Manage ${activeClub?.shortName}`, `เซ็นสัญญาเริ่มคุมสโมสร ${activeClub?.shortName}`)}
+                {tr(
+                  `Sign Contract & Manage ${createClubEnabled ? customShortName || 'TFC' : activeClub?.shortName}`,
+                  `เซ็นสัญญาเริ่มคุมสโมสร ${createClubEnabled ? customShortName || 'TFC' : activeClub?.shortName}`
+                )}
               </button>
             </div>
           </div>

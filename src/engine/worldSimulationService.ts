@@ -1,5 +1,6 @@
 import {
   Club,
+  CustomClubConfig,
   FinanceTransaction,
   Fixture,
   LeagueId,
@@ -8,10 +9,14 @@ import {
   MatchResult,
   MatchTeamStats,
   MentoringGroup,
+  MindGameTone,
+  NationalTeamCode,
   NewsItem,
   Player,
   PlayerTrait,
   PositionGroup,
+  PreSeasonTourRegion,
+  ScenarioChallengeId,
   ScoutAssignment,
   ScoutReport,
   SeasonAwardRecord,
@@ -42,6 +47,8 @@ import { LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConfig';
 import {
   recomputeLeagueStandings,
   checkAndAdvanceDomesticCup,
+  checkAndAdvanceEuroCup,
+  generateEuropeanNationsCupFixtures,
   generateInitialDomesticCupFixtures,
   generateLeagueSchedule,
   createInitialStandings,
@@ -729,6 +736,64 @@ export function applyMatchResultToWorld(
     }
   }
 
+  // European Nations Cup (INT_EURO) advancement (QF -> SF -> FINAL)
+  if (existingFixture.competitionId === 'INT_EURO') {
+    const newEuroFixtures = checkAndAdvanceEuroCup(
+      nextState.fixtures,
+      nextState.currentSeason,
+      nextState.gameDate
+    );
+    if (newEuroFixtures.length > 0) {
+      nextState = {
+        ...nextState,
+        fixtures: [...nextState.fixtures, ...newEuroFixtures],
+      };
+    } else if (existingFixture.uefaStage === 'FINAL') {
+      const winnerId = getDomesticCupFixtureWinnerId(completedFixture);
+      const runnerUpId =
+        winnerId === completedFixture.homeClubId
+          ? completedFixture.awayClubId
+          : completedFixture.homeClubId;
+      const winClub = winnerId ? nextState.clubs[winnerId] : undefined;
+      const runClub = runnerUpId ? nextState.clubs[runnerUpId] : undefined;
+      if (winClub) {
+        const euroTrophy: TrophyHistoryRecord = {
+          id: `trp_${nextState.currentSeason.replace('/', '')}_INT_EURO`,
+          season: nextState.currentSeason,
+          competitionId: 'INT_EURO',
+          competitionName: `European Nations Cup (${winClub.countryId})`,
+          winnerClubId: winClub.id,
+          winnerClubName: `${winClub.countryId} National Team (${winClub.name})`,
+          runnerUpClubId: runClub?.id,
+          runnerUpClubName: runClub ? `${runClub.countryId} National Team` : undefined,
+        };
+        nextState = {
+          ...nextState,
+          trophyHistory: [euroTrophy, ...(nextState.trophyHistory || [])],
+          inbox: [
+            {
+              id: `news_euro_win_${nextState.gameDate}`,
+              gameDate: nextState.gameDate,
+              category: 'Competition',
+              title: trText(
+                `${winClub.countryId} Crowned European Nations Cup Champions!`,
+                `ทีมชาติ ${winClub.countryId} ผงาดคว้าแชมป์เจ้ายุโรป (European Nations Cup)!`
+              ),
+              body: trText(
+                `${winClub.countryId} have lifted the European Nations Cup trophy after victory in the Grand Final!`,
+                `ทีมชาติ ${winClub.countryId} คว้าแชมป์ทัวร์นาเมนต์ European Nations Cup ไปครองอย่างยิ่งใหญ่!`
+              ),
+              isRead: false,
+              isImportant: true,
+              relatedClubId: winClub.id,
+            },
+            ...nextState.inbox,
+          ],
+        };
+      }
+    }
+  }
+
   return nextState;
 }
 
@@ -1390,6 +1455,16 @@ export function advanceWorldOneDay(state: WorldState): {
     scoutAssignments: updatedAssignments,
     scoutReports: updatedScoutReports,
   };
+
+  // Checkpoint 13: FIFA International Break Call-Ups (Mid-October & Late-March)
+  if (nextDate.endsWith('-10-12') || nextDate.endsWith('-03-22')) {
+    nextState = triggerFifaInternationalBreak(nextState).nextState;
+  }
+
+  // Checkpoint 15: Monthly AI Managerial Carousel & Sackings on the 1st of the month
+  if (nextDate.endsWith('-01') && !nextDate.endsWith('-06-01')) {
+    nextState = triggerAIManagerialCarouselCheck(nextState).nextState;
+  }
 
   if (nextDate.endsWith('-06-01')) {
     nextState = processEndOfSeasonRollover(nextState).nextState;
@@ -2995,10 +3070,44 @@ export function processEndOfSeasonRollover(
   let nextFixtures: Fixture[] = [];
   const rng = new SeededRNG(state.randomSeed + nextYear);
 
+  // Evaluate FFP / PSR compliance at season end; clubs in breach get -6 points deduction for next season
+  for (const [cid, c] of Object.entries(updatedClubs)) {
+    const ffp = evaluateClubFFPStatus({ ...state, clubs: updatedClubs, transactions: nextTransactions }, cid);
+    if (ffp.status === 'BREACH') {
+      updatedClubs[cid] = {
+        ...c,
+        pointsDeduction: 6,
+      };
+      if (cid === state.controlledClubId) {
+        nextInbox.unshift({
+          id: `news_ffp_breach_${nextYear}_${cid}`,
+          gameDate: `${nextYear}-07-15`,
+          category: 'Board',
+          title: trText(
+            `FFP / PSR Breach Sanction: ${c.name} Handed -6 Points Deduction for ${nextSeasonStr}`,
+            `บทลงโทษละเมิดกฎการเงิน FFP / PSR: ${c.name} ถูกสั่งตัด -6 คะแนนในฤดูกาล ${nextSeasonStr}`
+          ),
+          body: trText(
+            `The Independent Financial Commission has docked ${c.name} 6 league points for the ${nextSeasonStr} campaign after net seasonal losses exceeded the €105.0M Profitability & Sustainability threshold.`,
+            `คณะกรรมการควบคุมการเงินของลีกมีมติสั่งตัดแต้ม ${c.name} จำนวน -6 คะแนนในการแข่งขันฤดูกาล ${nextSeasonStr} เนื่องจากผลประกอบการขาดทุนเกินเพดานกฎ FFP / PSR (€105.0M)`
+          ),
+          isRead: false,
+          isImportant: true,
+          relatedClubId: cid,
+        });
+      }
+    } else if (state.scenarioChallenge !== 'POINTS_DEDUCTION') {
+      updatedClubs[cid] = {
+        ...c,
+        pointsDeduction: 0,
+      };
+    }
+  }
+
   for (const league of Object.values(LEAGUES_CONFIG)) {
     const clubsInLeague = Object.values(updatedClubs).filter((c) => c.leagueId === league.id);
     const clubIds = clubsInLeague.map((c) => c.id);
-    nextStandings[league.id] = createInitialStandings(league.id, nextSeasonStr, clubIds);
+    nextStandings[league.id] = createInitialStandings(league.id, nextSeasonStr, clubIds, updatedClubs);
     const sched = generateLeagueSchedule(
       league,
       clubIds,
@@ -3018,6 +3127,13 @@ export function processEndOfSeasonRollover(
       nextFixtures = [...nextFixtures, ...cupFixtures];
     }
   }
+
+  const nextEuroFixtures = generateEuropeanNationsCupFixtures(
+    nextSeasonStr,
+    nextYear + 1,
+    updatedClubs
+  );
+  nextFixtures = [...nextFixtures, ...nextEuroFixtures];
 
   nextFixtures.sort((a, b) => a.kickoffDate.localeCompare(b.kickoffDate));
 
@@ -3119,6 +3235,10 @@ export interface CareerStateMap {
   mentoringGroups?: MentoringGroup[];
   trophyHistory?: TrophyHistoryRecord[];
   seasonAwardsHistory?: SeasonAwardRecord[];
+  controlledNationalTeamCode?: NationalTeamCode | null;
+  scenarioChallenge?: ScenarioChallengeId;
+  customClubConfig?: CustomClubConfig | null;
+  lastMindGameMatchday?: number;
 }
 
 export interface CareerSaveDocument {
@@ -3359,6 +3479,10 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     mentoringGroups: (compacted.mentoringGroups || []).slice(0, 20),
     trophyHistory: (compacted.trophyHistory || []).slice(0, 40),
     seasonAwardsHistory: (compacted.seasonAwardsHistory || []).slice(0, 15),
+    controlledNationalTeamCode: compacted.controlledNationalTeamCode || null,
+    scenarioChallenge: compacted.scenarioChallenge || 'STANDARD',
+    customClubConfig: compacted.customClubConfig || null,
+    lastMindGameMatchday: compacted.lastMindGameMatchday || 0,
   });
 
   // Safety guard: guarantee JSON payload is under 300KB so Firestore BSON/proto never approaches 1,048,576 bytes
@@ -3403,7 +3527,9 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
   const baseline = createInitialWorldState(
     docData.randomSeed,
     cs.manager,
-    docData.controlledClubId
+    docData.controlledClubId,
+    cs.scenarioChallenge || 'STANDARD',
+    cs.customClubConfig || null
   );
 
   const rehydratedClubs: Record<string, Club> = {
@@ -3507,6 +3633,13 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     mentoringGroups: cs.mentoringGroups || baseline.mentoringGroups || [],
     trophyHistory: cs.trophyHistory || baseline.trophyHistory || [],
     seasonAwardsHistory: cs.seasonAwardsHistory || baseline.seasonAwardsHistory || [],
+    controlledNationalTeamCode:
+      cs.controlledNationalTeamCode !== undefined
+        ? cs.controlledNationalTeamCode
+        : baseline.controlledNationalTeamCode || null,
+    scenarioChallenge: cs.scenarioChallenge || baseline.scenarioChallenge || 'STANDARD',
+    customClubConfig: cs.customClubConfig || baseline.customClubConfig || null,
+    lastMindGameMatchday: cs.lastMindGameMatchday || 0,
   };
 }
 
@@ -4499,6 +4632,616 @@ export function activateReleaseClauseTransfer(
     ),
   };
 }
+
+/**
+ * Checkpoint 13: International Management, FIFA Call-Up Breaks & European Nations Cup ('INT_EURO')
+ */
+export const NATIONAL_TEAMS_CATALOG: {
+  code: NationalTeamCode;
+  nameEn: string;
+  nameTh: string;
+  flag: string;
+  fifaRanking: number;
+}[] = [
+  { code: 'ENG', nameEn: 'England', nameTh: 'ทีมชาติอังกฤษ (England)', flag: 'ENG', fifaRanking: 4 },
+  { code: 'ESP', nameEn: 'Spain', nameTh: 'ทีมชาติสเปน (Spain)', flag: 'ESP', fifaRanking: 2 },
+  { code: 'GER', nameEn: 'Germany', nameTh: 'ทีมชาติเยอรมนี (Germany)', flag: 'GER', fifaRanking: 8 },
+  { code: 'ITA', nameEn: 'Italy', nameTh: 'ทีมชาติอิตาลี (Italy)', flag: 'ITA', fifaRanking: 9 },
+  { code: 'FRA', nameEn: 'France', nameTh: 'ทีมชาติฝรั่งเศส (France)', flag: 'FRA', fifaRanking: 3 },
+  { code: 'BRA', nameEn: 'Brazil', nameTh: 'ทีมชาติบราซิล (Brazil)', flag: 'BRA', fifaRanking: 5 },
+  { code: 'ARG', nameEn: 'Argentina', nameTh: 'ทีมชาติอาร์เจนตินา (Argentina)', flag: 'ARG', fifaRanking: 1 },
+  { code: 'POR', nameEn: 'Portugal', nameTh: 'ทีมชาติโปรตุเกส (Portugal)', flag: 'POR', fifaRanking: 6 },
+];
+
+export function appointNationalTeamManager(
+  state: WorldState,
+  nationCode: NationalTeamCode | null
+): { nextState: WorldState; message: string } {
+  if (!nationCode) {
+    return {
+      nextState: {
+        ...state,
+        controlledNationalTeamCode: null,
+      },
+      message: trText(
+        'Resigned from National Team duties to focus 100% on club management.',
+        'ลาออกจากตำแหน่งผู้จัดการทีมชาติเพื่อโฟกัสงานคุมสโมสรเต็มตัว'
+      ),
+    };
+  }
+
+  const natMeta = NATIONAL_TEAMS_CATALOG.find((n) => n.code === nationCode);
+  const nationNameEn = natMeta?.nameEn || nationCode;
+  const nationNameTh = natMeta?.nameTh || nationCode;
+
+  return {
+    nextState: {
+      ...state,
+      controlledNationalTeamCode: nationCode,
+      inbox: [
+        {
+          id: `news_nat_appoint_${state.gameDate}_${nationCode}`,
+          gameDate: state.gameDate,
+          category: 'Competition',
+          title: trText(
+            `Dual Role Confirmed: ${state.manager.name} Appointed ${nationNameEn} National Team Manager!`,
+            `รับงานควบทีมชาติ: ${state.manager.name} ได้รับแต่งตั้งคุมทัพ ${nationNameTh}!`
+          ),
+          body: trText(
+            `The Football Federation of ${nationNameEn} has appointed ${state.manager.name} as head coach alongside your club role at ${state.clubs[state.controlledClubId]?.name}. You will lead ${nationNameEn} into FIFA International Breaks and the European / World Nations Cup!`,
+            `สหพันธ์ฟุตบอลแต่งตั้งให้ ${state.manager.name} กุมบังเหียน ${nationNameTh} ควบคู่กับการคุมสโมสร ${state.clubs[state.controlledClubId]?.name} เพื่อลุยศึก FIFA Break และทัวร์นาเมนต์ชิงแชมป์ทีมชาติ!`
+          ),
+          isRead: false,
+          isImportant: true,
+        },
+        ...state.inbox,
+      ],
+    },
+    message: trText(
+      `Appointed Head Coach of ${nationNameEn} National Team (Dual Club & Country Role)!`,
+      `เข้ารับตำแหน่งกุนซือ ${nationNameTh} ควบคู่กับสโมสรเรียบร้อยแล้ว!`
+    ),
+  };
+}
+
+export function triggerFifaInternationalBreak(
+  state: WorldState
+): { nextState: WorldState; calledUpCount: number; injuredNames: string[]; message: string } {
+  const rng = new SeededRNG(state.randomSeed + state.processedDates.length * 43 + 7);
+  const updatedPlayers = { ...state.players };
+  const myClubPlayersCalledUp: Player[] = [];
+  const injuredNames: string[] = [];
+
+  for (const [pid, p] of Object.entries(updatedPlayers)) {
+    if (p.injuryStatus.isInjured || p.currentAbility < 135) continue;
+    const isMyClub = p.clubId === state.controlledClubId;
+    if (isMyClub) {
+      myClubPlayersCalledUp.push(p);
+    }
+
+    const sufferedVirusInjury = rng.chance(0.025);
+    if (sufferedVirusInjury) {
+      if (isMyClub) {
+        injuredNames.push(`${p.firstName} ${p.lastName}`);
+      }
+      updatedPlayers[pid] = {
+        ...p,
+        morale: Math.min(100, p.morale + 2),
+        fitness: Math.max(55, p.fitness - 10),
+        injuryStatus: {
+          isInjured: true,
+          type: 'International Duty Muscle Strain',
+          daysRemaining: rng.int(7, 12),
+        },
+      };
+    } else {
+      updatedPlayers[pid] = {
+        ...p,
+        morale: Math.min(100, p.morale + 3),
+        matchSharpness: Math.min(100, p.matchSharpness + 4),
+        fitness: Math.max(62, p.fitness - 6),
+      };
+    }
+  }
+
+  const nextInbox = [...state.inbox];
+  const myClub = state.clubs[state.controlledClubId];
+  const callUpNames = myClubPlayersCalledUp
+    .slice(0, 6)
+    .map((p) => `${p.firstName} ${p.lastName} (${p.nationalityCode})`)
+    .join(', ');
+
+  nextInbox.unshift({
+    id: `news_fifa_break_${state.gameDate}_${Date.now()}`,
+    gameDate: state.gameDate,
+    category: 'Competition',
+    title: trText(
+      `FIFA International Break Report: ${myClubPlayersCalledUp.length} ${myClub?.shortName || ''} Players Called Up${injuredNames.length > 0 ? ` (${injuredNames.length} Injured)` : ''}`,
+      `รายงานเบรกทีมชาติ FIFA: นักเตะ ${myClub?.shortName || ''} ติดทีมชาติ ${myClubPlayersCalledUp.length} คน${injuredNames.length > 0 ? ` (บาดเจ็บ ${injuredNames.length} คน)` : ''}`
+    ),
+    body: trText(
+      `${myClubPlayersCalledUp.length} senior internationals (${callUpNames || 'Squad'}) represented their countries (+3 Morale, +4 Match Sharpness, -6% Fitness). ${
+        injuredNames.length > 0
+          ? `Medical Alert: ${injuredNames.join(', ')} returned with an International Duty Muscle Strain.`
+          : 'All called-up players returned injury-free!'
+      }`,
+      `ผู้เล่นชุดใหญ่ ${myClubPlayersCalledUp.length} คน (${callUpNames || 'ขุมกำลัง'}) เดินทางไปรับใช้ทีมชาติ (+3 ขวัญกำลังใจ, +4 ความเฉียบคม, -6% ความฟิต) ${
+        injuredNames.length > 0
+          ? `แจ้งเตือนจากทีมแพทย์: ${injuredNames.join(', ')} ได้รับบาดเจ็บกล้ามเนื้อจากการรับใช้ทีมชาติ`
+          : 'นักเตะทุกคนเดินทางกลับสโมสรโดยไม่มีอาการบาดเจ็บ!'
+      }`
+    ),
+    isRead: false,
+    isImportant: injuredNames.length > 0,
+    relatedClubId: state.controlledClubId,
+  });
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      inbox: nextInbox,
+    },
+    calledUpCount: myClubPlayersCalledUp.length,
+    injuredNames,
+    message: trText(
+      `FIFA International Break processed: ${myClubPlayersCalledUp.length} players called up (${injuredNames.length} injuries).`,
+      `ประมวลผลช่วงเบรกทีมชาติ FIFA เรียบร้อย: นักเตะติดทีมชาติ ${myClubPlayersCalledUp.length} คน (บาดเจ็บ ${injuredNames.length} คน)`
+    ),
+  };
+}
+
+export function simulateEuroCupNextStage(
+  state: WorldState
+): { nextState: WorldState; message: string } {
+  let working = { ...state };
+  let euroScheduled = working.fixtures.filter(
+    (f) => f.competitionId === 'INT_EURO' && f.seasonId === working.currentSeason && f.status === 'Scheduled'
+  );
+
+  if (euroScheduled.length === 0) {
+    const endYear = (parseInt(working.currentSeason.slice(0, 4), 10) || 2025) + 1;
+    const generated = generateEuropeanNationsCupFixtures(
+      working.currentSeason,
+      endYear,
+      working.clubs
+    );
+    working = {
+      ...working,
+      fixtures: [...working.fixtures, ...generated],
+    };
+    euroScheduled = generated;
+  }
+
+  for (const fix of euroScheduled) {
+    const home = working.clubs[fix.homeClubId];
+    const away = working.clubs[fix.awayClubId];
+    if (!home || !away) continue;
+    const seed = working.randomSeed + fix.id.length * 37 + Date.now() % 1000;
+    const res = simulateMatch(fix, home, away, working.players, seed);
+    working = applyMatchResultToWorld(working, fix.id, res);
+  }
+
+  return {
+    nextState: working,
+    message: trText(
+      `Simulated European Nations Cup (${euroScheduled[0]?.uefaStage || 'Knockout'}) round!`,
+      `จำลองผลการแข่งขันชิงแชมป์แห่งชาติยุโรป รอบ ${euroScheduled[0]?.uefaStage || 'Knockout'} เรียบร้อยแล้ว!`
+    ),
+  };
+}
+
+/**
+ * Checkpoint 14: Stadium Expansion, Pre-Season Commercial Tours & FFP / PSR Rules
+ */
+export function expandClubStadium(
+  state: WorldState
+): { nextState: WorldState; success: boolean; message: string } {
+  const club = { ...state.clubs[state.controlledClubId] };
+  const expansionCost = 12_000_000;
+  const seatsAdded = 8_000;
+
+  if (club.finances.balance < expansionCost) {
+    return {
+      nextState: state,
+      success: false,
+      message: trText(
+        `Insufficient club balance to expand ${club.stadiumName} (€12.0M required, €${(club.finances.balance / 1_000_000).toFixed(2)}M available).`,
+        `ยอดเงินคงเหลือของสโมสรไม่เพียงพอสำหรับการขยายสนาม ${club.stadiumName} (ต้องใช้ €12.0M แต่มี €${(club.finances.balance / 1_000_000).toFixed(2)}M)`
+      ),
+    };
+  }
+
+  const newBalance = club.finances.balance - expansionCost;
+  const newCapacity = club.stadiumCapacity + seatsAdded;
+  club.stadiumCapacity = newCapacity;
+  club.finances = {
+    ...club.finances,
+    balance: newBalance,
+  };
+
+  const tx: FinanceTransaction = {
+    id: `tx_stadium_${state.gameDate}_${Date.now()}`,
+    date: state.gameDate,
+    clubId: club.id,
+    category: 'Facilities & Maintenance',
+    amount: -expansionCost,
+    description: trText(
+      `Stadium Expansion at ${club.stadiumName}: +8,000 Seats (New Capacity: ${newCapacity.toLocaleString()})`,
+      `ขยายความจุสนาม ${club.stadiumName}: +8,000 ที่นั่ง (ความจุใหม่: ${newCapacity.toLocaleString()} ที่นั่ง)`
+    ),
+    balanceAfter: newBalance,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      clubs: { ...state.clubs, [club.id]: club },
+      transactions: [tx, ...state.transactions],
+      inbox: [
+        {
+          id: `news_stadium_${state.gameDate}_${Date.now()}`,
+          gameDate: state.gameDate,
+          category: 'Board',
+          title: trText(
+            `Stadium Expansion Approved: ${club.stadiumName} Expanded to ${newCapacity.toLocaleString()} Seats!`,
+            `อนุมัติขยายสนาม: ${club.stadiumName} เพิ่มความจุเป็น ${newCapacity.toLocaleString()} ที่นั่ง!`
+          ),
+          body: trText(
+            `The Board of Directors has completed a €12.0M stadium expansion at ${club.stadiumName}, adding +8,000 seats and permanently boosting home matchday gate receipts.`,
+            `บอร์ดบริหารอนุมัติงบ €12.0M ขยายความจุสนาม ${club.stadiumName} เพิ่มขึ้นอีก +8,000 ที่นั่ง ช่วยเพิ่มรายได้ค่าตั๋วเข้าชมเกมเหย้าอย่างถาวร`
+          ),
+          isRead: false,
+          isImportant: true,
+          relatedClubId: club.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    success: true,
+    message: trText(
+      `Expanded ${club.stadiumName} by +8,000 seats to ${newCapacity.toLocaleString()} capacity!`,
+      `ขยายความจุสนาม ${club.stadiumName} เพิ่มขึ้น +8,000 ที่นั่ง (รวม ${newCapacity.toLocaleString()} ที่นั่ง) สำเร็จ!`
+    ),
+  };
+}
+
+export function organizePreSeasonTour(
+  state: WorldState,
+  region: PreSeasonTourRegion
+): { nextState: WorldState; success: boolean; message: string } {
+  const club = { ...state.clubs[state.controlledClubId] };
+  if (club.preSeasonTourCompletedSeason === state.currentSeason) {
+    return {
+      nextState: state,
+      success: false,
+      message: trText(
+        `Your club has already completed a Pre-Season Commercial Tour in the ${state.currentSeason} season.`,
+        `สโมสรของคุณได้จัดทัวร์ปรีซีซั่นประจำฤดูกาล ${state.currentSeason} ไปเรียบร้อยแล้ว`
+      ),
+    };
+  }
+
+  const tourSpec =
+    region === 'ASIA'
+      ? {
+          revenue: 4_500_000,
+          labelEn: 'Asia Commercial Tour (Tokyo & Seoul)',
+          labelTh: 'ทัวร์เอเชีย (โตเกียว & โซล)',
+        }
+      : region === 'USA'
+        ? {
+            revenue: 5_000_000,
+            labelEn: 'North America Commercial Tour (New York & Los Angeles)',
+            labelTh: 'ทัวร์อเมริกาเหนือ (นิวยอร์ก & ลอสแอนเจลิส)',
+          }
+        : {
+            revenue: 5_500_000,
+            labelEn: 'Middle East Commercial Showcase (Dubai & Riyadh)',
+            labelTh: 'ทัวร์ตะวันออกกลาง (ดูไบ & ริยาด)',
+          };
+
+  const newBalance = club.finances.balance + tourSpec.revenue;
+  club.preSeasonTourCompletedSeason = state.currentSeason;
+  club.finances = {
+    ...club.finances,
+    balance: newBalance,
+    transferBudget: club.finances.transferBudget + Math.round(tourSpec.revenue * 0.7),
+  };
+
+  const updatedPlayers = { ...state.players };
+  for (const [pid, p] of Object.entries(updatedPlayers)) {
+    if (p.clubId === club.id && !p.injuryStatus.isInjured) {
+      updatedPlayers[pid] = {
+        ...p,
+        matchSharpness: Math.min(100, p.matchSharpness + 4),
+        morale: Math.min(100, p.morale + 2),
+      };
+    }
+  }
+
+  const tx: FinanceTransaction = {
+    id: `tx_tour_${region}_${state.gameDate}`,
+    date: state.gameDate,
+    clubId: club.id,
+    category: 'Sponsorship',
+    amount: tourSpec.revenue,
+    description: trText(
+      `Commercial Tour Revenue: ${tourSpec.labelEn} (+€${(tourSpec.revenue / 1_000_000).toFixed(1)}M)`,
+      `รายได้จัดทัวร์ комเมอร์เชียล: ${tourSpec.labelTh} (+€${(tourSpec.revenue / 1_000_000).toFixed(1)}M)`
+    ),
+    balanceAfter: newBalance,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      clubs: { ...state.clubs, [club.id]: club },
+      players: updatedPlayers,
+      transactions: [tx, ...state.transactions],
+      inbox: [
+        {
+          id: `news_tour_${region}_${state.gameDate}`,
+          gameDate: state.gameDate,
+          category: 'Board',
+          title: trText(
+            `${tourSpec.labelEn} Completed: +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M Commercial Income!`,
+            `สำเร็จทัวร์ปรีซีซั่น ${tourSpec.labelTh}: รับรายได้เข้าสโมสร +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M!`
+          ),
+          body: trText(
+            `${club.name} concluded a highly lucrative ${tourSpec.labelEn}, generating €${(tourSpec.revenue / 1_000_000).toFixed(1)}M in global merchandise and sponsorship revenue while boosting squad Match Sharpness (+4%).`,
+            `สโมสร ${club.name} ปิดฉากการเดินทางทัวร์ ${tourSpec.labelTh} อย่างสวยงาม กวาดรายได้สปอนเซอร์และสินค้าที่ระลึก +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M พร้อมเพิ่มความเฉียบคม (Match Sharpness) ให้ขุมกำลัง +4%`
+          ),
+          isRead: false,
+          relatedClubId: club.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    success: true,
+    message: trText(
+      `Completed ${tourSpec.labelEn}! Earned +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M and +4% Match Sharpness.`,
+      `จัดทัวร์ ${tourSpec.labelTh} สำเร็จ! รับรายได้ +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M และเพิ่มความเฉียบคมนักเตะ +4%`
+    ),
+  };
+}
+
+export function evaluateClubFFPStatus(
+  state: WorldState,
+  targetClubId?: string
+): {
+  status: 'COMPLIANT' | 'WATCHLIST' | 'BREACH';
+  projectedLoss: number;
+  maxAllowedLoss: number;
+  headroom: number;
+} {
+  const cid = targetClubId || state.controlledClubId;
+  const club = state.clubs[cid];
+  const maxAllowedLoss = 105_000_000;
+  if (!club) {
+    return { status: 'COMPLIANT', projectedLoss: 0, maxAllowedLoss, headroom: maxAllowedLoss };
+  }
+
+  const clubTxs = state.transactions.filter((t) => t.clubId === cid);
+  const netTx = clubTxs.reduce((acc, t) => acc + t.amount, 0);
+  const annualWageBill = club.finances.wageUsedPerWeek * 52;
+  const annualSponsor = club.finances.sponsorRevenueAnnual;
+  const projectedBalance = netTx + annualSponsor - annualWageBill * 0.55;
+  const projectedLoss = Math.max(0, -projectedBalance + (club.finances.balance < 0 ? Math.abs(club.finances.balance) : 0));
+  const headroom = maxAllowedLoss - projectedLoss;
+
+  const status =
+    projectedLoss > maxAllowedLoss
+      ? 'BREACH'
+      : projectedLoss >= maxAllowedLoss * 0.72
+        ? 'WATCHLIST'
+        : 'COMPLIANT';
+
+  return {
+    status,
+    projectedLoss: Math.round(projectedLoss),
+    maxAllowedLoss,
+    headroom: Math.round(headroom),
+  };
+}
+
+/**
+ * Checkpoint 15: AI Managerial Carousel (Monthly Sackings) & Pre-Match Rivalry Mind Games
+ */
+const REPLACEMENT_MANAGERS_POOL = [
+  'Zinedine Zidane',
+  'Julian Nagelsmann',
+  'Xavi Hernandez',
+  'Roberto De Zerbi',
+  'Massimiliano Allegri',
+  'Thomas Tuchel',
+  'Mauricio Pochettino',
+  'Gareth Southgate',
+  'Ruben Amorim',
+  'Edin Terzic',
+  'Sergio Conceicao',
+  'Joachim Low',
+];
+
+export function triggerAIManagerialCarouselCheck(
+  state: WorldState
+): { nextState: WorldState; sackedCount: number; message: string } {
+  const updatedClubs = { ...state.clubs };
+  const nextInbox = [...state.inbox];
+  let sackedCount = 0;
+
+  for (const league of Object.values(LEAGUES_CONFIG)) {
+    const table = state.standings[league.id] || [];
+    table.forEach((row, idx) => {
+      if (row.clubId === state.controlledClubId) return;
+      if (row.played < 4) return;
+      const club = updatedClubs[row.clubId];
+      if (!club) return;
+
+      const rank = idx + 1;
+      const expectedRank = club.boardExpectations.targetLeaguePosition;
+      const underperformance = rank - expectedRank;
+
+      if (underperformance >= 6) {
+        const nextSecurity = Math.max(15, (club.aiManager.jobSecurity || 70) - 28);
+        if (nextSecurity <= 35 && sackedCount < 2) {
+          const oldManagerName = club.aiManager.name;
+          const newManagerName =
+            REPLACEMENT_MANAGERS_POOL.find((n) => n !== oldManagerName) || 'Zinedine Zidane';
+          updatedClubs[club.id] = {
+            ...club,
+            aiManager: {
+              ...club.aiManager,
+              name: newManagerName,
+              jobSecurity: 78,
+            },
+            boardExpectations: {
+              ...club.boardExpectations,
+              confidence: {
+                ...club.boardExpectations.confidence,
+                overall: 52,
+              },
+            },
+          };
+          sackedCount++;
+
+          nextInbox.unshift({
+            id: `news_ai_sacked_${state.gameDate}_${club.id}`,
+            gameDate: state.gameDate,
+            category: 'Media',
+            title: trText(
+              `Managerial Sacking: ${club.name} Part Ways with ${oldManagerName}, Appoint ${newManagerName}!`,
+              `เก้าอี้กุนซือร้อน! ${club.name} สั่งปลด ${oldManagerName} และแต่งตั้ง ${newManagerName} คุมทัพแทน!`
+            ),
+            body: trText(
+              `With ${club.name} sitting #${rank} in ${league.name} (Target: Top ${expectedRank}), the Board of Directors has sacked ${oldManagerName} and appointed ${newManagerName} with immediate effect.`,
+              `หลังจากผลงานของ ${club.name} ร่วงลงไปอยู่อันดับ #${rank} ในศึก ${league.name} (เป้าหมาย: ท็อป ${expectedRank}) บอร์ดบริหารจึงมีมติปลด ${oldManagerName} และแต่งตั้ง ${newManagerName} เข้ามารับเผือกร้อนทันที`
+            ),
+            isRead: false,
+            relatedClubId: club.id,
+          });
+        } else {
+          updatedClubs[club.id] = {
+            ...club,
+            aiManager: {
+              ...club.aiManager,
+              jobSecurity: nextSecurity,
+            },
+            boardExpectations: {
+              ...club.boardExpectations,
+              confidence: {
+                ...club.boardExpectations.confidence,
+                overall: Math.min(54, club.boardExpectations.confidence.overall),
+              },
+            },
+          };
+        }
+      }
+    });
+  }
+
+  return {
+    nextState: {
+      ...state,
+      clubs: updatedClubs,
+      inbox: nextInbox,
+    },
+    sackedCount,
+    message: trText(
+      `Evaluated AI Managerial Job Security across 15 leagues (${sackedCount} sackings).`,
+      `ประเมินความมั่นคงเก้าอี้กุนซือ AI ทั้ง 15 ลีกเรียบร้อย (ปลดโค้ช ${sackedCount} สโมสร)`
+    ),
+  };
+}
+
+export function sendPreMatchMindGame(
+  state: WorldState,
+  tone: MindGameTone
+): { nextState: WorldState; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const nextFixture = state.fixtures.find(
+    (f) =>
+      f.status === 'Scheduled' &&
+      (f.homeClubId === myClub.id || f.awayClubId === myClub.id)
+  );
+  if (!nextFixture) {
+    return {
+      nextState: state,
+      message: trText('No upcoming fixture scheduled.', 'ไม่มีโปรแกรมการแข่งขันนัดถัดไป'),
+    };
+  }
+
+  if (state.lastMindGameMatchday === nextFixture.matchday) {
+    return {
+      nextState: state,
+      message: trText(
+        `You have already addressed the media regarding Matchday ${nextFixture.matchday}.`,
+        `คุณได้ส่งสารจิตวิทยาผ่านสื่อสำหรับเกมนัดที่ ${nextFixture.matchday} ไปเรียบร้อยแล้ว`
+      ),
+    };
+  }
+
+  const oppClubId =
+    nextFixture.homeClubId === myClub.id ? nextFixture.awayClubId : nextFixture.homeClubId;
+  const oppClub = state.clubs[oppClubId];
+  const oppMgrName = oppClub?.aiManager.name || 'Opponent Manager';
+
+  const updatedPlayers = { ...state.players };
+  for (const [pid, p] of Object.entries(updatedPlayers)) {
+    if (p.clubId === myClub.id) {
+      const age = getAgeAtDate(p.dateOfBirth, state.gameDate);
+      const boost = tone === 'deflect' && age <= 21 ? 5 : 2;
+      updatedPlayers[pid] = {
+        ...p,
+        morale: Math.min(100, p.morale + boost),
+      };
+    } else if (p.clubId === oppClubId && tone === 'attack') {
+      updatedPlayers[pid] = {
+        ...p,
+        morale: Math.max(25, p.morale - 3),
+      };
+    }
+  }
+
+  const headlineEn =
+    tone === 'attack'
+      ? `Mind Games War: ${state.manager.name} Questions ${oppMgrName}'s Tactical Nerve Ahead of ${oppClub?.shortName} Clash!`
+      : tone === 'praise'
+        ? `Mutual Respect: ${state.manager.name}Hails ${oppMgrName}'s Work at ${oppClub?.name}`
+        : `Focus Within: ${state.manager.name} Shields Youngsters from Media Pressure Ahead of ${oppClub?.shortName}`;
+
+  const headlineTh =
+    tone === 'attack'
+      ? `สงครามจิตวิทยาเดือด! ${state.manager.name} เปิดศึกกดดัน ${oppMgrName} ก่อนดวล ${oppClub?.shortName}!`
+      : tone === 'praise'
+        ? `ให้เกียรติคู่แข่ง: ${state.manager.name} ชื่นชมฝีมือการทำทีมของ ${oppMgrName} แห่ง ${oppClub?.name}`
+        : `ลดความกดดัน: ${state.manager.name} ออกโรงปกป้องดาวรุ่งและเน้นสมาธิก่อนพบ ${oppClub?.shortName}`;
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      lastMindGameMatchday: nextFixture.matchday,
+      inbox: [
+        {
+          id: `news_mindgame_${state.gameDate}_md${nextFixture.matchday}`,
+          gameDate: state.gameDate,
+          category: 'Media',
+          title: trText(headlineEn, headlineTh),
+          body: trText(
+            `Your pre-match comments directed at ${oppMgrName} (${oppClub?.name}) made back-page headlines and boosted your squad's morale ahead of Matchday ${nextFixture.matchday}.`,
+            `คำสัมภาษณ์เชิงจิตวิทยาของคุณถึง ${oppMgrName} (${oppClub?.name}) กลายเป็นพาดหัวข่าวใหญ่และช่วยเพิ่มขวัญกำลังใจให้ลูกทีมก่อนศึกนัดที่ ${nextFixture.matchday}`
+          ),
+          isRead: false,
+          relatedClubId: oppClubId,
+        },
+        ...state.inbox,
+      ],
+    },
+    message: trText(headlineEn, headlineTh),
+  };
+}
+
 
 
 

@@ -6,12 +6,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Club,
+  CustomClubConfig,
   LeagueId,
   ManagerProfile,
   MatchResult,
   Player,
   PlayerRole,
   PositionGroup,
+  ScenarioChallengeId,
   TacticalSystem,
   WorldState,
 } from './types/game';
@@ -23,11 +25,13 @@ import {
   adjustClubBudgetAllocation,
   advanceWorldOneDay,
   applyForManagerJob,
+  appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
   completeUserMatchdayAndSyncWorld,
   deleteSavedSlot,
   deleteSaveSlotFromFirestore,
+  expandClubStadium,
   generateAnnualYouthIntake,
   getClubStaffBonuses,
   getPendingUrgentInboxItem,
@@ -35,6 +39,7 @@ import {
   hireStaffMember,
   loadWorldStateFromFirestoreSlot,
   loadWorldStateFromSlot,
+  organizePreSeasonTour,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
   recruitYouthAcademyProspect,
@@ -46,10 +51,14 @@ import {
   SaveSlotMeta,
   saveWorldStateToFirestoreSlot,
   saveWorldStateToSlot,
+  sendPreMatchMindGame,
   signPlayerOnBosmanFree,
+  simulateEuroCupNextStage,
   submitAndEvaluateTransferOffer,
   syncUserSaveSlotsFromFirestore,
+  triggerAIManagerialCarouselCheck,
   triggerClubTakeoverEvent,
+  triggerFifaInternationalBreak,
   updatePlayerSquadAndTransferStatus,
   upgradeJuniorOrRecruitmentFacility,
 } from './engine/worldSimulationService';
@@ -217,10 +226,18 @@ function TouchlineShell() {
 
   const handleStartCustomCareer = (
     customManager: Partial<ManagerProfile>,
-    clubId: string
+    clubId: string,
+    scenarioChallenge: ScenarioChallengeId = 'STANDARD',
+    customClubConfig: CustomClubConfig | null = null
   ) => {
     soundService.playWhistle();
-    const freshWorld = createInitialWorldState(Date.now() % 1000000, customManager, clubId);
+    const freshWorld = createInitialWorldState(
+      Date.now() % 1000000,
+      customManager,
+      clubId,
+      scenarioChallenge,
+      customClubConfig
+    );
     setWorld(freshWorld);
     const updatedSlots = saveWorldStateToSlot('slot_autosave', freshWorld);
     setSaveSlots(updatedSlots);
@@ -479,7 +496,15 @@ function TouchlineShell() {
     );
   };
 
-  const handleBoardRequest = (type: 'budget' | 'training_facility' | 'youth_facility') => {
+  const handleBoardRequest = (
+    type: 'budget' | 'training_facility' | 'youth_facility' | 'expand_stadium'
+  ) => {
+    if (type === 'expand_stadium') {
+      const res = expandClubStadium(world);
+      setWorld(res.nextState);
+      showToast(res.message);
+      return;
+    }
     const club = { ...world.clubs[world.controlledClubId] };
     if (club.boardExpectations.confidence.overall < 60) {
       showToast(
@@ -726,6 +751,11 @@ function TouchlineShell() {
               onNavigate={setActiveTab}
               onSelectPlayer={setSelectedPlayerId}
               onAdvanceDay={handleAdvanceDay}
+              onSendMindGame={(tone) => {
+                const res = sendPreMatchMindGame(world, tone);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
             />
           )}
 
@@ -1087,6 +1117,36 @@ function TouchlineShell() {
                 if (res.accepted) {
                   setActiveTab('dashboard');
                 }
+              }}
+              onOrganizePreSeasonTour={(region) => {
+                const res = organizePreSeasonTour(world, region);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onAppointNationalTeam={(code) => {
+                const res = appointNationalTeamManager(world, code);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onSimulateEuroCupRound={() => {
+                const res = simulateEuroCupNextStage(world);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onTriggerFifaBreak={() => {
+                const res = triggerFifaInternationalBreak(world);
+                setWorld(res.nextState);
+                showToast(
+                  tr(
+                    `FIFA International Break completed (${res.calledUpCount} players called up).`,
+                    `เสร็จสิ้นโปรแกรมทีมชาติ FIFA (นักเตะถูกเรียกตัว ${res.calledUpCount} คน)`
+                  )
+                );
+              }}
+              onTriggerAICarousel={() => {
+                const res = triggerAIManagerialCarouselCheck(world);
+                setWorld(res.nextState);
+                showToast(res.message);
               }}
               onSaveToSlot={async (slotId) => {
                 const slots = authUser

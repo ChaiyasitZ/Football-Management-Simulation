@@ -26,8 +26,23 @@ export type CupId =
   | 'TUR_CUP'
   | 'SCO_CUP';
 export type UefaCompetitionId = 'UEFA_UCL' | 'UEFA_UEL' | 'UEFA_UECL';
-export type CompetitionId = LeagueId | CupId | UefaCompetitionId;
+export type InternationalCompetitionId = 'INT_EURO';
+export type CompetitionId = LeagueId | CupId | UefaCompetitionId | InternationalCompetitionId;
 export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R16' | 'QF' | 'SF' | 'FINAL';
+
+export type NationalTeamCode = 'ENG' | 'ESP' | 'GER' | 'ITA' | 'FRA' | 'BRA' | 'ARG' | 'POR';
+export type PreSeasonTourRegion = 'ASIA' | 'USA' | 'MIDDLE_EAST';
+export type MindGameTone = 'attack' | 'praise' | 'deflect';
+export type ScenarioChallengeId = 'STANDARD' | 'POINTS_DEDUCTION' | 'INJURY_CRISIS' | 'YOUTH_ONLY';
+
+export interface CustomClubConfig {
+  enabled: boolean;
+  name: string;
+  shortName: string;
+  primaryColor: string;
+  secondaryColor: string;
+  stadiumName: string;
+}
 
 export type PositionCode =
   | 'GK'
@@ -414,6 +429,8 @@ export interface Club {
   youthRecruitment?: number; // 1-20
   sugarDaddyType?: 'FRONT_END' | 'BACK_END' | 'UNDERWRITER' | 'NONE';
   transferEmbargoUntil?: string | null;
+  preSeasonTourCompletedSeason?: string | null;
+  pointsDeduction?: number;
   finances: {
     balance: number;
     transferBudget: number;
@@ -589,6 +606,7 @@ export interface LeagueStanding {
   goalsAgainst: number;
   goalDifference: number;
   points: number;
+  pointsDeduction?: number;
   form: ('W' | 'D' | 'L')[];
 }
 
@@ -780,4 +798,8 @@ export interface WorldState {
   mentoringGroups?: MentoringGroup[];
   trophyHistory?: TrophyHistoryRecord[];
   seasonAwardsHistory?: SeasonAwardRecord[];
+  controlledNationalTeamCode?: NationalTeamCode | null;
+  scenarioChallenge?: ScenarioChallengeId;
+  customClubConfig?: CustomClubConfig | null;
+  lastMindGameMatchday?: number;
 }

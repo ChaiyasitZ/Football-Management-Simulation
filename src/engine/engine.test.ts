@@ -13,14 +13,18 @@ import {
   advanceWorldOneDay,
   applyForManagerJob,
   applyMatchResultToWorld,
+  appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
   dehydrateWorldStateToCareerMap,
+  evaluateClubFFPStatus,
+  expandClubStadium,
   generateAnnualYouthIntake,
   getClubStaffBonuses,
   getDeadlineDayBargains,
   isTransferDeadlineWindow,
   loadWorldStateFromSlot,
+  organizePreSeasonTour,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
   rehydrateWorldStateFromCareerDoc,
@@ -29,9 +33,13 @@ import {
   renewPlayerContract,
   saveMentoringGroup,
   saveWorldStateToSlot,
+  sendPreMatchMindGame,
   signPlayerOnBosmanFree,
+  simulateEuroCupNextStage,
   submitAndEvaluateTransferOffer,
+  triggerAIManagerialCarouselCheck,
   triggerClubTakeoverEvent,
+  triggerFifaInternationalBreak,
   updatePlayerSquadAndTransferStatus,
   upgradeJuniorOrRecruitmentFacility,
 } from './worldSimulationService';
@@ -1074,4 +1082,131 @@ test('Phase 3 (Checkpoints 9–12): Half-Time Team Talk, Captain & Set Piece Cre
   );
 });
 
+test('Phase 4 (Checkpoints 13–17): International Management & INT_EURO, Stadium Expansion, Pre-Season Tours, FFP/PSR, AI Managerial Carousel, Rivalry Mind Games, Create-a-Club & Scenario Challenges', () => {
+  // Checkpoint 17: Create-a-Club + Scenario Challenges (POINTS_DEDUCTION, INJURY_CRISIS, YOUTH_ONLY)
+  const deductedWorld = createInitialWorldState(
+    30301,
+    { name: 'Custom Boss' },
+    'club_eng_pl_1',
+    'POINTS_DEDUCTION',
+    {
+      enabled: true,
+      name: 'London Phoenix FC',
+      shortName: 'LPF',
+      primaryColor: '#10b981',
+      secondaryColor: '#0f172a',
+      stadiumName: 'Phoenix Stadium',
+    }
+  );
+  const customClub = deductedWorld.clubs[deductedWorld.controlledClubId];
+  assert.equal(customClub.name, 'London Phoenix FC');
+  assert.equal(customClub.shortName, 'LPF');
+  assert.equal(customClub.stadiumName, 'Phoenix Stadium');
+  assert.equal(customClub.pointsDeduction, 10);
 
+  const plRow = deductedWorld.standings.ENG_PL.find((s) => s.clubId === customClub.id)!;
+  assert.equal(plRow.points, -10, 'POINTS_DEDUCTION scenario must start club at -10 points');
+
+  const injuryWorld = createInitialWorldState(
+    30302,
+    { name: 'Crisis Boss' },
+    'club_eng_pl_1',
+    'INJURY_CRISIS'
+  );
+  const injuredStars = Object.values(injuryWorld.players).filter(
+    (p) => p.clubId === injuryWorld.controlledClubId && p.injuryStatus.isInjured
+  );
+  assert.ok(injuredStars.length >= 5, 'INJURY_CRISIS scenario must injure top 5 outfield stars');
+
+  const youthOnlyWorld = createInitialWorldState(
+    30303,
+    { name: 'Academy Boss' },
+    'club_eng_pl_1',
+    'YOUTH_ONLY'
+  );
+  const youthOnlyClub = youthOnlyWorld.clubs[youthOnlyWorld.controlledClubId];
+  assert.equal(youthOnlyClub.youthFacilities, 20);
+  assert.equal(youthOnlyClub.transferEmbargoUntil, '2099-12-31');
+
+  // Checkpoint 13: Dual National Team Management, FIFA Call-ups & INT_EURO Knockout Tournament
+  const ntAppointed = appointNationalTeamManager(deductedWorld, 'ENG');
+  assert.equal(ntAppointed.nextState.controlledNationalTeamCode, 'ENG');
+
+  const fifaBreak = triggerFifaInternationalBreak(ntAppointed.nextState);
+  assert.ok(fifaBreak.calledUpCount > 0, 'FIFA International Break must call up CA >= 135 players');
+
+  const euroFixesInitial = fifaBreak.nextState.fixtures.filter((f) => f.competitionId === 'INT_EURO');
+  assert.equal(euroFixesInitial.length, 4, 'Initial INT_EURO tournament must have 4 QF fixtures');
+
+  const afterQF = simulateEuroCupNextStage(fifaBreak.nextState).nextState;
+  const euroSF = afterQF.fixtures.filter((f) => f.competitionId === 'INT_EURO' && f.uefaStage === 'SF');
+  assert.equal(euroSF.length, 2, 'Completing INT_EURO QF must generate 2 SF fixtures');
+
+  const afterSF = simulateEuroCupNextStage(afterQF).nextState;
+  const euroFinal = afterSF.fixtures.filter(
+    (f) => f.competitionId === 'INT_EURO' && f.uefaStage === 'FINAL'
+  );
+  assert.equal(euroFinal.length, 1, 'Completing INT_EURO SF must generate 1 FINAL fixture');
+
+  const afterFinal = simulateEuroCupNextStage(afterSF).nextState;
+  assert.ok(
+    (afterFinal.trophyHistory || []).some((t) => t.competitionId === 'INT_EURO'),
+    'Completing INT_EURO Final must record the European Nations Cup winner in trophyHistory'
+  );
+
+  // Checkpoint 14: Stadium Expansion, Pre-Season Commercial Tour & FFP / PSR Evaluation
+  const richState = {
+    ...afterFinal,
+    clubs: {
+      ...afterFinal.clubs,
+      [customClub.id]: {
+        ...afterFinal.clubs[customClub.id],
+        finances: {
+          ...afterFinal.clubs[customClub.id].finances,
+          balance: 80_000_000,
+        },
+      },
+    },
+  };
+  const beforeCap = richState.clubs[customClub.id].stadiumCapacity;
+  const expanded = expandClubStadium(richState);
+  assert.equal(expanded.success, true);
+  assert.equal(expanded.nextState.clubs[customClub.id].stadiumCapacity, beforeCap + 8_000);
+
+  const toured = organizePreSeasonTour(expanded.nextState, 'ASIA');
+  assert.equal(toured.success, true);
+  assert.equal(
+    toured.nextState.clubs[customClub.id].preSeasonTourCompletedSeason,
+    toured.nextState.currentSeason
+  );
+
+  const ffp = evaluateClubFFPStatus(toured.nextState, customClub.id);
+  assert.equal(ffp.status, 'COMPLIANT');
+
+  // Checkpoint 15: Pre-Match Rivalry Mind Games & AI Managerial Carousel
+  const mindGameRes = sendPreMatchMindGame(toured.nextState, 'attack');
+  assert.ok(mindGameRes.nextState.lastMindGameMatchday !== null);
+  assert.ok(mindGameRes.message.length > 0);
+
+  const carouselRes = triggerAIManagerialCarouselCheck(mindGameRes.nextState);
+  assert.ok(carouselRes.nextState);
+
+  // Verify Cloud Save dehydration & rehydration preserves Phase 4 fields
+  const dehydrated = dehydrateWorldStateToCareerMap(mindGameRes.nextState);
+  const rehydrated = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'u_test_phase4',
+    slotId: 'slot_1',
+    saveName: mindGameRes.nextState.saveName,
+    clubName: customClub.name,
+    managerName: mindGameRes.nextState.manager.name,
+    gameDate: mindGameRes.nextState.gameDate,
+    season: mindGameRes.nextState.currentSeason,
+    lastSavedAtIso: '2026-11-12T00:00:00.000Z',
+    randomSeed: mindGameRes.nextState.randomSeed,
+    controlledClubId: mindGameRes.nextState.controlledClubId,
+    careerState: dehydrated,
+  });
+  assert.equal(rehydrated.controlledNationalTeamCode, 'ENG');
+  assert.equal(rehydrated.scenarioChallenge, 'POINTS_DEDUCTION');
+  assert.equal(rehydrated.customClubConfig?.name, 'London Phoenix FC');
+});

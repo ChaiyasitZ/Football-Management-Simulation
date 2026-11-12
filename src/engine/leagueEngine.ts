@@ -99,22 +99,27 @@ export function generateLeagueSchedule(
 export function createInitialStandings(
   leagueId: LeagueId,
   seasonId: string,
-  clubIds: string[]
+  clubIds: string[],
+  clubsById?: Record<string, Club>
 ): LeagueStanding[] {
-  return clubIds.map((clubId) => ({
-    competitionId: leagueId,
-    seasonId,
-    clubId,
-    played: 0,
-    won: 0,
-    drawn: 0,
-    lost: 0,
-    goalsFor: 0,
-    goalsAgainst: 0,
-    goalDifference: 0,
-    points: 0,
-    form: [],
-  }));
+  return clubIds.map((clubId) => {
+    const deduction = clubsById?.[clubId]?.pointsDeduction || 0;
+    return {
+      competitionId: leagueId,
+      seasonId,
+      clubId,
+      played: 0,
+      won: 0,
+      drawn: 0,
+      lost: 0,
+      goalsFor: 0,
+      goalsAgainst: 0,
+      goalDifference: 0,
+      points: -deduction,
+      pointsDeduction: deduction > 0 ? deduction : undefined,
+      form: [],
+    };
+  });
 }
 
 /**
@@ -160,6 +165,7 @@ export function recomputeLeagueStandings(
 ): LeagueStanding[] {
   const map: Record<string, LeagueStanding> = {};
   for (const cId of clubIds) {
+    const deduction = clubsById?.[cId]?.pointsDeduction || 0;
     map[cId] = {
       competitionId: leagueConfig.id,
       seasonId,
@@ -171,7 +177,8 @@ export function recomputeLeagueStandings(
       goalsFor: 0,
       goalsAgainst: 0,
       goalDifference: 0,
-      points: 0,
+      points: -deduction,
+      pointsDeduction: deduction > 0 ? deduction : undefined,
       form: [],
     };
   }
@@ -374,4 +381,100 @@ export function checkAndAdvanceDomesticCup(
 
   return newFixtures;
 }
+
+/**
+ * Checkpoint 13: Generates the 8-Nation European / World Nations Cup ('INT_EURO') Quarter-Finals
+ * mapping top representative squads for ENG, ESP, GER, ITA, FRA, POR, NED, BEL
+ */
+export function generateEuropeanNationsCupFixtures(
+  seasonId: string,
+  endYear: number,
+  clubsById: Record<string, Club>
+): Fixture[] {
+  const nationOrder = ['ENG', 'ESP', 'GER', 'ITA', 'FRA', 'POR', 'NED', 'BEL'];
+  const repClubs: string[] = [];
+  for (const countryId of nationOrder) {
+    const bestInCountry = Object.values(clubsById)
+      .filter((c) => c.countryId === countryId)
+      .sort((a, b) => b.reputation - a.reputation)[0];
+    if (bestInCountry) {
+      repClubs.push(bestInCountry.id);
+    }
+  }
+  if (repClubs.length < 8) return [];
+
+  const qfDate = `${endYear}-05-20`;
+  const fixtures: Fixture[] = [];
+  for (let i = 0; i < 4; i++) {
+    fixtures.push({
+      id: `fix_INT_EURO_${seasonId.replace('/', '')}_QF_${i + 1}`,
+      competitionId: 'INT_EURO',
+      seasonId,
+      matchday: 1,
+      kickoffDate: qfDate,
+      homeClubId: repClubs[i],
+      awayClubId: repClubs[7 - i],
+      status: 'Scheduled',
+      uefaStage: 'QF',
+      tieIndex: i,
+    });
+  }
+  return fixtures;
+}
+
+export function checkAndAdvanceEuroCup(
+  allFixtures: Fixture[],
+  seasonId: string,
+  currentGameDate: string
+): Fixture[] {
+  const euroFixtures = allFixtures.filter(
+    (f) => f.competitionId === 'INT_EURO' && f.seasonId === seasonId
+  );
+  if (euroFixtures.length === 0) return [];
+  if (euroFixtures.some((f) => f.status !== 'Completed')) return [];
+
+  const stages: import('../types/game').UefaStage[] = ['QF', 'SF', 'FINAL'];
+  let latestStageIdx = -1;
+  for (let i = stages.length - 1; i >= 0; i--) {
+    if (euroFixtures.some((f) => f.uefaStage === stages[i])) {
+      latestStageIdx = i;
+      break;
+    }
+  }
+  if (latestStageIdx < 0 || latestStageIdx >= stages.length - 1) return [];
+
+  const currentStage = stages[latestStageIdx];
+  const nextStage = stages[latestStageIdx + 1];
+  const currentRoundFixtures = euroFixtures
+    .filter((f) => f.uefaStage === currentStage)
+    .sort((a, b) => (a.tieIndex ?? 0) - (b.tieIndex ?? 0));
+
+  const winners = currentRoundFixtures
+    .map((f) => getDomesticCupFixtureWinnerId(f))
+    .filter((id): id is string => Boolean(id));
+
+  if (winners.length < 2) return [];
+
+  const nextKickoff = addDaysISO(currentGameDate, 5);
+  const newFixtures: Fixture[] = [];
+  const pairCount = Math.floor(winners.length / 2);
+
+  for (let i = 0; i < pairCount; i++) {
+    newFixtures.push({
+      id: `fix_INT_EURO_${seasonId.replace('/', '')}_${nextStage}_${i + 1}`,
+      competitionId: 'INT_EURO',
+      seasonId,
+      matchday: latestStageIdx + 2,
+      kickoffDate: nextKickoff,
+      homeClubId: winners[i * 2],
+      awayClubId: winners[i * 2 + 1],
+      status: 'Scheduled',
+      uefaStage: nextStage,
+      tieIndex: i,
+    });
+  }
+
+  return newFixtures;
+}
+
 

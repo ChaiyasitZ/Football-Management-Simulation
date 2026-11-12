@@ -4,9 +4,12 @@ import {
   CupId,
   InboxCategory,
   LeagueId,
+  MindGameTone,
+  NationalTeamCode,
   NewsItem,
   Player,
   PositionGroup,
+  PreSeasonTourRegion,
   UefaCompetitionId,
   WorldState,
 } from '../types/game';
@@ -18,11 +21,13 @@ import {
   UEFA_COUNTRY_QUOTAS,
 } from '../engine/uefaEngine';
 import {
+  evaluateClubFFPStatus,
   getAgeAtDate,
   getClubStaffBonuses,
   getDeadlineDayBargains,
   isTransferDeadlineWindow,
   NATION_YOUTH_RATINGS,
+  NATIONAL_TEAMS_CATALOG,
   SaveSlotMeta,
 } from '../engine/worldSimulationService';
 import {
@@ -60,7 +65,8 @@ export const DashboardView: React.FC<{
   onNavigate: (tab: NavTab) => void;
   onSelectPlayer: (playerId: string) => void;
   onAdvanceDay: () => void;
-}> = ({ world, onNavigate, onSelectPlayer, onAdvanceDay }) => {
+  onSendMindGame?: (tone: MindGameTone) => void;
+}> = ({ world, onNavigate, onSelectPlayer, onAdvanceDay, onSendMindGame }) => {
   const { tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const leagueStandings = world.standings[club.leagueId] || [];
@@ -235,6 +241,54 @@ export const DashboardView: React.FC<{
                     {tr('Advance Day (Continue)', 'เดินเวลา (Continue)')}
                   </button>
                 </div>
+
+                {/* Checkpoint 15: Pre-Match Rivalry Mind Games */}
+                {onSendMindGame && (
+                  <div
+                    className="pt-3 border-t border-slate-800 space-y-2"
+                    data-testid="rivalry-mind-games-card"
+                  >
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-amber-400">
+                        {tr(
+                          `🎙️ Pre-Match Media Mind Games vs ${nextOpponent.aiManager.name}`,
+                          `🎙️ สงครามจิตวิทยาผ่านสื่อก่อนดวลกุนซือ ${nextOpponent.aiManager.name}`
+                        )}
+                      </span>
+                      <span className="font-mono text-slate-400">
+                        {world.lastMindGameMatchday === nextFixture.matchday
+                          ? tr('Comment Sent ✓', 'ส่งคอมเมนต์แล้ว ✓')
+                          : tr('1 per Matchday', 'ใช้ได้ 1 ครั้ง/นัด')}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <button
+                        type="button"
+                        disabled={world.lastMindGameMatchday === nextFixture.matchday}
+                        onClick={() => onSendMindGame('attack')}
+                        className="px-2.5 py-1.5 rounded bg-red-500/15 hover:bg-red-500/25 disabled:opacity-40 border border-red-500/30 text-red-300 text-[11px] font-medium cursor-pointer"
+                      >
+                        {tr('🔥 Question Tactics', '🔥 โจมตีแท็กติกคู่แข่ง')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={world.lastMindGameMatchday === nextFixture.matchday}
+                        onClick={() => onSendMindGame('praise')}
+                        className="px-2.5 py-1.5 rounded bg-sky-500/15 hover:bg-sky-500/25 disabled:opacity-40 border border-sky-500/30 text-sky-300 text-[11px] font-medium cursor-pointer"
+                      >
+                        {tr('🤝 Praise Respectfully', '🤝 ชื่นชมตามมารยาท')}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={world.lastMindGameMatchday === nextFixture.matchday}
+                        onClick={() => onSendMindGame('deflect')}
+                        className="px-2.5 py-1.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-40 border border-emerald-500/30 text-emerald-300 text-[11px] font-medium cursor-pointer"
+                      >
+                        {tr('🛡️ Deflect Pressure', '🛡️ ลดความกดดันลูกทีม')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-xs text-slate-400 py-4">
@@ -1840,7 +1894,7 @@ export const CompetitionsAndScheduleView: React.FC<{
       world.uefaStandings?.[uId]?.some((s) => s.clubId === myClub.id)
     ) || null;
 
-  const [compCategory, setCompCategory] = useState<'domestic' | 'cups' | 'uefa'>('domestic');
+  const [compCategory, setCompCategory] = useState<'domestic' | 'cups' | 'uefa' | 'data_hub'>('domestic');
   const [selectedLeague, setSelectedLeague] = useState<LeagueId>(myClub.leagueId);
   const [selectedCup, setSelectedCup] = useState<CupId>(
     LEAGUES_CONFIG[myClub.leagueId]?.cupId || 'ENG_CUP'
@@ -1963,6 +2017,18 @@ export const CompetitionsAndScheduleView: React.FC<{
               </span>
             )}
           </button>
+          <button
+            type="button"
+            data-testid="comp-data-hub-btn"
+            onClick={() => setCompCategory('data_hub')}
+            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200 cursor-pointer ${
+              compCategory === 'data_hub'
+                ? 'bg-purple-500 text-slate-950 shadow-sm shadow-purple-500/20'
+                : 'bg-slate-950 text-purple-300 hover:text-white border border-purple-500/40'
+            }`}
+          >
+            {tr('📊 FM27 Data Hub (Scatter Plots & Opponent Analyst)', '📊 ศูนย์วิเคราะห์ข้อมูล FM27 Data Hub (กราฟ 2 มิติ & วิเคราะห์คู่แข่ง)')}
+          </button>
         </div>
 
         {myUefaComp && (
@@ -1976,9 +2042,287 @@ export const CompetitionsAndScheduleView: React.FC<{
       </div>
 
       {/* =====================================================================
-          MODE C: DOMESTIC KNOCKOUT CUPS (R16 -> QF -> SF -> FINAL)
+          MODE D: FM27 DATA HUB (LEAGUE 2D SCATTER PLOTS & NEXT OPPONENT REPORT)
       ===================================================================== */}
-      {compCategory === 'cups' ? (
+      {compCategory === 'data_hub' ? (
+        <div className="space-y-4" data-testid="fm27-data-hub-panel">
+          {/* League Selector Bar for Data Hub */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-display font-bold text-white">
+                {tr(
+                  `📊 FM27 Performance Analytics & Scatter Plots — ${cfg.name}`,
+                  `📊 ศูนย์วิเคราะห์สถิติเชิงลึก FM27 Data Hub — ${cfg.name}`
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {tr(
+                  'Compare every club across Attacking Efficiency, xG Proxy, and Defensive Solidity quadrants.',
+                  'เปรียบเทียบประสิทธิภาพเกมรุกและเกมรับของทุกสโมสรในลีกบนกราฟ 4 จตุภาค (Quadrants)'
+                )}
+              </p>
+            </div>
+            <select
+              aria-label="Select League for Data Hub"
+              value={selectedLeague}
+              onChange={(e) => setSelectedLeague(e.target.value as LeagueId)}
+              className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-emerald-300 font-semibold"
+            >
+              {(Object.keys(LEAGUES_CONFIG) as LeagueId[]).map((lId) => (
+                <option key={lId} value={lId}>
+                  {LEAGUES_CONFIG[lId].countryFlag} {LEAGUES_CONFIG[lId].name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* 1. Attacking Efficiency 2D SVG Scatter Plot */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-emerald-400">
+                    {tr(
+                      '⚔️ Attacking Efficiency Scatter Plot (Goals/Match vs xG Creation Index)',
+                      '⚔️ กราฟวิเคราะห์ประสิทธิภาพเกมรุก (ประตูต่อนัด vs ดัชนีสร้างสรรค์โอกาส xG)'
+                    )}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    {tr(
+                      'Top-Right Quadrant = Clinical & High-Volume Attackers · Emerald Node = Your Club',
+                      'มุมขวาบน = เกมรุกดุดันและจบสกอร์คมกริบ · จุดสีเขียว = สโมสรของคุณ'
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <svg
+                viewBox="0 0 440 270"
+                className="w-full h-auto bg-slate-950 rounded-xl border border-slate-800"
+                role="img"
+                aria-label="Attacking Efficiency Scatter Plot"
+              >
+                {/* Quadrant lines */}
+                <line x1="220" y1="20" x2="220" y2="240" stroke="#334155" strokeDasharray="4 4" />
+                <line x1="40" y1="130" x2="415" y2="130" stroke="#334155" strokeDasharray="4 4" />
+                {/* Quadrant Labels */}
+                <text x="50" y="36" fill="#64748b" fontSize="9" fontFamily="monospace">
+                  CLINICAL / LOW VOLUME
+                </text>
+                <text x="290" y="36" fill="#10b981" fontSize="9" fontFamily="monospace">
+                  ELITE ATTACK (HIGH xG &amp; GOALS)
+                </text>
+                <text x="50" y="232" fill="#ef4444" fontSize="9" fontFamily="monospace">
+                  PASSIVE ATTACK
+                </text>
+                <text x="295" y="232" fill="#f59e0b" fontSize="9" fontFamily="monospace">
+                  WASTEFUL FINISHERS
+                </text>
+
+                {standings.map((row, idx) => {
+                  const c = world.clubs[row.clubId];
+                  if (!c) return null;
+                  const played = Math.max(1, row.played);
+                  const gpm = row.played > 0 ? row.goalsFor / played : (c.reputation - 55) / 22;
+                  const xgIndex = (c.reputation - 50) / 22 + gpm * 0.45;
+                  const cx = Math.max(52, Math.min(402, 55 + (xgIndex / 3.2) * 335));
+                  const cy = Math.max(28, Math.min(225, 225 - (gpm / 3.0) * 190));
+                  const isMine = c.id === myClub.id;
+                  return (
+                    <g key={c.id}>
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={isMine ? 7 : 4.5}
+                        fill={isMine ? '#10b981' : idx < 4 ? '#38bdf8' : '#94a3b8'}
+                        stroke="#0f172a"
+                        strokeWidth="1.5"
+                      />
+                      <text
+                        x={cx + (isMine ? 9 : 6)}
+                        y={cy + 3}
+                        fill={isMine ? '#34d399' : '#cbd5e1'}
+                        fontSize={isMine ? '10' : '8.5'}
+                        fontWeight={isMine ? 'bold' : 'normal'}
+                        fontFamily="monospace"
+                      >
+                        {c.shortName}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+
+            {/* 2. Defensive Solidity 2D SVG Scatter Plot */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+              <div>
+                <h4 className="text-sm font-bold text-sky-400">
+                  {tr(
+                    '🛡️ Defensive Solidity Scatter Plot (Goals Conceded/Match vs Tactical Discipline)',
+                    '🛡️ กราฟวิเคราะห์ความเหนียวแน่นเกมรับ (เสียประตูต่อนัด vs วินัยเกมรับ)'
+                  )}
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  {tr(
+                    'Top-Right Quadrant = Fortress Defense (Low Conceded & High Press Resistance)',
+                    'มุมขวาบน = ป้อมปราการเหล็ก (เสียประตูน้อยและต้านทานเพรสซิ่งสูง)'
+                  )}
+                </p>
+              </div>
+
+              <svg
+                viewBox="0 0 440 270"
+                className="w-full h-auto bg-slate-950 rounded-xl border border-slate-800"
+                role="img"
+                aria-label="Defensive Solidity Scatter Plot"
+              >
+                <line x1="220" y1="20" x2="220" y2="240" stroke="#334155" strokeDasharray="4 4" />
+                <line x1="40" y1="130" x2="415" y2="130" stroke="#334155" strokeDasharray="4 4" />
+                <text x="50" y="36" fill="#38bdf8" fontSize="9" fontFamily="monospace">
+                  LOW BLOCK FORTRESS
+                </text>
+                <text x="275" y="36" fill="#10b981" fontSize="9" fontFamily="monospace">
+                  ELITE CONTROL &amp; CLEAN SHEETS
+                </text>
+                <text x="50" y="232" fill="#ef4444" fontSize="9" fontFamily="monospace">
+                  VULNERABLE DEFENSE
+                </text>
+                <text x="285" y="232" fill="#f59e0b" fontSize="9" fontFamily="monospace">
+                  HIGH-LINE EXPOSURE
+                </text>
+
+                {standings.map((row, idx) => {
+                  const c = world.clubs[row.clubId];
+                  if (!c) return null;
+                  const played = Math.max(1, row.played);
+                  const gapm = row.played > 0 ? row.goalsAgainst / played : (98 - c.reputation) / 24;
+                  const defIndex = (c.reputation - 45) / 50;
+                  const cx = Math.max(52, Math.min(402, 60 + defIndex * 320));
+                  const cy = Math.max(28, Math.min(225, 35 + Math.min(2.6, gapm) * 70));
+                  const isMine = c.id === myClub.id;
+                  return (
+                    <g key={c.id}>
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={isMine ? 7 : 4.5}
+                        fill={isMine ? '#10b981' : idx < 4 ? '#38bdf8' : '#94a3b8'}
+                        stroke="#0f172a"
+                        strokeWidth="1.5"
+                      />
+                      <text
+                        x={cx + (isMine ? 9 : 6)}
+                        y={cy + 3}
+                        fill={isMine ? '#34d399' : '#cbd5e1'}
+                        fontSize={isMine ? '10' : '8.5'}
+                        fontWeight={isMine ? 'bold' : 'normal'}
+                        fontFamily="monospace"
+                      >
+                        {c.shortName}
+                      </text>
+                    </g>
+                  );
+                })}
+              </svg>
+            </div>
+          </div>
+
+          {/* 3. Next Opponent Chief Analyst Report */}
+          {(() => {
+            const nextFix = world.fixtures.find(
+              (f) =>
+                f.status === 'Scheduled' &&
+                (f.homeClubId === myClub.id || f.awayClubId === myClub.id)
+            );
+            const oppClub = nextFix
+              ? world.clubs[nextFix.homeClubId === myClub.id ? nextFix.awayClubId : nextFix.homeClubId]
+              : null;
+            const oppPlayers = oppClub
+              ? Object.values(world.players)
+                  .filter((p) => p.clubId === oppClub.id)
+                  .sort((a, b) => b.currentAbility - a.currentAbility)
+              : [];
+            const keyThreat = oppPlayers[0];
+            const topScorer = [...oppPlayers].sort((a, b) => b.stats.goals - a.stats.goals)[0];
+
+            return (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-bold text-amber-400">
+                      {tr(
+                        '🕵️ Chief Performance Analyst — Next Opponent Tactical Dossier',
+                        '🕵️ รายงานวิเคราะห์คู่แข่งนัดถัดไปจากหัวหน้านักวิเคราะห์ (Next Opponent Dossier)'
+                      )}
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {oppClub
+                        ? tr(
+                            `Upcoming Matchday ${nextFix?.matchday} vs ${oppClub.name} (${nextFix?.kickoffDate})`,
+                            `คู่แข่งนัดถัดไป: Matchday ${nextFix?.matchday} พบ ${oppClub.name} (${nextFix?.kickoffDate})`
+                          )
+                        : tr('No upcoming scheduled fixture.', 'ไม่มีโปรแกรมแข่งขันที่กำลังจะมาถึง')}
+                    </p>
+                  </div>
+                </div>
+
+                {oppClub && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                      <div className="text-slate-400">
+                        {tr('Preferred Formation & Style', 'แผนการเล่นและปรัชญาของคู่แข่ง')}
+                      </div>
+                      <div className="text-sm font-bold text-white font-mono">
+                        {oppClub.primaryTactic.formation} · {oppClub.primaryTactic.instructions.mentality}
+                      </div>
+                      <div className="text-[11px] text-emerald-400">
+                        {oppClub.aiManager.name} ({oppClub.aiManager.style})
+                      </div>
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                      <div className="text-slate-400">
+                        {tr('Primary Key Threat & Top Scorer', 'ตัวอันตรายอันดับหนึ่ง & ดาวซัลโวประจำทีม')}
+                      </div>
+                      {keyThreat && (
+                        <div className="font-semibold text-white">
+                          ★ {keyThreat.firstName} {keyThreat.lastName} ({keyThreat.positions[0]} · CA{' '}
+                          {(keyThreat.currentAbility / 10).toFixed(1)})
+                        </div>
+                      )}
+                      {topScorer && (
+                        <div className="text-[11px] text-amber-300 font-mono">
+                          {tr('Top Scorer:', 'ดาวซัลโว:')} {topScorer.firstName} {topScorer.lastName} (
+                          {topScorer.stats.goals}G / {topScorer.stats.assists}A)
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
+                      <div className="text-slate-400">
+                        {tr('Analyst Tactical Recommendation', 'คำแนะนำแท็กติกเพื่อเจาะจุดอ่อนคู่แข่ง')}
+                      </div>
+                      <div className="text-slate-200 leading-relaxed">
+                        {oppClub.primaryTactic.instructions.defensiveLine === 'High' ||
+                        oppClub.primaryTactic.instructions.defensiveLine === 'Very High'
+                          ? tr(
+                              'Opponent plays a High Line — instruct forwards to Pass Into Space and exploit the channels behind their full-backs.',
+                              'คู่แข่งดันแนวรับขึ้นสูง แนะนำให้สั่งกองหน้าวิ่งตัดหลังไลน์ (Pass Into Space) และโจมตีพื้นที่ด้านหลังแบ็กทั้งสองฝั่ง'
+                            )
+                          : tr(
+                              'Opponent defends in a compact block — use Wide Width, Work Ball Into Box, and patient build-up to unlock their defense.',
+                              'คู่แข่งตั้งรับลึกและรัดกุม แนะนำให้ถ่างเกมรุกด้านกว้าง (Wide) และต่อบอลเข้ากรอบเขตโทษอย่างอดทน'
+                            )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      ) : compCategory === 'cups' ? (
         <div className="space-y-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2">
             {domesticCupsList.map((l) => (
@@ -2958,7 +3302,7 @@ export const ClubStaffYouthWorldView: React.FC<{
   onGoogleSignIn: () => void;
   onGoogleSignOut: () => void;
   onSelectPlayer: (playerId: string) => void;
-  onBoardRequest: (type: 'budget' | 'training_facility' | 'youth_facility') => void;
+  onBoardRequest: (type: 'budget' | 'training_facility' | 'youth_facility' | 'expand_stadium') => void;
   onHireStaff: (staffId: string) => void;
   onRecruitYouth: () => void;
   onPromoteYouth: (playerId: string) => void;
@@ -2974,6 +3318,11 @@ export const ClubStaffYouthWorldView: React.FC<{
   onTriggerSeasonRollover?: () => void;
   onTriggerTakeover?: (mode: 'EMBARGO' | 'COMPLETE') => void;
   onApplyForJob?: (targetClubId: string) => void;
+  onOrganizePreSeasonTour?: (region: PreSeasonTourRegion) => void;
+  onAppointNationalTeam?: (code: NationalTeamCode | null) => void;
+  onSimulateEuroCupRound?: () => void;
+  onTriggerFifaBreak?: () => void;
+  onTriggerAICarousel?: () => void;
 }> = ({
   mode,
   world,
@@ -2996,6 +3345,11 @@ export const ClubStaffYouthWorldView: React.FC<{
   onTriggerSeasonRollover,
   onTriggerTakeover,
   onApplyForJob,
+  onOrganizePreSeasonTour,
+  onAppointNationalTeam,
+  onSimulateEuroCupRound,
+  onTriggerFifaBreak,
+  onTriggerAICarousel,
 }) => {
   const { lang, setLang, tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -3005,6 +3359,9 @@ export const ClubStaffYouthWorldView: React.FC<{
   const [youthTab, setYouthTab] = useState<'academy' | 'wonderkids' | 'mentoring'>('academy');
 
   if (mode === 'club') {
+    const ffpStatus = evaluateClubFFPStatus(world, club.id);
+    const tourDoneThisSeason = club.preSeasonTourCompletedSeason === world.currentSeason;
+
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -3107,6 +3464,14 @@ export const ClubStaffYouthWorldView: React.FC<{
                 >
                   {tr('Upgrade Youth Academy (€2.5M)', 'ขออัปเกรดศูนย์ฝึกเยาวชน (€2.5M)')}
                 </button>
+                <button
+                  type="button"
+                  data-testid="expand-stadium-btn"
+                  onClick={() => onBoardRequest('expand_stadium')}
+                  className="px-3.5 py-2 bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 font-semibold text-xs rounded-lg cursor-pointer"
+                >
+                  {tr('🏟️ Expand Stadium (+8,000 Seats · €12.0M)', '🏟️ ขยายความจุสนามเหย้า (+8,000 ที่นั่ง · €12.0M)')}
+                </button>
                 {onTriggerSeasonRollover && (
                   <button
                     type="button"
@@ -3116,6 +3481,89 @@ export const ClubStaffYouthWorldView: React.FC<{
                     {tr('Advance to Next Season (Rollover)', 'สรุปจบฤดูกาลและขึ้นฤดูกาลใหม่')}
                   </button>
                 )}
+              </div>
+
+              {/* Checkpoint 14A: Pre-Season Commercial Tours (Asia / USA / Middle East) */}
+              {onOrganizePreSeasonTour && (
+                <div
+                  className="mt-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+                  data-testid="preseason-tour-card"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-400">
+                      {tr(
+                        '✈️ Global Pre-Season Commercial Tour (+Merchandise & +4% Sharpness)',
+                        '✈️ จัดทัวร์ปรีซีซั่น комเมอร์เชียลระดับโลก (+รายได้สปอนเซอร์ & +4% ความเฉียบคม)'
+                      )}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {tourDoneThisSeason
+                        ? tr(`Completed (${world.currentSeason})`, `จัดทัวร์แล้ว (${world.currentSeason})`)
+                        : tr('Available (1/Season)', 'พร้อมจัดทัวร์ (1 ครั้ง/ฤดูกาล)')}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      disabled={tourDoneThisSeason}
+                      onClick={() => onOrganizePreSeasonTour('ASIA')}
+                      className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-emerald-500/30 text-left text-xs cursor-pointer"
+                    >
+                      <div className="font-bold text-white">🇯🇵🇰🇷 Asia Tour</div>
+                      <div className="text-[11px] font-mono text-emerald-400">+€4.50M · Tokyo &amp; Seoul</div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={tourDoneThisSeason}
+                      onClick={() => onOrganizePreSeasonTour('USA')}
+                      className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-sky-500/30 text-left text-xs cursor-pointer"
+                    >
+                      <div className="font-bold text-white">🇺🇸 USA Coast Tour</div>
+                      <div className="text-[11px] font-mono text-sky-400">+€5.00M · NY &amp; Los Angeles</div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={tourDoneThisSeason}
+                      onClick={() => onOrganizePreSeasonTour('MIDDLE_EAST')}
+                      className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-amber-500/30 text-left text-xs cursor-pointer"
+                    >
+                      <div className="font-bold text-white">🇦🇪🇸🇦 Middle East Tour</div>
+                      <div className="text-[11px] font-mono text-amber-300">+€5.50M · Dubai &amp; Riyadh</div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Checkpoint 14B: FFP / PSR Financial Fair Play Compliance Panel */}
+              <div
+                className="mt-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5"
+                data-testid="ffp-compliance-panel"
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-slate-200">
+                    {tr(
+                      '⚖️ FFP / PSR Financial Fair Play Compliance (Max Loss €105M)',
+                      '⚖️ กฎการเงิน FFP / PSR (เพดานขาดทุนสูงสุด €105M)'
+                    )}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                      ffpStatus.status === 'COMPLIANT'
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                        : ffpStatus.status === 'WATCHLIST'
+                          ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                          : 'bg-red-500/20 text-red-400 border border-red-500/40'
+                    }`}
+                  >
+                    {ffpStatus.status} · Headroom €{(ffpStatus.headroom / 1_000_000).toFixed(1)}M
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  {tr(
+                    `Projected PSR Loss: €${(ffpStatus.projectedLoss / 1_000_000).toFixed(1)}M / €${(ffpStatus.maxAllowedLoss / 1_000_000).toFixed(0)}M Limit · Breach at Rollover = -6 pts deduction`,
+                    `ยอดขาดทุนประเมินตามเกณฑ์ PSR: €${(ffpStatus.projectedLoss / 1_000_000).toFixed(1)}M / เพดาน €${(ffpStatus.maxAllowedLoss / 1_000_000).toFixed(0)}M · หากละเมิดกฎจะถูกตัด -6 แต้มเมื่อจบฤดูกาล`
+                  )}
+                </div>
               </div>
 
               {/* Dynamic Board Takeover & Transfer Embargo Simulation Controls (Checkpoint 8) */}
@@ -3956,9 +4404,141 @@ export const ClubStaffYouthWorldView: React.FC<{
     const inspectedPlayers = Object.values(world.players)
       .filter((p) => p.clubId === inspectedClub.id)
       .sort((a, b) => b.currentAbility - a.currentAbility);
+    const euroCupFixtures = world.fixtures.filter((f) => f.competitionId === 'INT_EURO');
 
     return (
       <div className="space-y-4">
+        {/* Checkpoint 13: Dual Club & International Management + European Nations Cup (INT_EURO) */}
+        <div
+          className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
+          data-testid="international-management-card"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-display font-bold text-amber-400">
+                {tr(
+                  '🌍 FIFA International Management & European Nations Cup (INT_EURO)',
+                  '🌍 ระบบคุมทีมชาติควบคู่สโมสร & ศึกชิงแชมป์แห่งชาติยุโรป (INT_EURO)'
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {tr(
+                  'Manage one of 8 elite National Federations alongside your club, call up CA ≥ 135 stars during FIFA Windows, and compete for the European Nations Cup.',
+                  'เลือกรับงานคุมทีมชาติชั้นนำ 8 ชาติควบคู่กับสโมสร เรียกตัวนักเตะ CA ≥ 135 เข้าแคมป์ทีมชาติ และลุยศึก European Nations Cup'
+                )}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {onTriggerFifaBreak && (
+                <button
+                  type="button"
+                  onClick={onTriggerFifaBreak}
+                  className="px-3 py-1.5 bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  {tr('🌐 Trigger FIFA Call-Up Window', '🌐 จำลองเบรกทีมชาติ FIFA')}
+                </button>
+              )}
+              {onSimulateEuroCupRound && (
+                <button
+                  type="button"
+                  data-testid="simulate-euro-cup-btn"
+                  onClick={onSimulateEuroCupRound}
+                  className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  {tr('🏆 Simulate Next Euro Nations Cup Round', '🏆 แข่งรอบถัดไปศึก Euro Nations Cup')}
+                </button>
+              )}
+              {onTriggerAICarousel && (
+                <button
+                  type="button"
+                  onClick={onTriggerAICarousel}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg cursor-pointer"
+                >
+                  {tr('🔄 Check AI Manager Sackings', '🔄 ตรวจสอบกุนซือ AI ถูกปลด')}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 8 National Teams Selector */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            {NATIONAL_TEAMS_CATALOG.map((nt) => {
+              const isSelected = world.controlledNationalTeamCode === nt.code;
+              return (
+                <button
+                  key={nt.code}
+                  type="button"
+                  onClick={() =>
+                    onAppointNationalTeam?.(isSelected ? null : nt.code)
+                  }
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-amber-500/20 border-amber-400 text-white font-semibold'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span>{nt.flag}</span>
+                    <span className="font-mono text-[10px] text-amber-400">{nt.code}</span>
+                  </div>
+                  <div className="text-xs font-bold text-white truncate mt-1">
+                    {tr(nt.nameEn, nt.nameTh)}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    {isSelected ? tr('★ Managing', '★ กำลังคุมทัพ') : tr('Appoint', 'รับงานคุมทีมชาติ')}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* European Nations Cup (INT_EURO) Knockout Bracket */}
+          {euroCupFixtures.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+              {(['QF', 'SF', 'FINAL'] as const).map((stg) => {
+                const stgFixes = euroCupFixtures.filter((f) => f.uefaStage === stg);
+                if (stgFixes.length === 0) return null;
+                return (
+                  <div
+                    key={stg}
+                    className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5 text-xs"
+                  >
+                    <div className="font-mono font-bold text-amber-400 text-[11px]">
+                      {stg === 'QF'
+                        ? tr('EURO QUARTER-FINALS', 'รอบ 8 ทีมสุดท้าย (QF)')
+                        : stg === 'SF'
+                          ? tr('EURO SEMI-FINALS', 'รอบรองชนะเลิศ (SF)')
+                          : tr('EURO GRAND FINAL', 'รอบชิงชนะเลิศ (FINAL)')}
+                    </div>
+                    {stgFixes.map((fx) => {
+                      const hc = world.clubs[fx.homeClubId];
+                      const ac = world.clubs[fx.awayClubId];
+                      return (
+                        <div
+                          key={fx.id}
+                          className="flex items-center justify-between py-1 border-b border-slate-800/60 last:border-none"
+                        >
+                          <span className="text-slate-200 truncate w-28">
+                            {hc?.countryId || hc?.shortName} ({hc?.shortName})
+                          </span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            {fx.status === 'Completed' && fx.result
+                              ? `${fx.result.homeGoals} - ${fx.result.awayGoals}`
+                              : fx.kickoffDate}
+                          </span>
+                          <span className="text-slate-200 truncate w-28 text-right">
+                            {ac?.countryId || ac?.shortName} ({ac?.shortName})
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2">
           {(Object.keys(LEAGUES_CONFIG) as LeagueId[]).map((lId) => (
             <button
@@ -3982,21 +4562,31 @@ export const ClubStaffYouthWorldView: React.FC<{
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-3 space-y-1.5 max-h-[540px] overflow-y-auto">
-            {clubsInLeague.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setInspectedClubId(c.id)}
-                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer ${
-                  c.id === inspectedClub.id
-                    ? 'bg-slate-800 text-white border border-emerald-500/50'
-                    : 'bg-slate-950 text-slate-300 hover:bg-slate-900'
-                }`}
-              >
-                <span className="font-medium truncate">{c.name}</span>
-                <span className="font-mono text-slate-400">Rep {c.reputation}</span>
-              </button>
-            ))}
+            {clubsInLeague.map((c) => {
+              const jobSec = c.aiManager.jobSecurity ?? 75;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setInspectedClubId(c.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer ${
+                    c.id === inspectedClub.id
+                      ? 'bg-slate-800 text-white border border-emerald-500/50'
+                      : 'bg-slate-950 text-slate-300 hover:bg-slate-900'
+                  }`}
+                >
+                  <span className="font-medium truncate">{c.name}</span>
+                  <div className="flex items-center gap-1.5 font-mono">
+                    {jobSec <= 52 && c.id !== club.id && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px]">
+                        {tr('Under Pressure', 'เก้าอี้ร้อน')}
+                      </span>
+                    )}
+                    <span className="text-slate-400">Rep {c.reputation}</span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -4006,7 +4596,12 @@ export const ClubStaffYouthWorldView: React.FC<{
                 <div className="text-xs text-slate-400">
                   {tr('Manager:', 'ผู้จัดการทีม:')}{' '}
                   {inspectedClub.id === club.id ? world.manager.name : inspectedClub.aiManager.name}{' '}
-                  ({inspectedClub.aiManager.style}) · {tr('Stadium:', 'สนาม')} {inspectedClub.stadiumName}
+                  ({inspectedClub.aiManager.style}) ·{' '}
+                  {tr('Job Security:', 'ความมั่นคงเก้าอี้:')}{' '}
+                  <span className="font-mono text-emerald-400">
+                    {inspectedClub.aiManager.jobSecurity ?? 78}%
+                  </span>{' '}
+                  · {tr('Stadium:', 'สนาม')} {inspectedClub.stadiumName}
                 </div>
               </div>
               <div className="flex items-center gap-3">
