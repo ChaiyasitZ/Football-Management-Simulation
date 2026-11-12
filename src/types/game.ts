@@ -86,6 +86,20 @@ export type PossessionWonInstruction = 'Counter' | 'Hold Shape';
 export type DefensiveApproach = 'Zonal Marking' | 'Man Marking';
 export type TimeWasting = 'Never' | 'Sometimes' | 'Often';
 export type TacklingStyle = 'Stay On Feet' | 'Standard' | 'Get Stuck In';
+export type TouchlineShoutType = 'Encourage' | 'Demand More' | 'Calm Down' | 'Focus' | 'Praise';
+export type HalfTimeTalkType = 'praise' | 'encourage' | 'demand_more' | 'aggressive' | 'no_complacency';
+export type CornerRoutineType = 'near_post' | 'far_post' | 'centre' | 'short';
+export type FreeKickRoutineType = 'direct_shoot' | 'cross_box' | 'short_layoff';
+
+export type PlayerTrait =
+  | 'Places Shots'
+  | 'Curls Ball'
+  | 'Tries Killer Balls Often'
+  | 'Dictates Tempo'
+  | 'Dives Into Tackles'
+  | 'Beats Offside Trap'
+  | 'Runs With Ball Often'
+  | 'Power Header';
 
 export type PlayerRole =
   | 'Goalkeeper'
@@ -261,6 +275,13 @@ export interface Player {
   isRegistered?: boolean;
   consecutiveBenched?: number;
   playInReserves?: boolean;
+  suspensionMatchesRemaining?: number;
+  unhappyReason?: string | null;
+  youthSquad?: 'u18' | 'u21' | 'senior';
+  contractType?: 'youth' | 'professional';
+  mentorId?: string | null;
+  isWonderkid?: boolean;
+  traits?: PlayerTrait[];
 }
 
 export interface TacticalSlot {
@@ -291,6 +312,15 @@ export interface TeamInstructions {
   tackling: TacklingStyle;
 }
 
+export interface SetPieceSetup {
+  captainId?: string | null;
+  penaltyTakerId?: string | null;
+  freeKickTakerId?: string | null;
+  cornerTakerId?: string | null;
+  cornerRoutine: CornerRoutineType;
+  freeKickRoutine: FreeKickRoutineType;
+}
+
 export interface TacticalSystem {
   id: string;
   name: string;
@@ -299,6 +329,7 @@ export interface TacticalSystem {
   lineup: TacticalSlot[]; // 11 starting slots
   benchPlayerIds: string[]; // up to 9 subs
   familiarity: number; // 1-100
+  setPieces?: SetPieceSetup;
 }
 
 export type StaffRole =
@@ -379,6 +410,10 @@ export interface Club {
   reputation: number; // 1-100
   trainingFacilities: number; // 1-20
   youthFacilities: number; // 1-20
+  juniorCoaching?: number; // 1-20
+  youthRecruitment?: number; // 1-20
+  sugarDaddyType?: 'FRONT_END' | 'BACK_END' | 'UNDERWRITER' | 'NONE';
+  transferEmbargoUntil?: string | null;
   finances: {
     balance: number;
     transferBudget: number;
@@ -483,6 +518,9 @@ export interface MatchEvent {
   secondaryPlayerName?: string;
   text: string;
   xGDelta?: number;
+  shotXg?: number;
+  shotX?: number;
+  shotY?: number;
   pitchX: number; // 0..100 for 2D pitch visualizer
   pitchY: number; // 0..100
   isHighlight?: boolean;
@@ -519,6 +557,9 @@ export interface MatchResult {
   manOfTheMatchPlayerId: string;
   attendance: number;
   aiSummary?: string;
+  substitutions?: { minute: number; teamId: string; playerOutId: string; playerInId: string }[];
+  extraTimePlayed?: boolean;
+  penaltyShootout?: { homePenalties: number; awayPenalties: number };
 }
 
 export interface Fixture {
@@ -657,6 +698,60 @@ export interface ManagerProfile {
   };
 }
 
+export interface MentoringGroup {
+  id: string;
+  clubId: string;
+  mentorId: string;
+  menteeIds: string[];
+  focusTrait?: PlayerTrait | null;
+  createdAt: string;
+}
+
+export interface TrophyHistoryRecord {
+  id: string;
+  season: string;
+  competitionId: CompetitionId;
+  competitionName: string;
+  winnerClubId: string;
+  winnerClubName: string;
+  runnerUpClubId?: string;
+  runnerUpClubName?: string;
+}
+
+export interface SeasonAwardRecord {
+  season: string;
+  ballonDor: {
+    playerId: string;
+    playerName: string;
+    clubId: string;
+    clubName: string;
+    goals: number;
+    assists: number;
+    averageRating: number;
+  };
+  goldenBoot: {
+    playerId: string;
+    playerName: string;
+    clubId: string;
+    clubName: string;
+    goals: number;
+  };
+  goldenBoy: {
+    playerId: string;
+    playerName: string;
+    clubId: string;
+    clubName: string;
+    age: number;
+    ca: number;
+    averageRating: number;
+  };
+  managerOfTheSeason: {
+    managerName: string;
+    clubId: string;
+    clubName: string;
+  };
+}
+
 export interface WorldState {
   saveId: string;
   saveName: string;
@@ -682,4 +777,7 @@ export interface WorldState {
   scoutReports: Record<string, ScoutReport>; // keyed by playerId
   transactions: FinanceTransaction[];
   inbox: NewsItem[];
+  mentoringGroups?: MentoringGroup[];
+  trophyHistory?: TrophyHistoryRecord[];
+  seasonAwardsHistory?: SeasonAwardRecord[];
 }

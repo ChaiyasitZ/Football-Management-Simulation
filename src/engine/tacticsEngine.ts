@@ -1,8 +1,12 @@
 import {
+  CornerRoutineType,
   FormationId,
+  FreeKickRoutineType,
   Player,
   PlayerRole,
+  PlayerTrait,
   PositionCode,
+  SetPieceSetup,
   TacticalSlot,
   TacticalSystem,
   TeamInstructions,
@@ -917,8 +921,13 @@ export function autoPickLineup(
   familiarityOverride?: number
 ): TacticalSystem {
   const blueprint = FORMATION_BLUEPRINTS[formation];
-  const available = clubPlayers.filter((p) => !p.injuryStatus.isInjured && p.isRegistered !== false);
-  const pool = available.length >= 11 ? available : clubPlayers.filter((p) => !p.injuryStatus.isInjured);
+  const available = clubPlayers.filter(
+    (p) => !p.injuryStatus.isInjured && (p.suspensionMatchesRemaining || 0) <= 0 && p.isRegistered !== false
+  );
+  const pool =
+    available.length >= 11
+      ? available
+      : clubPlayers.filter((p) => !p.injuryStatus.isInjured && (p.suspensionMatchesRemaining || 0) <= 0);
   const usedIds = new Set<string>();
 
   const lineup: TacticalSlot[] = blueprint.slots.map((slot, idx) => {
@@ -959,6 +968,12 @@ export function autoPickLineup(
 
   const benchPlayerIds = remaining.slice(0, 9).map((p) => p.id);
 
+  const starterPlayers = lineup
+    .map((s) => pool.find((p) => p.id === s.playerId))
+    .filter((p): p is Player => Boolean(p));
+
+  const setPieces = computeAutoSetPieceTakers(starterPlayers.length > 0 ? starterPlayers : clubPlayers);
+
   return {
     id: tacticId,
     name: tacticName,
@@ -967,6 +982,7 @@ export function autoPickLineup(
     lineup,
     benchPlayerIds,
     familiarity: familiarityOverride ?? 78,
+    setPieces,
   };
 }
 
@@ -991,7 +1007,7 @@ export function analyzeTacticalRisks(
     });
   }
 
-  // 2. Check out-of-position, low fitness (<70% injury risk), or low match sharpness (<72%) players
+  // 2. Check out-of-position, suspended, low fitness (<70% injury risk), or low match sharpness (<72%) players
   for (const slot of lineup) {
     if (!slot.playerId) {
       alerts.push({
@@ -1005,6 +1021,15 @@ export function analyzeTacticalRisks(
     }
     const p = playersById[slot.playerId];
     if (!p) continue;
+    if ((p.suspensionMatchesRemaining || 0) > 0) {
+      alerts.push({
+        level: 'warning',
+        message: trText(
+          `Suspended Player: ${p.firstName} ${p.lastName} is suspended for ${p.suspensionMatchesRemaining} match(es) and is ineligible to play!`,
+          `นักเตะติดโทษแบน: ${p.firstName} ${p.lastName} ติดโทษแบนอีก ${p.suspensionMatchesRemaining} นัด ไม่สามารถลงสนามได้!`
+        ),
+      });
+    }
     const fit = calculatePositionFit(p, slot.position);
     if (fit < 0.75) {
       alerts.push({
@@ -1121,4 +1146,720 @@ export function analyzeTacticalRisks(
 
   return alerts;
 }
+
+export interface PolygonAxisPoint {
+  key: string;
+  labelEn: string;
+  labelTh: string;
+  value: number; // 1..20
+}
+
+/**
+ * Computes the 8-Axis FM27 Attribute Polygon values (1-20 scale) for a player
+ */
+export function computePlayerPolygon8Axes(player: Player): PolygonAxisPoint[] {
+  const { technical: t, mental: m, physical: p } = player.attributes;
+  const isGK = player.positions[0] === 'GK';
+
+  if (isGK) {
+    return [
+      {
+        key: 'reflexes',
+        labelEn: 'Reflexes',
+        labelTh: 'ปฏิกิริยาเซฟ',
+        value: Number(((p.agility * 1.3 + m.anticipation * 0.7) / 2).toFixed(1)),
+      },
+      {
+        key: 'handling',
+        labelEn: 'Handling',
+        labelTh: 'การรับบอล',
+        value: Number(((t.firstTouch + t.technique + m.concentration) / 3).toFixed(1)),
+      },
+      {
+        key: 'oneOnOnes',
+        labelEn: 'One-on-Ones',
+        labelTh: 'ดวลเดี่ยว 1v1',
+        value: Number(((m.bravery + m.composure + p.acceleration) / 3).toFixed(1)),
+      },
+      {
+        key: 'command',
+        labelEn: 'Command',
+        labelTh: 'สั่งการเขตโทษ',
+        value: Number(((m.leadership + m.positioning + p.strength) / 3).toFixed(1)),
+      },
+      {
+        key: 'aerial',
+        labelEn: 'Aerial',
+        labelTh: 'ลูกกลางอากาศ',
+        value: Number(((p.jumpingReach + t.heading) / 2).toFixed(1)),
+      },
+      {
+        key: 'distribution',
+        labelEn: 'Distribution',
+        labelTh: 'การออกบอล',
+        value: Number(((t.passing + m.vision + m.decisions) / 3).toFixed(1)),
+      },
+      {
+        key: 'mental',
+        labelEn: 'Mental',
+        labelTh: 'จิตใจ/สมาธิ',
+        value: Number(((m.determination + m.concentration + m.decisions + m.composure) / 4).toFixed(1)),
+      },
+      {
+        key: 'speed',
+        labelEn: 'Speed',
+        labelTh: 'ความคล่องตัว',
+        value: Number(((p.acceleration + p.pace + p.agility) / 3).toFixed(1)),
+      },
+    ];
+  }
+
+  return [
+    {
+      key: 'attacking',
+      labelEn: 'Attacking',
+      labelTh: 'เกมรุก/จบสกอร์',
+      value: Number(((t.finishing + t.longShots + m.offTheBall + m.composure) / 4).toFixed(1)),
+    },
+    {
+      key: 'speed',
+      labelEn: 'Speed',
+      labelTh: 'ความเร็ว',
+      value: Number(((p.pace + p.acceleration + p.agility) / 3).toFixed(1)),
+    },
+    {
+      key: 'physical',
+      labelEn: 'Physical',
+      labelTh: 'ความแข็งแกร่ง',
+      value: Number(((p.strength + p.stamina + p.naturalFitness + p.balance) / 4).toFixed(1)),
+    },
+    {
+      key: 'defending',
+      labelEn: 'Defending',
+      labelTh: 'เกมรับ',
+      value: Number(((t.tackling + t.marking + m.positioning + m.anticipation) / 4).toFixed(1)),
+    },
+    {
+      key: 'mental',
+      labelEn: 'Mental',
+      labelTh: 'ความมุ่งมั่น',
+      value: Number(((m.determination + m.workRate + m.bravery + m.teamwork + m.leadership) / 5).toFixed(1)),
+    },
+    {
+      key: 'vision',
+      labelEn: 'Creativity',
+      labelTh: 'สร้างสรรค์เกม',
+      value: Number(((t.passing + m.vision + m.decisions + t.crossing) / 4).toFixed(1)),
+    },
+    {
+      key: 'aerial',
+      labelEn: 'Aerial',
+      labelTh: 'ลูกกลางอากาศ',
+      value: Number(((t.heading + p.jumpingReach) / 2).toFixed(1)),
+    },
+    {
+      key: 'technique',
+      labelEn: 'Technique',
+      labelTh: 'เทคนิค/เลี้ยงบอล',
+      value: Number(((t.dribbling + t.firstTouch + t.technique + m.flair) / 4).toFixed(1)),
+    },
+  ];
+}
+
+export type TacticalShapeMode = 'base' | 'in_possession' | 'out_of_possession';
+
+export interface TacticalPhaseSlotCoord {
+  slotIndex: number;
+  baseX: number;
+  baseY: number;
+  x: number;
+  y: number;
+  roleShiftLabelEn: string;
+  roleShiftLabelTh: string;
+}
+
+/**
+ * Computes shifted pitch coordinates (0..100) for Base Shape, In-Possession, and Out-of-Possession phases
+ */
+export function computeTacticalPhaseCoordinates(
+  tactic: TacticalSystem,
+  mode: TacticalShapeMode
+): TacticalPhaseSlotCoord[] {
+  const { instructions, lineup } = tactic;
+
+  return lineup.map((slot) => {
+    const baseX = slot.x;
+    const baseY = slot.y;
+    if (mode === 'base') {
+      return {
+        slotIndex: slot.slotIndex,
+        baseX,
+        baseY,
+        x: baseX,
+        y: baseY,
+        roleShiftLabelEn: slot.role,
+        roleShiftLabelTh: slot.role,
+      };
+    }
+
+    let x = baseX;
+    let y = baseY;
+    let roleShiftLabelEn: string = slot.role;
+    let roleShiftLabelTh: string = slot.role;
+
+    const isLeftFlank = baseX < 42;
+    const isRightFlank = baseX > 58;
+
+    if (mode === 'in_possession') {
+      // Mentality forward push
+      const mentShiftY =
+        instructions.mentality === 'Very Attacking'
+          ? -7
+          : instructions.mentality === 'Attacking'
+            ? -5
+            : instructions.mentality === 'Positive'
+              ? -3
+              : instructions.mentality === 'Defensive' || instructions.mentality === 'Very Defensive'
+                ? 3
+                : -2;
+
+      if (slot.position === 'GK') {
+        if (slot.role === 'Sweeper Keeper') {
+          y = Math.max(74, baseY - 8);
+          roleShiftLabelEn = 'SK Build-Up (+High)';
+          roleShiftLabelTh = 'SK ดันขึ้นช่วยเซ็ตบอล';
+        }
+      } else {
+        y += mentShiftY;
+
+        // Role-specific In-Possession shifts
+        if (slot.role === 'Inverted Wing Back') {
+          x = isLeftFlank ? Math.min(44, baseX + 19) : isRightFlank ? Math.max(56, baseX - 19) : baseX;
+          y = Math.max(48, baseY - 14);
+          roleShiftLabelEn = 'IWB → Double Pivot';
+          roleShiftLabelTh = 'IWB หุบเข้ากลางช่วย DM';
+        } else if (slot.role === 'Complete Wing Back' || slot.role === 'Wing Back') {
+          x = isLeftFlank ? Math.max(8, baseX - 4) : isRightFlank ? Math.min(92, baseX + 4) : baseX;
+          y = Math.max(24, baseY - 18);
+          roleShiftLabelEn = 'WB Overlap High';
+          roleShiftLabelTh = 'WB เติมเกมรุกสุดเส้น';
+        } else if (slot.role === 'Half Back' || slot.role === 'Anchor') {
+          y = Math.min(76, baseY + 12);
+          roleShiftLabelEn = 'Drops into Back-3';
+          roleShiftLabelTh = 'ถอยลงมาเซ็ตบอลหลัง 3';
+        } else if (slot.role === 'Ball Playing Defender') {
+          y = Math.max(58, baseY - 7);
+          roleShiftLabelEn = 'BPD Steps Up';
+          roleShiftLabelTh = 'BPD ดันสูงพาบอลขึ้นหน้า';
+        } else if (slot.role === 'Inside Forward' || slot.role === 'Inverted Winger') {
+          x = isLeftFlank ? Math.min(42, baseX + 15) : isRightFlank ? Math.max(58, baseX - 15) : baseX;
+          y = Math.max(15, baseY - 8);
+          roleShiftLabelEn = 'Cuts into Half-Space';
+          roleShiftLabelTh = 'ตัดเข้า Half-Space ยิงประตู';
+        } else if (slot.role === 'Winger') {
+          x = isLeftFlank ? Math.max(8, baseX - 6) : isRightFlank ? Math.min(92, baseX + 6) : baseX;
+          y = Math.max(16, baseY - 9);
+          roleShiftLabelEn = 'Hugs Touchline';
+          roleShiftLabelTh = 'ฉีกถ่างริมเส้น';
+        } else if (slot.role === 'False 9' || slot.role === 'Deep-Lying Forward') {
+          y = Math.min(42, baseY + 13);
+          roleShiftLabelEn = 'Drops into #10 Pocket';
+          roleShiftLabelTh = 'ถอยลงมาเชื่อมเกมเบอร์ 10';
+        } else if (slot.role === 'Box-to-Box Midfielder' || slot.role === 'Shadow Striker') {
+          y = Math.max(20, baseY - 12);
+          roleShiftLabelEn = 'Surges into Box';
+          roleShiftLabelTh = 'สอดเข้ากรอบเขตโทษ';
+        } else if (slot.role === 'Mezzala') {
+          x = baseX < 50 ? Math.max(18, baseX - 10) : Math.min(82, baseX + 10);
+          y = Math.max(24, baseY - 10);
+          roleShiftLabelEn = 'Mezzala Half-Space';
+          roleShiftLabelTh = 'ฉีกออกช่อง Half-Space';
+        }
+
+        // Individual instruction overrides
+        if (slot.instructions.includes('Cut Inside')) {
+          x = isLeftFlank ? Math.min(44, x + 10) : isRightFlank ? Math.max(56, x - 10) : x;
+        } else if (slot.instructions.includes('Stay Wider')) {
+          x = isLeftFlank ? Math.max(7, x - 8) : isRightFlank ? Math.min(93, x + 8) : x;
+        }
+
+        // Team Attacking Width adjustments for wide players
+        if (instructions.attackingWidth === 'Wide' && (isLeftFlank || isRightFlank)) {
+          x = isLeftFlank ? Math.max(7, x - 4) : Math.min(93, x + 4);
+        } else if (instructions.attackingWidth === 'Narrow' && (isLeftFlank || isRightFlank)) {
+          x = isLeftFlank ? Math.min(44, x + 6) : Math.max(56, x - 6);
+        }
+      }
+    } else {
+      // OUT OF POSSESSION (Defensive Block & Line of Engagement)
+      const defLineShiftY =
+        instructions.defensiveLine === 'Very High'
+          ? -10
+          : instructions.defensiveLine === 'High'
+            ? -6
+            : instructions.defensiveLine === 'Deep'
+              ? 8
+              : 3;
+
+      const engageShiftY =
+        instructions.lineOfEngagement === 'High'
+          ? -5
+          : instructions.lineOfEngagement === 'Low'
+            ? 12
+            : 5;
+
+      if (slot.position === 'GK') {
+        y = instructions.defensiveLine === 'Very High' ? Math.max(78, baseY - 5) : Math.min(90, baseY + 2);
+      } else if (['DC', 'DL', 'DR', 'WBL', 'WBR'].includes(slot.position)) {
+        y = Math.max(54, Math.min(84, baseY + defLineShiftY));
+        // Compact horizontal defensive block out of possession
+        if (isLeftFlank) x = Math.min(40, baseX + 7);
+        if (isRightFlank) x = Math.max(60, baseX - 7);
+        roleShiftLabelEn = `Compact Backline (${instructions.defensiveLine})`;
+        roleShiftLabelTh = `บีบแนวรับแคบ (${instructions.defensiveLine})`;
+      } else if (['DM', 'MC', 'ML', 'MR'].includes(slot.position)) {
+        y = Math.max(40, Math.min(74, baseY + Math.round((defLineShiftY + engageShiftY) / 2) + 4));
+        if (isLeftFlank) x = Math.min(42, baseX + 6);
+        if (isRightFlank) x = Math.max(58, baseX - 6);
+        roleShiftLabelEn = 'Midfield Block';
+        roleShiftLabelTh = 'แพ็คเกมรับแดนกลาง';
+      } else {
+        y = Math.max(14, Math.min(54, baseY + engageShiftY));
+        roleShiftLabelEn = `Press Trigger (${instructions.lineOfEngagement})`;
+        roleShiftLabelTh = `แนวบีบเพรส (${instructions.lineOfEngagement})`;
+      }
+    }
+
+    return {
+      slotIndex: slot.slotIndex,
+      baseX,
+      baseY,
+      x: Math.max(7, Math.min(93, Math.round(x))),
+      y: Math.max(10, Math.min(90, Math.round(y))),
+      roleShiftLabelEn,
+      roleShiftLabelTh,
+    };
+  });
+}
+
+export interface TacticalChemistryLink {
+  id: string;
+  fromSlotIndex: number;
+  toSlotIndex: number;
+  pairName: string;
+  score: number; // 0..100
+  level: 'strong' | 'medium' | 'conflict';
+  color: string;
+  dashed: boolean;
+  reasonEn: string;
+  reasonTh: string;
+}
+
+/**
+ * Evaluates on-pitch tactical partnership & chemistry lines between key position pairs
+ */
+export function computeTacticalChemistryLinks(
+  tactic: TacticalSystem,
+  playersById: Record<string, Player>
+): TacticalChemistryLink[] {
+  const { lineup } = tactic;
+  const links: TacticalChemistryLink[] = [];
+
+  const addPairLink = (idxA: number, idxB: number, pairName: string, checkFlankOverlap = false) => {
+    const slotA = lineup[idxA];
+    const slotB = lineup[idxB];
+    if (!slotA || !slotB) return;
+
+    const pA = slotA.playerId ? playersById[slotA.playerId] : undefined;
+    const pB = slotB.playerId ? playersById[slotB.playerId] : undefined;
+    if (!pA || !pB) return;
+
+    const fitA = calculatePositionFit(pA, slotA.position);
+    const fitB = calculatePositionFit(pB, slotB.position);
+    const avgTeamwork = (pA.attributes.mental.teamwork + pB.attributes.mental.teamwork) / 2;
+    const avgMorale = (pA.morale + pB.morale) / 2;
+
+    let rawScore = Math.round(
+      ((fitA + fitB) / 2) * 48 +
+        (avgTeamwork / 20) * 24 +
+        (avgMorale / 100) * 14 +
+        (tactic.familiarity / 100) * 14
+    );
+
+    let conflictReasonEn = '';
+    let conflictReasonTh = '';
+
+    // Check tactical spatial conflict (e.g., Fullback and Winger on same flank both cutting inside with no width)
+    if (checkFlankOverlap) {
+      const aCutsIn =
+        slotA.role === 'Inverted Wing Back' || slotA.instructions.includes('Cut Inside');
+      const bCutsIn =
+        slotB.role === 'Inside Forward' ||
+        slotB.role === 'Inverted Winger' ||
+        slotB.instructions.includes('Cut Inside');
+      if (aCutsIn && bCutsIn) {
+        rawScore -= 24;
+        conflictReasonEn = 'Both flank players cut inside into the same congested zone';
+        conflictReasonTh = 'ทั้งแบ็คและปีกหุบเข้าในซ้อนทับพื้นที่เดียวกัน ทำให้ขาดคนฉีกริมเส้น';
+      }
+    }
+
+    if (fitA < 0.75 || fitB < 0.75) {
+      rawScore -= 22;
+      conflictReasonEn = conflictReasonEn || 'One or both players deployed out of natural position';
+      conflictReasonTh = conflictReasonTh || 'มีนักเตะที่ยืนไม่ตรงตำแหน่งถนัด ทำให้การประสานงานลดลง';
+    }
+
+    const score = Math.max(20, Math.min(99, rawScore));
+    const level: TacticalChemistryLink['level'] =
+      score >= 76 && !conflictReasonEn ? 'strong' : score >= 58 && !conflictReasonEn ? 'medium' : 'conflict';
+
+    links.push({
+      id: `chem_${idxA}_${idxB}`,
+      fromSlotIndex: idxA,
+      toSlotIndex: idxB,
+      pairName,
+      score,
+      level,
+      color: level === 'strong' ? '#10b981' : level === 'medium' ? '#f59e0b' : '#ef4444',
+      dashed: level === 'conflict',
+      reasonEn:
+        conflictReasonEn ||
+        (level === 'strong'
+          ? `Strong tactical chemistry (${score}%)`
+          : `Developing partnership (${score}%)`),
+      reasonTh:
+        conflictReasonTh ||
+        (level === 'strong'
+          ? `ประสานงานเข้าขายอดเยี่ยม (${score}%)`
+          : `ความเข้าขาอยู่ในเกณฑ์ปานกลาง (${score}%)`),
+    });
+  };
+
+  // 1. CB Partnership (DC <-> DC)
+  const dcIndices = lineup
+    .map((s, i) => (s.position === 'DC' ? i : -1))
+    .filter((i) => i !== -1)
+    .sort((a, b) => lineup[a].x - lineup[b].x);
+  for (let i = 0; i < dcIndices.length - 1; i++) {
+    addPairLink(dcIndices[i], dcIndices[i + 1], 'CB Partnership');
+  }
+
+  // 2. Left Flank (DL/WBL <-> ML/AML)
+  const leftDefIdx = lineup.findIndex((s) => s.position === 'DL' || s.position === 'WBL');
+  const leftWingIdx = lineup.findIndex((s) => s.position === 'AML' || s.position === 'ML');
+  if (leftDefIdx !== -1 && leftWingIdx !== -1) {
+    addPairLink(leftDefIdx, leftWingIdx, 'Left Flank Tandem', true);
+  }
+
+  // 3. Right Flank (DR/WBR <-> MR/AMR)
+  const rightDefIdx = lineup.findIndex((s) => s.position === 'DR' || s.position === 'WBR');
+  const rightWingIdx = lineup.findIndex((s) => s.position === 'AMR' || s.position === 'MR');
+  if (rightDefIdx !== -1 && rightWingIdx !== -1) {
+    addPairLink(rightDefIdx, rightWingIdx, 'Right Flank Tandem', true);
+  }
+
+  // 4. Midfield Pivot & Engine (DM <-> MC, MC <-> MC, MC <-> AMC)
+  const dmIndices = lineup.map((s, i) => (s.position === 'DM' ? i : -1)).filter((i) => i !== -1);
+  const mcIndices = lineup.map((s, i) => (s.position === 'MC' ? i : -1)).filter((i) => i !== -1);
+  const amcIndex = lineup.findIndex((s) => s.position === 'AMC');
+
+  if (dmIndices.length === 2) {
+    addPairLink(dmIndices[0], dmIndices[1], 'Double Pivot');
+  }
+  if (mcIndices.length >= 2) {
+    addPairLink(mcIndices[0], mcIndices[1], 'Central Midfield');
+  }
+  if (dmIndices.length >= 1 && mcIndices.length >= 1) {
+    addPairLink(dmIndices[0], mcIndices[0], 'DM-MC Link');
+  }
+  if (amcIndex !== -1 && mcIndices.length >= 1) {
+    addPairLink(mcIndices[0], amcIndex, 'Midfield-Playmaker Link');
+  } else if (amcIndex !== -1 && dmIndices.length >= 1) {
+    addPairLink(dmIndices[0], amcIndex, 'Pivot-Playmaker Link');
+  }
+
+  // 5. Attacking Spearhead (AMC <-> ST or ST <-> ST)
+  const stIndices = lineup.map((s, i) => (s.position === 'ST' ? i : -1)).filter((i) => i !== -1);
+  if (stIndices.length >= 2) {
+    addPairLink(stIndices[0], stIndices[1], 'Strike Partnership');
+  }
+  if (amcIndex !== -1 && stIndices.length >= 1) {
+    addPairLink(amcIndex, stIndices[0], '#10 to Striker Link');
+  }
+
+  return links;
+}
+
+/**
+ * Automatically selects the best Captain, Penalty Taker, Free-Kick Taker, and Corner Taker
+ */
+export function computeAutoSetPieceTakers(
+  candidates: Player[],
+  existing?: Partial<SetPieceSetup>
+): SetPieceSetup {
+  const pool = candidates.length > 0 ? candidates : [];
+  const bestCaptain = [...pool].sort(
+    (a, b) =>
+      b.attributes.mental.leadership * 1.6 +
+      b.attributes.mental.determination +
+      b.currentAbility * 0.1 -
+      (a.attributes.mental.leadership * 1.6 + a.attributes.mental.determination + a.currentAbility * 0.1)
+  )[0];
+
+  const bestPenalty = [...pool].sort(
+    (a, b) =>
+      b.attributes.technical.penaltyTaking * 1.5 +
+      b.attributes.mental.composure +
+      b.attributes.technical.finishing * 0.5 -
+      (a.attributes.technical.penaltyTaking * 1.5 +
+        a.attributes.mental.composure +
+        a.attributes.technical.finishing * 0.5)
+  )[0];
+
+  const bestFreeKick = [...pool].sort(
+    (a, b) =>
+      b.attributes.technical.freeKickTaking * 1.6 +
+      b.attributes.technical.technique +
+      b.attributes.technical.longShots * 0.4 -
+      (a.attributes.technical.freeKickTaking * 1.6 +
+        a.attributes.technical.technique +
+        a.attributes.technical.longShots * 0.4)
+  )[0];
+
+  const bestCorner = [...pool].sort(
+    (a, b) =>
+      b.attributes.technical.corners * 1.6 +
+      b.attributes.technical.crossing +
+      b.attributes.technical.technique * 0.4 -
+      (a.attributes.technical.corners * 1.6 +
+        a.attributes.technical.crossing +
+        a.attributes.technical.technique * 0.4)
+  )[0];
+
+  return {
+    captainId: existing?.captainId || bestCaptain?.id || null,
+    penaltyTakerId: existing?.penaltyTakerId || bestPenalty?.id || null,
+    freeKickTakerId: existing?.freeKickTakerId || bestFreeKick?.id || null,
+    cornerTakerId: existing?.cornerTakerId || bestCorner?.id || null,
+    cornerRoutine: (existing?.cornerRoutine as CornerRoutineType) || 'near_post',
+    freeKickRoutine: (existing?.freeKickRoutine as FreeKickRoutineType) || 'direct_shoot',
+  };
+}
+
+export const PLAYER_TRAIT_CATALOG: Record<
+  PlayerTrait,
+  {
+    trait: PlayerTrait;
+    labelEn: string;
+    labelTh: string;
+    descEn: string;
+    descTh: string;
+    badgeColor: string;
+  }
+> = {
+  'Places Shots': {
+    trait: 'Places Shots',
+    labelEn: 'Places Shots',
+    labelTh: 'ยิงเล่นทางเสียบมุม',
+    descEn: 'Calmly slots shots into the corners rather than blasting with raw power (+Finishing accuracy in 1v1s).',
+    descTh: 'เน้นแปบอลเล่นทางเข้ามุมอย่างเยือกเย็น ช่วยเพิ่มความแม่นยำในการจบสกอร์จังหวะหลุดเดี่ยว',
+    badgeColor: 'text-emerald-300 border-emerald-500/40 bg-emerald-500/15',
+  },
+  'Curls Ball': {
+    trait: 'Curls Ball',
+    labelEn: 'Curls Ball',
+    labelTh: 'ปั่นโค้งไซด์ก้อย',
+    descEn: 'Applies wicked curl on finesse shots, crosses, and direct free-kicks (+Long shot & Free-kick conversion).',
+    descTh: 'ปั่นบอลโค้งหนีมือผู้รักษาประตู เพิ่มโอกาสได้ประตูจากลูกยิงไกลและลูกฟรีคิกโดยตรง',
+    badgeColor: 'text-cyan-300 border-cyan-500/40 bg-cyan-500/15',
+  },
+  'Tries Killer Balls Often': {
+    trait: 'Tries Killer Balls Often',
+    labelEn: 'Tries Killer Balls Often',
+    labelTh: 'จ่ายคิลเลอร์พาสทะลุช่อง',
+    descEn: 'Constantly looks to thread defense-splitting through-balls into runners (+Big Chances created).',
+    descTh: 'มองหาจังหวะแทงบอลทะลุช่องตัดแนวรับคู่แข่งเสมอ เพิ่มโอกาสสร้างจังหวะ Big Chances',
+    badgeColor: 'text-indigo-300 border-indigo-500/40 bg-indigo-500/15',
+  },
+  'Dictates Tempo': {
+    trait: 'Dictates Tempo',
+    labelEn: 'Dictates Tempo',
+    labelTh: 'คุมจังหวะเกมแดนกลาง',
+    descEn: 'Orchestrates the team rhythm from midfield, boosting team possession and pass completion.',
+    descTh: 'ควบคุมจังหวะช้า-เร็วของเกมในแดนกลาง ช่วยเพิ่มเปอร์เซ็นต์ครองบอลและความแม่นยำการจ่ายบอล',
+    badgeColor: 'text-amber-300 border-amber-500/40 bg-amber-500/15',
+  },
+  'Dives Into Tackles': {
+    trait: 'Dives Into Tackles',
+    labelEn: 'Dives Into Tackles',
+    labelTh: 'เสียบสกัดดุดัน',
+    descEn: 'Commits aggressively to sliding challenges (+Ball winning rate, slightly higher foul/card risk).',
+    descTh: 'พุ่งเข้าเสียบสกัดบอลอย่างดุดัน เพิ่มอัตราการแย่งบอลสำเร็จแต่มีโอกาสเสียฟาวล์เพิ่มขึ้นเล็กน้อย',
+    badgeColor: 'text-rose-300 border-rose-500/40 bg-rose-500/15',
+  },
+  'Beats Offside Trap': {
+    trait: 'Beats Offside Trap',
+    labelEn: 'Beats Offside Trap',
+    labelTh: 'เช็กไลน์ล้ำหน้าเฉียบขาด',
+    descEn: 'Times runs in behind the last defender to perfection, reducing offsides and creating 1v1s.',
+    descTh: 'กะจังหวะออกตัววิ่งตัดหลังแนวรับคู่แข่งได้อย่างแม่นยำ ลดการล้ำหน้าและสร้างโอกาสหลุดเดี่ยว',
+    badgeColor: 'text-purple-300 border-purple-500/40 bg-purple-500/15',
+  },
+  'Runs With Ball Often': {
+    trait: 'Runs With Ball Often',
+    labelEn: 'Runs With Ball Often',
+    labelTh: 'กระชากลากเลื้อยจี้แนวรับ',
+    descEn: 'Drives aggressively at defenders with the ball at his feet to create overloads.',
+    descTh: 'ชอบพาบอลกระชากลากเลื้อยจี้ใส่แนวรับคู่แข่งเพื่อดึงตัวประกบและเปิดพื้นที่',
+    badgeColor: 'text-sky-300 border-sky-500/40 bg-sky-500/15',
+  },
+  'Power Header': {
+    trait: 'Power Header',
+    labelEn: 'Power Header',
+    labelTh: 'โหม่งทำประตูทรงพลัง',
+    descEn: 'Generates immense power on headers from corners, crosses, and set-piece deliveries.',
+    descTh: 'โหม่งบอลได้หนักหน่วงและแม่นยำ เพิ่มอันตรายในจังหวะเตะมุมและลูกเปิดจากริมเส้น',
+    badgeColor: 'text-orange-300 border-orange-500/40 bg-orange-500/15',
+  },
+};
+
+/**
+ * Derives realistic FM27 Player Traits (Preferred Moves) from a player's attributes and positions
+ */
+export function derivePlayerTraitsFromAttributes(player: Player): PlayerTrait[] {
+  if (player.traits && player.traits.length > 0) return player.traits;
+  const { technical: t, mental: m, physical: p } = player.attributes;
+  const pos = player.positions[0];
+  if (pos === 'GK') return [];
+
+  const derived: PlayerTrait[] = [];
+
+  if (t.finishing >= 14 && m.composure >= 14) {
+    derived.push('Places Shots');
+  }
+  if (t.technique >= 14 && (t.freeKickTaking >= 14 || t.longShots >= 14 || t.crossing >= 14)) {
+    derived.push('Curls Ball');
+  }
+  if (m.vision >= 14 && t.passing >= 14) {
+    derived.push('Tries Killer Balls Often');
+  }
+  if ((pos === 'DM' || pos === 'MC' || pos === 'AMC') && m.decisions >= 14 && t.passing >= 14) {
+    derived.push('Dictates Tempo');
+  }
+  if ((pos === 'DC' || pos === 'DM' || pos === 'MC' || pos === 'DL' || pos === 'DR') && t.tackling >= 14 && m.aggression >= 14) {
+    derived.push('Dives Into Tackles');
+  }
+  if ((pos === 'ST' || pos === 'AML' || pos === 'AMR') && m.offTheBall >= 14 && m.anticipation >= 13) {
+    derived.push('Beats Offside Trap');
+  }
+  if (t.dribbling >= 14 && p.acceleration >= 14) {
+    derived.push('Runs With Ball Often');
+  }
+  if (t.heading >= 14 && p.jumpingReach >= 14) {
+    derived.push('Power Header');
+  }
+
+  // Fallback for players with CA >= 125 so notable players always have at least 1 signature trait
+  if (derived.length === 0 && player.currentAbility >= 122) {
+    if (pos === 'ST') derived.push(t.heading >= t.dribbling ? 'Power Header' : 'Places Shots');
+    else if (pos === 'AML' || pos === 'AMR' || pos === 'ML' || pos === 'MR') derived.push('Runs With Ball Often');
+    else if (pos === 'AMC' || pos === 'MC') derived.push('Tries Killer Balls Often');
+    else if (pos === 'DM' || pos === 'DC') derived.push('Dives Into Tackles');
+  }
+
+  return derived.slice(0, 3);
+}
+
+export interface SquadDepthPositionBucket {
+  code: string;
+  labelEn: string;
+  labelTh: string;
+  positions: PositionCode[];
+  firstChoice: Player | null;
+  backups: Player[];
+  youths: Player[];
+  grade: 'strong' | 'balanced' | 'weak';
+  gradeLabelEn: string;
+  gradeLabelTh: string;
+}
+
+/**
+ * Computes the FM27 Squad Planner & Positional Depth Chart across 9 core tactical zones
+ */
+export function computeSquadDepthChart(
+  clubPlayers: Player[],
+  currentYear = 2026
+): SquadDepthPositionBucket[] {
+  const zones: { code: string; labelEn: string; labelTh: string; positions: PositionCode[] }[] = [
+    { code: 'GK', labelEn: 'Goalkeeper (GK)', labelTh: 'ผู้รักษาประตู (GK)', positions: ['GK'] },
+    { code: 'DL', labelEn: 'Left Back (DL/WBL)', labelTh: 'แบ็คซ้าย (DL/WBL)', positions: ['DL', 'WBL'] },
+    { code: 'DC', labelEn: 'Centre Back (DC)', labelTh: 'เซ็นเตอร์แบ็ค (DC)', positions: ['DC'] },
+    { code: 'DR', labelEn: 'Right Back (DR/WBR)', labelTh: 'แบ็คขวา (DR/WBR)', positions: ['DR', 'WBR'] },
+    { code: 'DM', labelEn: 'Defensive Mid (DM)', labelTh: 'กองกลางตัวรับ (DM)', positions: ['DM'] },
+    { code: 'MC', labelEn: 'Central Mid (MC)', labelTh: 'กองกลางตัวกลาง (MC)', positions: ['MC'] },
+    { code: 'WINGER', labelEn: 'Wingers (AML/AMR)', labelTh: 'แนวรุกริมเส้น (AML/AMR)', positions: ['AML', 'AMR', 'ML', 'MR'] },
+    { code: 'AMC', labelEn: 'Attacking Mid (AMC)', labelTh: 'เพลย์เมกเกอร์ (AMC)', positions: ['AMC'] },
+    { code: 'ST', labelEn: 'Striker (ST)', labelTh: 'กองหน้าตัวเป้า (ST)', positions: ['ST'] },
+  ];
+
+  return zones.map((zone) => {
+    const matching = clubPlayers
+      .filter((p) => p.positions.some((pos) => zone.positions.includes(pos)))
+      .sort((a, b) => {
+        const aPrimary = zone.positions.includes(a.positions[0]) ? 1 : 0;
+        const bPrimary = zone.positions.includes(b.positions[0]) ? 1 : 0;
+        if (aPrimary !== bPrimary) return bPrimary - aPrimary;
+        return b.currentAbility - a.currentAbility;
+      });
+
+    const seniors = matching.filter((p) => {
+      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2004;
+      const age = currentYear - birthYear;
+      return age > 20 && p.youthSquad !== 'u18';
+    });
+
+    const youths = matching.filter((p) => {
+      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2004;
+      const age = currentYear - birthYear;
+      return age <= 20 || p.youthSquad === 'u18' || p.youthSquad === 'u21';
+    });
+
+    const firstChoice = seniors[0] || matching[0] || null;
+    const backups = (seniors.length > 0 ? seniors.slice(1) : matching.slice(1)).slice(0, 3);
+
+    const minDepthRequired = zone.code === 'DC' || zone.code === 'WINGER' ? 3 : 2;
+    const totalAvailable = matching.length;
+    const topCA = firstChoice?.currentAbility || 0;
+
+    let grade: SquadDepthPositionBucket['grade'] = 'balanced';
+    let gradeLabelEn = 'Balanced Depth';
+    let gradeLabelTh = 'ขุมกำลังสมดุล';
+
+    if (totalAvailable >= minDepthRequired && topCA >= 138) {
+      grade = 'strong';
+      gradeLabelEn = 'Elite Depth';
+      gradeLabelTh = 'แข็งแกร่งมาก';
+    } else if (totalAvailable < 2 || !firstChoice) {
+      grade = 'weak';
+      gradeLabelEn = 'Needs Reinforcement';
+      gradeLabelTh = '⚠️ ขาดตัวสำรองควรเสริมทัพ';
+    }
+
+    return {
+      code: zone.code,
+      labelEn: zone.labelEn,
+      labelTh: zone.labelTh,
+      positions: zone.positions,
+      firstChoice,
+      backups,
+      youths: youths.filter((y) => y.id !== firstChoice?.id).slice(0, 3),
+      grade,
+      gradeLabelEn,
+      gradeLabelTh,
+    };
+  });
+}
+
+
 

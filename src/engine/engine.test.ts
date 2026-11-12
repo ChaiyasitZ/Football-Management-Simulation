@@ -8,18 +8,43 @@ import {
   simulateMatch,
 } from './matchEngine';
 import {
+  activateReleaseClauseTransfer,
+  adjustClubBudgetAllocation,
   advanceWorldOneDay,
+  applyForManagerJob,
   applyMatchResultToWorld,
+  assignYouthMentor,
+  buildScoutReportForPlayer,
   dehydrateWorldStateToCareerMap,
+  generateAnnualYouthIntake,
+  getClubStaffBonuses,
+  getDeadlineDayBargains,
+  isTransferDeadlineWindow,
   loadWorldStateFromSlot,
+  processEndOfSeasonRollover,
+  promoteYouthProspectToSenior,
   rehydrateWorldStateFromCareerDoc,
+  releaseYouthProspect,
+  removeMentoringGroup,
   renewPlayerContract,
+  saveMentoringGroup,
   saveWorldStateToSlot,
+  signPlayerOnBosmanFree,
   submitAndEvaluateTransferOffer,
+  triggerClubTakeoverEvent,
+  updatePlayerSquadAndTransferStatus,
+  upgradeJuniorOrRecruitmentFacility,
 } from './worldSimulationService';
+import { getPlayerFaceUrl } from './engPlayerFaces';
 import {
   analyzeTacticalRisks,
   calculatePositionFit,
+  computeAutoSetPieceTakers,
+  computePlayerPolygon8Axes,
+  computeSquadDepthChart,
+  computeTacticalChemistryLinks,
+  computeTacticalPhaseCoordinates,
+  derivePlayerTraitsFromAttributes,
   evaluateAttributeSynergy,
   evaluatePlayerInjuryRisk,
   evaluateRoleSuitability,
@@ -656,6 +681,397 @@ test('Deep Squad Management & Tactics: 25-man / 8-HG Registration, Attribute Syn
   );
 });
 
+test('FM Youth System, Global Wonderkids, Verified Portraits, Domestic Cups & Season Rollover', () => {
+  const world = createInitialWorldState(202699);
 
+  // 1. Verify real-world wonderkids exist and every wonderkid / youth player resolves a real portrait URL
+  const allPlayers = Object.values(world.players);
+  const wonderkids = allPlayers.filter(
+    (p) => p.isWonderkid || (parseInt(p.dateOfBirth.slice(0, 4), 10) >= 2005 && p.potentialAbility >= 165)
+  );
+  assert.ok(wonderkids.length >= 25, `World must include real wonderkids (found ${wonderkids.length})`);
+
+  const wonderkidNames = new Set(wonderkids.map((p) => `${p.firstName} ${p.lastName}`));
+  assert.ok(wonderkidNames.has('Lamine Yamal'));
+  assert.ok(wonderkidNames.has('Pau Cubarsi'));
+  assert.ok(wonderkidNames.has('Endrick Felipe'));
+  assert.ok(wonderkidNames.has('Warren Zaire-Emery'));
+  assert.ok(wonderkidNames.has('Ethan Nwaneri'));
+
+  for (const wk of wonderkids.slice(0, 40)) {
+    const faceUrl = getPlayerFaceUrl(wk);
+    assert.ok(
+      faceUrl && faceUrl.startsWith('https://'),
+      `Wonderkid ${wk.firstName} ${wk.lastName} must resolve a verified portrait URL`
+    );
+  }
+
+  // 2. Verify Youth Intake, Facility Upgrades, Mentoring, Promotion, and Release
+  const upgRes = upgradeJuniorOrRecruitmentFacility(world, 'juniorCoaching');
+  assert.equal(upgRes.success, true);
+
+  const intakeRes = generateAnnualYouthIntake(upgRes.nextState);
+  assert.equal(intakeRes.newProspects.length, 4, 'Annual Youth Intake generates 4 new prospects');
+  const myYouth = Object.values(intakeRes.nextState.players).filter(
+    (p) => p.clubId === world.controlledClubId && p.isYouthAcademy
+  );
+  assert.ok(myYouth.length >= 5, 'Annual Youth Intake must add new U18 prospects');
+
+  for (const yp of myYouth) {
+    const faceUrl = getPlayerFaceUrl(yp);
+    assert.ok(faceUrl && faceUrl.startsWith('https://'), 'Every generated youth player must have a face URL');
+  }
+
+  const seniorMentor = Object.values(intakeRes.nextState.players).find(
+    (p) =>
+      p.clubId === world.controlledClubId &&
+      !p.isYouthAcademy &&
+      parseInt(p.dateOfBirth.slice(0, 4), 10) <= 2001
+  )!;
+  const targetYouth = myYouth[0];
+  const mentorRes = assignYouthMentor(intakeRes.nextState, targetYouth.id, seniorMentor.id);
+  assert.equal(mentorRes.success, true);
+  assert.equal(mentorRes.nextState.players[targetYouth.id].mentorId, seniorMentor.id);
+
+  const promoteRes = promoteYouthProspectToSenior(mentorRes.nextState, targetYouth.id);
+  assert.equal(promoteRes.success, true);
+  assert.equal(promoteRes.nextState.players[targetYouth.id].isYouthAcademy, false);
+
+  const releaseTarget = myYouth[1];
+  const releaseRes = releaseYouthProspect(promoteRes.nextState, releaseTarget.id);
+  assert.equal(releaseRes.success, true);
+  assert.equal(releaseRes.nextState.players[releaseTarget.id], undefined);
+
+  // 3. Verify Staff Bonuses & Fog of War Scout Report Accuracy
+  const bonuses = getClubStaffBonuses(world, world.controlledClubId);
+  assert.ok(bonuses.scoutAccuracy >= 1 && bonuses.scoutAccuracy <= 20);
+  const foreignPlayer = allPlayers.find((p) => p.clubId !== world.controlledClubId)!;
+  const scoutRep = buildScoutReportForPlayer(
+    foreignPlayer,
+    'stf_head_scout',
+    world.gameDate,
+    bonuses.scoutAccuracy
+  );
+  assert.ok(scoutRep.caEstimate[0] <= scoutRep.caEstimate[1]);
+  assert.ok(scoutRep.paEstimate[0] <= scoutRep.paEstimate[1]);
+
+  // 4. Verify Domestic Knockout Cups exist across all 10 nations and Knockout simulation resolves ties
+  const domCupFixtures = world.fixtures.filter((f) => f.competitionId.endsWith('_CUP'));
+  assert.ok(domCupFixtures.length >= 70, `Must generate initial Domestic Cup fixtures (got ${domCupFixtures.length})`);
+
+  const sampleCupFixture = domCupFixtures[0];
+  const cupSim = simulateMatch(
+    sampleCupFixture,
+    world.clubs[sampleCupFixture.homeClubId],
+    world.clubs[sampleCupFixture.awayClubId],
+    world.players,
+    12345,
+    undefined,
+    undefined,
+    { isKnockout: true }
+  );
+  if (cupSim.homeGoals === cupSim.awayGoals) {
+    assert.ok(
+      cupSim.penaltyShootout &&
+        cupSim.penaltyShootout.homePenalties !== cupSim.penaltyShootout.awayPenalties,
+      'Tied knockout cup fixture must be decided by penalty shootout'
+    );
+  }
+
+  // 5. Verify Budget Split Adjustment & End-of-Season Rollover
+  const budgetAdjusted = adjustClubBudgetAllocation(world, 75);
+  assert.equal(budgetAdjusted.success, true);
+  assert.ok(budgetAdjusted.nextState.clubs[world.controlledClubId].finances.transferBudget > 0);
+
+  const rolledOver = processEndOfSeasonRollover(budgetAdjusted.nextState);
+  assert.notEqual(rolledOver.nextState.currentSeason, world.currentSeason);
+  assert.equal(Object.keys(rolledOver.nextState.clubs).length, 280);
+});
+
+test('Phase 2 (Checkpoints 5–8): 8-Axis Radar, 3-Mode Tactical Pitch & Chemistry, Live Shouts & Shot Map, Bosman, Takeovers & Job Center', () => {
+  const world = createInitialWorldState(202788);
+  const myClub = world.clubs[world.controlledClubId];
+  const myPlayers = Object.values(world.players).filter((p) => p.clubId === myClub.id);
+
+  // Checkpoint 5: 8-Axis Polygon Radar for Outfield and GK
+  const outfieldPlayer = myPlayers.find((p) => p.positions[0] !== 'GK')!;
+  const gkPlayer = myPlayers.find((p) => p.positions[0] === 'GK')!;
+  const outAxes = computePlayerPolygon8Axes(outfieldPlayer);
+  const gkAxes = computePlayerPolygon8Axes(gkPlayer);
+  assert.equal(outAxes.length, 8, 'Outfield polygon must have 8 axes');
+  assert.equal(gkAxes.length, 8, 'GK polygon must have 8 axes');
+  for (const ax of [...outAxes, ...gkAxes]) {
+    assert.ok(ax.value >= 1 && ax.value <= 20, `Axis ${ax.labelEn} must be in 1..20 (got ${ax.value})`);
+  }
+
+  // Checkpoint 5: Own-Player Transfer/Loan List, Asking Price & Demotion Unrest
+  const starPlayer = myPlayers.find((p) => p.squadStatus === 'Star Player')!;
+  const demoteRes = updatePlayerSquadAndTransferStatus(world, starPlayer.id, {
+    squadStatus: 'Squad Player',
+    transferListed: true,
+    askingPrice: Math.round(starPlayer.marketValue * 0.75),
+  });
+  const afterDemotePlayer = demoteRes.nextState.players[starPlayer.id];
+  assert.equal(afterDemotePlayer.squadStatus, 'Squad Player');
+  assert.equal(afterDemotePlayer.transferListed, true);
+  assert.ok(afterDemotePlayer.morale < starPlayer.morale, 'Demoting Star Player must reduce morale');
+  assert.ok(
+    demoteRes.nextState.inbox.some((n) => n.id.includes(`news_unhappy_status_`)),
+    'Demoting Star Player must generate an unhappy player inbox message'
+  );
+
+  // Checkpoint 6: 3-Mode Tactical Pitch Shape & Chemistry Links
+  const baseCoords = computeTacticalPhaseCoordinates(myClub.primaryTactic, 'base');
+  const inPossCoords = computeTacticalPhaseCoordinates(myClub.primaryTactic, 'in_possession');
+  const outPossCoords = computeTacticalPhaseCoordinates(myClub.primaryTactic, 'out_of_possession');
+  assert.equal(baseCoords.length, 11);
+  assert.equal(inPossCoords.length, 11);
+  assert.equal(outPossCoords.length, 11);
+  const stIdx = myClub.primaryTactic.lineup.findIndex((s) => s.position === 'ST');
+  assert.ok(
+    inPossCoords[stIdx].y <= baseCoords[stIdx].y,
+    'In-Possession mode must push attacking slots higher up the pitch (lower y)'
+  );
+  assert.ok(
+    outPossCoords[stIdx].y >= baseCoords[stIdx].y,
+    'Out-of-Possession mode must drop slots deeper into defensive block (higher y)'
+  );
+
+  const chemLinks = computeTacticalChemistryLinks(myClub.primaryTactic, world.players);
+  assert.ok(chemLinks.length >= 5, `Must compute tactical chemistry links (got ${chemLinks.length})`);
+
+  // Checkpoint 7: Live Touchline Shouts & Shot Map Coordinates / xG
+  const fix = world.fixtures[0];
+  const hClub = world.clubs[fix.homeClubId];
+  const aClub = world.clubs[fix.awayClubId];
+  const simWithShout = simulateMatch(fix, hClub, aClub, world.players, 4242, undefined, undefined, {
+    touchlineShouts: [
+      { minute: 20, teamId: hClub.id, shout: 'Demand More' },
+      { minute: 60, teamId: aClub.id, shout: 'Focus' },
+    ],
+  });
+  const shotEvents = simWithShout.events.filter(
+    (e) =>
+      e.eventType === 'Goal' ||
+      e.eventType === 'Save' ||
+      e.eventType === 'BlockedShot' ||
+      e.eventType === 'Shot'
+  );
+  assert.ok(shotEvents.length > 0, 'Simulated match must produce shot events');
+  for (const se of shotEvents) {
+    assert.ok(typeof se.shotXg === 'number' && se.shotXg > 0, 'Every shot event must record shotXg');
+    assert.ok(typeof se.shotX === 'number' && typeof se.shotY === 'number', 'Every shot event must record shotX/shotY');
+  }
+
+  // Checkpoint 8: Board Takeover Embargo & Completion, Bosman Free Signing, and Job Center
+  const embargoRes = triggerClubTakeoverEvent(world, myClub.id, 'EMBARGO');
+  assert.ok(embargoRes.nextState.clubs[myClub.id].transferEmbargoUntil, 'EMBARGO mode must set transferEmbargoUntil');
+
+  const externalTarget = Object.values(world.players).find((p) => p.clubId !== myClub.id)!;
+  const blockedOffer = submitAndEvaluateTransferOffer(embargoRes.nextState, {
+    playerId: externalTarget.id,
+    offerType: 'Transfer',
+    upfrontFee: externalTarget.askingPrice,
+    installmentsFee: 0,
+    sellOnPercentage: 0,
+    proposedWagePerWeek: externalTarget.wagePerWeek,
+    proposedContractYears: 3,
+    proposedSquadStatus: 'Regular Starter',
+    signingBonus: 0,
+  });
+  assert.equal(blockedOffer.outcome, 'REJECTED', 'Active transfer embargo must block incoming transfers');
+
+  const takeoverDone = triggerClubTakeoverEvent(embargoRes.nextState, myClub.id, 'COMPLETE');
+  assert.equal(takeoverDone.nextState.clubs[myClub.id].transferEmbargoUntil, null);
+  assert.equal(takeoverDone.nextState.clubs[myClub.id].sugarDaddyType, 'FRONT_END');
+
+  // Bosman Free Signing for player with <= 1 year left
+  const bosmanCandidate = Object.values(takeoverDone.nextState.players).find(
+    (p) =>
+      p.clubId !== myClub.id &&
+      Number(p.contractEndDate.slice(0, 4)) - Number(world.gameDate.slice(0, 4)) <= 1 &&
+      p.wagePerWeek <= 60_000
+  )!;
+  assert.ok(bosmanCandidate, 'Must find an external player with <= 1 year left on contract');
+  const bosmanRes = signPlayerOnBosmanFree(
+    takeoverDone.nextState,
+    bosmanCandidate.id,
+    Math.round(bosmanCandidate.wagePerWeek * 1.15),
+    4
+  );
+  assert.equal(bosmanRes.outcome, 'COMPLETED');
+  assert.equal(bosmanRes.nextState.players[bosmanCandidate.id].clubId, myClub.id);
+
+  // Job Center Club Switching
+  const approachableClub = Object.values(bosmanRes.nextState.clubs).find(
+    (c) => c.id !== myClub.id && c.reputation <= bosmanRes.nextState.manager.reputation + 15
+  )!;
+  const jobRes = applyForManagerJob(bosmanRes.nextState, approachableClub.id);
+  assert.equal(jobRes.accepted, true);
+  assert.equal(jobRes.nextState.controlledClubId, approachableClub.id);
+  assert.ok(
+    jobRes.nextState.manager.careerStats.clubsManaged.some((c) => c.clubId === approachableClub.id)
+  );
+});
+
+test('Phase 3 (Checkpoints 9–12): Half-Time Team Talk, Captain & Set Piece Creator, Player Traits & Mentoring Groups, Squad Planner Depth Chart, Deadline Day & Release Clauses, and Trophy Cabinet & Ballon d\'Or Gala', () => {
+  const world = createInitialWorldState(202899);
+  const myClub = world.clubs[world.controlledClubId];
+  const myPlayers = Object.values(world.players).filter((p) => p.clubId === myClub.id);
+
+  // Checkpoint 9: Half-Time Dressing Room Team Talk in Match Engine
+  const fix = world.fixtures[0];
+  const hClub = world.clubs[fix.homeClubId];
+  const aClub = world.clubs[fix.awayClubId];
+  const simWithHalfTimeTalk = simulateMatch(
+    fix,
+    hClub,
+    aClub,
+    world.players,
+    9001,
+    undefined,
+    undefined,
+    {
+      halfTimeTalk: { home: 'demand_more' },
+    }
+  );
+  const htEvent = simWithHalfTimeTalk.events.find((e) => e.eventType === 'HalfTime')!;
+  assert.ok(htEvent, 'Match simulation must include a HalfTime event at minute 45');
+  const htTalkEvent = simWithHalfTimeTalk.events.find(
+    (e) => e.minute === 45 && e.text.includes('Half-Time Team Talk')
+  )!;
+  assert.ok(
+    htTalkEvent,
+    'Half-Time Team Talk option must emit a 45th-minute Half-Time Team Talk event'
+  );
+
+  // Checkpoint 10: Captaincy & Set Piece Creator (SetPieceSetup)
+  assert.ok(myClub.primaryTactic.setPieces, 'Club primaryTactic must have setPieces initialized');
+  const autoSp = computeAutoSetPieceTakers(myPlayers);
+  assert.ok(autoSp.captainId, 'Must auto-select a Captain');
+  assert.ok(autoSp.penaltyTakerId, 'Must auto-select a Penalty Taker');
+  assert.ok(autoSp.freeKickTakerId, 'Must auto-select a Free-Kick Taker');
+  assert.ok(autoSp.cornerTakerId, 'Must auto-select a Corner Taker');
+
+  // Checkpoint 11: Player Traits, Mentoring Groups & FM27 Squad Planner (9 Zones)
+  const playersWithTraits = Object.values(world.players).filter(
+    (p) => (p.traits && p.traits.length > 0) || derivePlayerTraitsFromAttributes(p).length > 0
+  );
+  assert.ok(
+    playersWithTraits.length >= 100,
+    `World must populate Player Traits / Preferred Moves (got ${playersWithTraits.length})`
+  );
+
+  const depthZones = computeSquadDepthChart(myPlayers, 2026);
+  assert.equal(depthZones.length, 9, 'Squad Planner Depth Chart must evaluate all 9 tactical zones');
+  for (const z of depthZones) {
+    assert.ok(['strong', 'balanced', 'weak'].includes(z.grade));
+  }
+
+  const mentor = myPlayers.find((p) => parseInt(p.dateOfBirth.slice(0, 4), 10) <= 2000)!;
+  const mentees = myPlayers
+    .filter((p) => parseInt(p.dateOfBirth.slice(0, 4), 10) >= 2004)
+    .slice(0, 2);
+  const savedGroupRes = saveMentoringGroup(
+    world,
+    mentor.id,
+    mentees.map((m) => m.id)
+  );
+  assert.ok(
+    (savedGroupRes.nextState.mentoringGroups || []).some((g) => g.mentorId === mentor.id),
+    'saveMentoringGroup must persist the mentoring group in world state'
+  );
+
+  const targetGroup = savedGroupRes.nextState.mentoringGroups!.find(
+    (g) => g.mentorId === mentor.id
+  )!;
+  const removedGroupRes = removeMentoringGroup(savedGroupRes.nextState, targetGroup.id);
+  assert.equal(
+    removedGroupRes.nextState.mentoringGroups!.some((g) => g.id === targetGroup.id),
+    false,
+    'removeMentoringGroup must remove the group'
+  );
+
+  // Checkpoint 12: Transfer Deadline Day Hub, Release Clause Activation, Trophy Cabinet & Ballon d'Or Gala
+  assert.equal(isTransferDeadlineWindow('2025-08-28'), true);
+  assert.equal(isTransferDeadlineWindow('2026-01-30'), true);
+  assert.equal(isTransferDeadlineWindow('2025-10-15'), false);
+
+  const bargains = getDeadlineDayBargains(world);
+  assert.ok(bargains.length >= 5);
+  for (const b of bargains) {
+    assert.ok(
+      b.bargainPrice < b.originalPrice,
+      'Deadline Day bargain fee must be discounted by 25% below originalPrice'
+    );
+  }
+
+  // Test Release Clause immediate activation with boosted budget
+  const richWorld = {
+    ...world,
+    clubs: {
+      ...world.clubs,
+      [myClub.id]: {
+        ...myClub,
+        finances: {
+          ...myClub.finances,
+          balance: 250_000_000,
+          transferBudget: 200_000_000,
+          wageBudgetPerWeek: myClub.finances.wageBudgetPerWeek + 500_000,
+        },
+      },
+    },
+  };
+  const clauseTarget = Object.values(richWorld.players).find(
+    (p) => p.clubId !== myClub.id && p.releaseClause && p.releaseClause <= 120_000_000
+  )!;
+  assert.ok(clauseTarget, 'Must find a player with an active Release Clause');
+  const clauseRes = activateReleaseClauseTransfer(richWorld, clauseTarget.id, false);
+  assert.equal(clauseRes.outcome, 'COMPLETED');
+  assert.equal(clauseRes.nextState.players[clauseTarget.id].clubId, myClub.id);
+
+  // Verify initial & rollover Trophy Cabinet + Annual Awards Gala (Ballon d'Or / Golden Boot / Golden Boy)
+  assert.ok((world.trophyHistory || []).length >= 5, 'Initial world must seed Trophy Cabinet history');
+  assert.ok(
+    (world.seasonAwardsHistory || []).length >= 1,
+    'Initial world must seed Season Awards Gala history'
+  );
+
+  const afterRollover = processEndOfSeasonRollover(clauseRes.nextState).nextState;
+  assert.ok(
+    (afterRollover.trophyHistory || []).length > (world.trophyHistory || []).length,
+    'Season rollover must append new domestic and UEFA champions to trophyHistory'
+  );
+  assert.ok(
+    (afterRollover.seasonAwardsHistory || []).length > (world.seasonAwardsHistory || []).length,
+    'Season rollover must crown new Ballon d\'Or, Golden Boot, and Golden Boy winners'
+  );
+
+  // Verify Cloud Firestore dehydration/rehydration preserves mentoringGroups, trophyHistory, and seasonAwardsHistory
+  const dehydrated = dehydrateWorldStateToCareerMap(afterRollover);
+  const rehydrated = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'u_test_phase3',
+    slotId: 'slot_1',
+    saveName: afterRollover.saveName,
+    clubName: myClub.name,
+    managerName: afterRollover.manager.name,
+    gameDate: afterRollover.gameDate,
+    season: afterRollover.currentSeason,
+    lastSavedAtIso: '2026-11-12T00:00:00.000Z',
+    randomSeed: afterRollover.randomSeed,
+    controlledClubId: afterRollover.controlledClubId,
+    careerState: dehydrated,
+  });
+  assert.equal(
+    rehydrated.trophyHistory?.length,
+    afterRollover.trophyHistory?.length,
+    'Rehydrated state must preserve trophyHistory'
+  );
+  assert.equal(
+    rehydrated.seasonAwardsHistory?.length,
+    afterRollover.seasonAwardsHistory?.length,
+    'Rehydrated state must preserve seasonAwardsHistory'
+  );
+});
 
 

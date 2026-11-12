@@ -19,23 +19,39 @@ import { createInitialWorldState } from './engine/worldGenerator';
 import { autoRegisterSquadIds } from './engine/tacticsEngine';
 import { ClubBadge } from './components/ClubBadge';
 import {
+  activateReleaseClauseTransfer,
+  adjustClubBudgetAllocation,
   advanceWorldOneDay,
+  applyForManagerJob,
+  assignYouthMentor,
   buildScoutReportForPlayer,
   completeUserMatchdayAndSyncWorld,
   deleteSavedSlot,
   deleteSaveSlotFromFirestore,
+  generateAnnualYouthIntake,
+  getClubStaffBonuses,
   getPendingUrgentInboxItem,
   getSavedSlotsList,
   hireStaffMember,
   loadWorldStateFromFirestoreSlot,
   loadWorldStateFromSlot,
+  processEndOfSeasonRollover,
+  promoteYouthProspectToSenior,
   recruitYouthAcademyProspect,
+  releaseYouthProspect,
+  removeMentoringGroup,
   renewPlayerContract,
+  respondToIncomingTransferOffer,
+  saveMentoringGroup,
   SaveSlotMeta,
   saveWorldStateToFirestoreSlot,
   saveWorldStateToSlot,
+  signPlayerOnBosmanFree,
   submitAndEvaluateTransferOffer,
   syncUserSaveSlotsFromFirestore,
+  triggerClubTakeoverEvent,
+  updatePlayerSquadAndTransferStatus,
+  upgradeJuniorOrRecruitmentFacility,
 } from './engine/worldSimulationService';
 import {
   auth,
@@ -441,7 +457,13 @@ function TouchlineShell() {
   const handleGenerateScoutReport = (playerId: string) => {
     const p = world.players[playerId];
     if (!p) return;
-    const rep = buildScoutReportForPlayer(p, 'stf_head_scout', world.gameDate);
+    const bonuses = getClubStaffBonuses(world, world.controlledClubId);
+    const rep = buildScoutReportForPlayer(
+      p,
+      'stf_head_scout',
+      world.gameDate,
+      bonuses.scoutAccuracy
+    );
     setWorld({
       ...world,
       scoutReports: {
@@ -864,21 +886,11 @@ function TouchlineShell() {
                 );
               }}
               onUpdateSquadStatus={(playerId, status) => {
-                const p = world.players[playerId];
-                if (!p) return;
-                setWorld({
-                  ...world,
-                  players: {
-                    ...world.players,
-                    [playerId]: { ...p, squadStatus: status },
-                  },
+                const res = updatePlayerSquadAndTransferStatus(world, playerId, {
+                  squadStatus: status,
                 });
-                showToast(
-                  tr(
-                    `Updated ${p.firstName} ${p.lastName} squad hierarchy to ${status}`,
-                    `ปรับสถานะในทีมของ ${p.firstName} ${p.lastName} เป็น ${status}`
-                  )
-                );
+                setWorld(res.nextState);
+                showToast(res.message);
               }}
             />
           )}
@@ -923,6 +935,16 @@ function TouchlineShell() {
                 );
               }}
               onSelectPlayer={setSelectedPlayerId}
+              onSaveMentoringGroup={(mentorId, menteeIds) => {
+                const res = saveMentoringGroup(world, mentorId, menteeIds);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onRemoveMentoringGroup={(groupId) => {
+                const res = removeMentoringGroup(world, groupId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
             />
           )}
 
@@ -965,7 +987,20 @@ function TouchlineShell() {
           )}
 
           {activeTab === 'transfers' && (
-            <TransfersView world={world} onSelectPlayer={setSelectedPlayerId} />
+            <TransfersView
+              world={world}
+              onSelectPlayer={setSelectedPlayerId}
+              onRespondToIncomingOffer={(offerId, decision) => {
+                const res = respondToIncomingTransferOffer(world, offerId, decision);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onActivateReleaseClause={(playerId, useBargainDiscount) => {
+                const res = activateReleaseClauseTransfer(world, playerId, useBargainDiscount);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+            />
           )}
 
           {(activeTab === 'schedule' || activeTab === 'competitions') && (
@@ -990,6 +1025,11 @@ function TouchlineShell() {
               onGoogleSignOut={handleGoogleSignOut}
               onSelectPlayer={setSelectedPlayerId}
               onBoardRequest={handleBoardRequest}
+              onAdjustBudgetSplit={(transferPercentage) => {
+                const res = adjustClubBudgetAllocation(world, transferPercentage);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
               onHireStaff={(staffId) => {
                 const res = hireStaffMember(world, staffId);
                 setWorld(res.nextState);
@@ -1000,31 +1040,53 @@ function TouchlineShell() {
                 setWorld(next);
                 showToast(
                   tr(
-                    'Recruited new youth prospect into U19 Academy!',
-                    'คัดเลือกดาวรุ่งใหม่เข้าสู่ศูนย์ฝึกเยาวชน U19 เรียบร้อยแล้ว!'
+                    'Recruited new youth prospect into U18 Academy!',
+                    'คัดเลือกดาวรุ่งใหม่เข้าสู่ศูนย์ฝึกเยาวชน U18 เรียบร้อยแล้ว!'
                   )
                 );
               }}
               onPromoteYouth={(playerId) => {
-                const p = world.players[playerId];
-                if (!p) return;
-                setWorld({
-                  ...world,
-                  players: {
-                    ...world.players,
-                    [playerId]: {
-                      ...p,
-                      isYouthAcademy: false,
-                      squadStatus: 'Breakthrough Prospect',
-                    },
-                  },
-                });
-                showToast(
-                  tr(
-                    `Promoted ${p.firstName} ${p.lastName} to the Senior Squad!`,
-                    `ดัน ${p.firstName} ${p.lastName} ขึ้นสู่ทีมชุดใหญ่เรียบร้อยแล้ว!`
-                  )
-                );
+                const res = promoteYouthProspectToSenior(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onUpgradeAcademyFacility={(type) => {
+                const res = upgradeJuniorOrRecruitmentFacility(world, type);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onAssignMentor={(youthId, mentorId) => {
+                const res = assignYouthMentor(world, youthId, mentorId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onReleaseYouth={(playerId) => {
+                const res = releaseYouthProspect(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onGenerateAnnualIntake={() => {
+                const res = generateAnnualYouthIntake(world);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onTriggerSeasonRollover={() => {
+                const res = processEndOfSeasonRollover(world);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onTriggerTakeover={(mode) => {
+                const res = triggerClubTakeoverEvent(world, undefined, mode);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onApplyForJob={(targetClubId) => {
+                const res = applyForManagerJob(world, targetClubId);
+                setWorld(res.nextState);
+                showToast(res.message);
+                if (res.accepted) {
+                  setActiveTab('dashboard');
+                }
               }}
               onSaveToSlot={async (slotId) => {
                 const slots = authUser
@@ -1067,6 +1129,27 @@ function TouchlineShell() {
           onUpdateIndividualTraining={handleUpdateIndividualTraining}
           onToggleShortlist={handleToggleShortlist}
           onGenerateScoutReport={handleGenerateScoutReport}
+          onUpdatePlayerTransferAndSquadStatus={(playerId, updates) => {
+            const res = updatePlayerSquadAndTransferStatus(world, playerId, updates);
+            setWorld(res.nextState);
+            showToast(res.message);
+          }}
+          onSignBosmanFree={(playerId, wage, years) => {
+            const res = signPlayerOnBosmanFree(world, playerId, wage, years);
+            setWorld(res.nextState);
+            showToast(res.message);
+            if (res.outcome === 'COMPLETED') {
+              setSelectedPlayerId(null);
+            }
+          }}
+          onActivateReleaseClause={(playerId, useBargainDiscount) => {
+            const res = activateReleaseClauseTransfer(world, playerId, useBargainDiscount);
+            setWorld(res.nextState);
+            showToast(res.message);
+            if (res.outcome === 'COMPLETED') {
+              setSelectedPlayerId(null);
+            }
+          }}
         />
       )}
 

@@ -7,23 +7,31 @@ import {
   LeagueId,
   LeagueStanding,
   ManagerProfile,
+  MentoringGroup,
   NewsItem,
   Player,
   PlayerAttributes,
   PlayerRole,
   PositionCode,
+  SeasonAwardRecord,
   StaffMember,
   StaffRole,
+  TrophyHistoryRecord,
   UefaCompetitionId,
   WorldState,
 } from '../types/game';
 import { CLUB_TEMPLATES, LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConfig';
 import { REAL_CLUB_CORE_PLAYERS, REAL_CLUB_ROSTERS, RealPlayerSeed } from './realRostersData';
-import { createInitialStandings, generateLeagueSchedule } from './leagueEngine';
+import {
+  createInitialStandings,
+  generateInitialDomesticCupFixtures,
+  generateLeagueSchedule,
+} from './leagueEngine';
 import { SeededRNG } from './random';
 import {
   autoPickLineup,
   autoRegisterSquadIds,
+  derivePlayerTraitsFromAttributes,
   isPlayerHomegrownForClub,
   ROLES_BY_POSITION,
 } from './tacticsEngine';
@@ -35,6 +43,121 @@ import {
   selectUefaQualifiedClubs,
   UEFA_COMPETITIONS_CONFIG,
 } from './uefaEngine';
+
+const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
+  ARS: [
+    ['Ethan', 'Nwaneri', 'AMC', 'ENG', 18, 144, 185, ['AMR', 'MC']],
+    ['Myles', 'Lewis-Skelly', 'DL', 'ENG', 18, 142, 182, ['DM', 'MC']],
+    ['Max', 'Dowman', 'AMC', 'ENG', 16, 126, 186, ['AMR', 'MC']],
+  ],
+  MCI: [
+    ['Rico', 'Lewis', 'DR', 'ENG', 20, 152, 179, ['DM', 'DL']],
+    ['Claudio', 'Echeverri', 'AMC', 'ARG', 19, 140, 182, ['AML', 'ST']],
+    ['Vitor', 'Reis', 'DC', 'BRA', 19, 138, 180, ['DR']],
+  ],
+  LIV: [
+    ['Trey', 'Nyoni', 'MC', 'ENG', 18, 134, 180, ['AMC', 'DM']],
+    ['Rio', 'Ngumoha', 'AML', 'ENG', 17, 130, 185, ['AMR', 'ST']],
+  ],
+  CHE: [
+    ['Estevao', 'Willian', 'AMR', 'BRA', 18, 148, 190, ['AMC', 'AML']],
+    ['Kendry', 'Paez', 'AMC', 'ECU', 18, 140, 184, ['AMR', 'MC']],
+    ['Josh', 'Acheampong', 'DR', 'ENG', 19, 136, 178, ['DC']],
+    ['Tyrique', 'George', 'AML', 'ENG', 19, 135, 177, ['AMR']],
+  ],
+  MUN: [
+    ['Kobbie', 'Mainoo', 'MC', 'ENG', 20, 156, 185, ['DM', 'AMC']],
+    ['Leny', 'Yoro', 'DC', 'FRA', 19, 152, 186, ['DR']],
+    ['Chido', 'Obi-Martin', 'ST', 'DEN', 17, 132, 184, ['AMC']],
+  ],
+  TOT: [
+    ['Archie', 'Gray', 'DM', 'ENG', 19, 146, 183, ['DR', 'MC', 'DC']],
+    ['Lucas', 'Bergvall', 'MC', 'SWE', 19, 144, 182, ['AMC', 'DM']],
+    ['Mikey', 'Moore', 'AML', 'ENG', 18, 136, 183, ['AMR', 'AMC']],
+  ],
+  BOU: [
+    ['Dean', 'Huijsen', 'DC', 'ESP', 20, 152, 184, ['DM']],
+  ],
+  SUN: [
+    ['Chris', 'Rigg', 'MC', 'ENG', 18, 138, 182, ['AMC', 'DM']],
+    ['Jobe', 'Bellingham', 'MC', 'ENG', 19, 142, 179, ['AMC', 'DM']],
+  ],
+  BAR: [
+    ['Lamine', 'Yamal', 'AMR', 'ESP', 18, 178, 196, ['AML', 'AMC']],
+    ['Pau', 'Cubarsi', 'DC', 'ESP', 18, 162, 190, ['DM']],
+    ['Marc', 'Bernal', 'DM', 'ESP', 18, 145, 185, ['MC']],
+    ['Fermin', 'Lopez', 'AMC', 'ESP', 21, 156, 178, ['MC', 'AML']],
+    ['Hector', 'Fort', 'DR', 'ESP', 19, 138, 178, ['DL']],
+    ['Guille', 'Fernandez', 'MC', 'ESP', 17, 132, 182, ['AMC']],
+  ],
+  RMA: [
+    ['Arda', 'Guler', 'AMC', 'TUR', 20, 160, 188, ['AMR', 'MC']],
+    ['Endrick', 'Felipe', 'ST', 'BRA', 19, 154, 189, ['AMR']],
+    ['Franco', 'Mastantuono', 'AMC', 'ARG', 18, 144, 188, ['AMR', 'MC']],
+    ['Joan', 'Martinez', 'DC', 'ESP', 18, 134, 183, []],
+  ],
+  ATM: [
+    ['Pablo', 'Barrios', 'MC', 'ESP', 21, 154, 180, ['DM']],
+    ['Arthur', 'Vermeeren', 'DM', 'BEL', 20, 146, 180, ['MC']],
+  ],
+  PSG: [
+    ['Warren', 'Zaire-Emery', 'MC', 'FRA', 19, 164, 190, ['DM', 'DR']],
+    ['Joao', 'Neves', 'DM', 'POR', 20, 166, 189, ['MC']],
+    ['Desire', 'Doue', 'AML', 'FRA', 20, 160, 188, ['AMC', 'AMR', 'MC']],
+    ['Senny', 'Mayulu', 'AMC', 'FRA', 19, 140, 181, ['MC']],
+    ['Ibrahim', 'Mbaye', 'AMR', 'FRA', 17, 132, 182, ['AML']],
+  ],
+  LIL: [
+    ['Ayyoub', 'Bouaddi', 'MC', 'FRA', 17, 142, 186, ['DM']],
+  ],
+  ASM: [
+    ['Eliesse', 'Ben Seghir', 'AML', 'MAR', 20, 152, 183, ['AMC']],
+    ['Eli Junior', 'Kroupi', 'ST', 'FRA', 19, 142, 182, ['AMC', 'AML']],
+  ],
+  BAY: [
+    ['Jamal', 'Musiala', 'AMC', 'GER', 22, 178, 193, ['AML', 'MC']],
+    ['Aleksandar', 'Pavlovic', 'DM', 'GER', 21, 160, 185, ['MC']],
+    ['Paul', 'Wanner', 'AMC', 'GER', 19, 144, 184, ['AMR', 'MC']],
+    ['Mathys', 'Tel', 'ST', 'FRA', 20, 148, 182, ['AML', 'AMR']],
+  ],
+  B04: [
+    ['Florian', 'Wirtz', 'AMC', 'GER', 22, 180, 194, ['AML', 'MC']],
+  ],
+  BVB: [
+    ['Julien', 'Duranville', 'AMR', 'BEL', 19, 142, 183, ['AML']],
+    ['Kjell', 'Watjen', 'MC', 'GER', 19, 136, 178, ['AMC']],
+  ],
+  SGE: [
+    ['Can', 'Uzun', 'AMC', 'TUR', 19, 144, 182, ['ST']],
+  ],
+  JUV: [
+    ['Kenan', 'Yildiz', 'AML', 'TUR', 20, 158, 187, ['AMC', 'ST']],
+  ],
+  ACM: [
+    ['Francesco', 'Camarda', 'ST', 'ITA', 17, 134, 188, []],
+  ],
+  COM: [
+    ['Nico', 'Paz', 'AMC', 'ARG', 20, 154, 185, ['MC', 'AMR']],
+    ['Assane', 'Diao', 'AMR', 'ESP', 19, 146, 182, ['AML', 'ST']],
+  ],
+  SLB: [
+    ['Antonio', 'Silva', 'DC', 'POR', 21, 156, 183, []],
+  ],
+  SCP: [
+    ['Geovany', 'Quenda', 'AMR', 'POR', 18, 148, 187, ['WBR', 'AML']],
+  ],
+  FCP: [
+    ['Rodrigo', 'Mora', 'AMC', 'POR', 18, 142, 186, ['AMR']],
+    ['Samu', 'Aghehowa', 'ST', 'ESP', 21, 156, 183, []],
+  ],
+  AJA: [
+    ['Jorrel', 'Hato', 'DL', 'NED', 19, 152, 185, ['DC']],
+    ['Sverre', 'Nypan', 'MC', 'NOR', 18, 140, 184, ['AMC']],
+  ],
+  BJK: [
+    ['Semih', 'Kilicsoy', 'ST', 'TUR', 19, 146, 182, ['AML', 'AMR']],
+  ],
+};
 
 const SQUAD_BLUEPRINT: { pos: PositionCode; secondary: PositionCode[]; isYouth?: boolean }[] = [
   { pos: 'GK', secondary: [] },
@@ -219,8 +342,10 @@ function buildClubSquadSeeds(
 }[] {
   const rosterLookupKey = countryId === 'FRA' && shortName === 'BRE' ? 'SB29' : shortName;
   const fullRoster: RealPlayerSeed[] | undefined = REAL_CLUB_ROSTERS[rosterLookupKey];
+  const extraWonderkids: RealPlayerSeed[] = REAL_CLUB_WONDERKIDS[rosterLookupKey] || [];
+
   if (fullRoster && fullRoster.length > 0) {
-    return fullRoster.map((seed, idx) => {
+    const baseList = fullRoster.map((seed, idx) => {
       const [first, last, pos, nat, age, ca, pa, sec] = seed;
       const isYouth = age <= 19 && idx >= 18;
       return {
@@ -235,6 +360,28 @@ function buildClubSquadSeeds(
         isYouth,
       };
     });
+    const existingNames = new Set(
+      baseList.map((p) => `${p.firstName.toLowerCase()} ${p.lastName.toLowerCase()}`)
+    );
+    for (const wk of extraWonderkids) {
+      const [first, last, pos, nat, age, ca, pa, sec] = wk;
+      const fullKey = `${capitalizeName(first).toLowerCase()} ${capitalizeName(last).toLowerCase()}`;
+      if (!existingNames.has(fullKey)) {
+        existingNames.add(fullKey);
+        baseList.push({
+          firstName: capitalizeName(first),
+          lastName: capitalizeName(last),
+          pos,
+          secondary: sec || getDefaultSecondaryPositions(pos),
+          natCode: nat,
+          age,
+          targetCa: ca,
+          targetPa: pa,
+          isYouth: age <= 19,
+        });
+      }
+    }
+    return baseList;
   }
 
   const coreRoster = REAL_CLUB_CORE_PLAYERS[rosterLookupKey] || [];
@@ -272,6 +419,26 @@ function buildClubSquadSeeds(
       targetPa,
       isYouth: false,
     });
+  }
+
+  for (const wk of extraWonderkids) {
+    const [first, last, pos, nat, age, ca, pa, sec] = wk;
+    const fName = capitalizeName(first);
+    const lName = capitalizeName(last);
+    if (!usedFullNames.has(`${fName} ${lName}`)) {
+      usedFullNames.add(`${fName} ${lName}`);
+      results.push({
+        firstName: fName,
+        lastName: lName,
+        pos,
+        secondary: sec || getDefaultSecondaryPositions(pos),
+        natCode: nat,
+        age,
+        targetCa: ca,
+        targetPa: pa,
+        isYouth: age <= 19,
+      });
+    }
   }
 
   // Ensure every position in SQUAD_BLUEPRINT has adequate depth up to 21 players
@@ -399,6 +566,14 @@ export function createInitialWorldState(
         const roles = ROLES_BY_POSITION[pSeed.pos] || ROLES_BY_POSITION.MC;
         const preferredRole: PlayerRole = rng.pick(roles);
 
+        const isWonderkid = pSeed.age <= 21 && pa >= 168;
+        const youthSquad: 'u18' | 'u21' | 'senior' =
+          pSeed.isYouth && pSeed.age <= 18
+            ? 'u18'
+            : pSeed.isYouth || (pSeed.age <= 20 && pIdx >= 16)
+              ? 'u21'
+              : 'senior';
+
         const player: Player = {
           id: playerId,
           firstName: pSeed.firstName,
@@ -427,7 +602,9 @@ export function createInitialWorldState(
           morale: rng.int(75, 94),
           tacticalFamiliarity: rng.int(76, 92),
           squadStatus: pSeed.isYouth
-            ? 'Youth'
+            ? isWonderkid
+              ? 'Breakthrough Prospect'
+              : 'Youth'
             : pIdx < 5
               ? 'Star Player'
               : pIdx < 12
@@ -474,6 +651,12 @@ export function createInitialWorldState(
           isRegistered: true,
           consecutiveBenched: 0,
           playInReserves: Boolean(pSeed.isYouth),
+          suspensionMatchesRemaining: 0,
+          unhappyReason: null,
+          youthSquad,
+          contractType: pSeed.isYouth && pSeed.age <= 17 ? 'youth' : 'professional',
+          mentorId: null,
+          isWonderkid,
         };
 
         players[playerId] = player;
@@ -535,6 +718,16 @@ export function createInitialWorldState(
         }
       }
 
+      const sugarDaddyType: Club['sugarDaddyType'] = ['MCI', 'PSG', 'NEW', 'CHE', 'RMA'].includes(
+        tpl.shortName
+      )
+        ? 'FRONT_END'
+        : tpl.reputation >= 86
+          ? 'BACK_END'
+          : tpl.reputation >= 78
+            ? 'UNDERWRITER'
+            : 'NONE';
+
       const club: Club = {
         id: clubId,
         name: tpl.name,
@@ -550,6 +743,9 @@ export function createInitialWorldState(
         reputation: tpl.reputation,
         trainingFacilities: Math.min(20, Math.max(10, Math.round(tpl.reputation / 5))),
         youthFacilities: Math.min(20, Math.max(9, Math.round(tpl.reputation / 5.2))),
+        juniorCoaching: Math.min(20, Math.max(9, Math.round(tpl.reputation / 5.1))),
+        youthRecruitment: Math.min(20, Math.max(9, Math.round(tpl.reputation / 5.0))),
+        sugarDaddyType,
         finances: {
           balance,
           transferBudget,
@@ -652,6 +848,18 @@ export function createInitialWorldState(
     );
     fixtures.push(...leagueFixtures);
     standings[leagueId] = createInitialStandings(leagueId, currentSeason, leagueClubIds);
+
+    // Generate Domestic Cup Round of 16 knockout fixtures for Tier 1 leagues
+    if (!config.tier || config.tier === 1) {
+      const cupClubs = leagueClubIds.map((id) => clubs[id]);
+      const cupFixtures = generateInitialDomesticCupFixtures(
+        config.cupId,
+        cupClubs,
+        currentSeason,
+        '2025-10-29'
+      );
+      fixtures.push(...cupFixtures);
+    }
   }
 
   // Generate UEFA Club Competitions (New Format: 36 teams per competition, 4 Pots of 9, Swiss League Phase)
@@ -868,6 +1076,158 @@ export function createInitialWorldState(
     },
   ];
 
+  // Populate FM27 Player Traits (Preferred Moves) for all players
+  for (const p of Object.values(players)) {
+    p.traits = derivePlayerTraitsFromAttributes(p);
+  }
+
+  // Create default Mentoring Group for the controlled club (Veteran >= 25 -> U21 prospects)
+  const controlledPlayers = Object.values(players).filter((p) => p.clubId === controlledClub.id);
+  const mentorCandidates = controlledPlayers
+    .filter((p) => {
+      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 1998;
+      return 2026 - birthYear >= 25 && p.positions[0] !== 'GK';
+    })
+    .sort(
+      (a, b) =>
+        b.attributes.mental.leadership +
+        b.professionalism +
+        b.attributes.mental.determination -
+        (a.attributes.mental.leadership + a.professionalism + a.attributes.mental.determination)
+    );
+  const menteeCandidates = controlledPlayers
+    .filter((p) => {
+      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2006;
+      return 2026 - birthYear <= 21 && p.positions[0] !== 'GK';
+    })
+    .sort((a, b) => b.potentialAbility - a.potentialAbility)
+    .slice(0, 2);
+
+  const mentoringGroups: MentoringGroup[] = [];
+  if (mentorCandidates[0] && menteeCandidates.length > 0) {
+    const mentor = mentorCandidates[0];
+    for (const mentee of menteeCandidates) {
+      mentee.mentorId = mentor.id;
+    }
+    mentoringGroups.push({
+      id: `mnt_init_${controlledClub.id}`,
+      clubId: controlledClub.id,
+      mentorId: mentor.id,
+      menteeIds: menteeCandidates.map((m) => m.id),
+      focusTrait: mentor.traits?.[0] || 'Places Shots',
+      createdAt: gameDate,
+    });
+  }
+
+  // Seed inaugural historical Trophy Cabinet & Annual Awards Gala records (2024/25)
+  const trophyHistory: TrophyHistoryRecord[] = [
+    {
+      id: 'trp_2425_ucl',
+      season: '2024/25',
+      competitionId: 'UEFA_UCL',
+      competitionName: 'UEFA Champions League',
+      winnerClubId: 'club_esp_ll_1',
+      winnerClubName: clubs['club_esp_ll_1']?.name || 'Real Madrid',
+      runnerUpClubId: 'club_eng_pl_2',
+      runnerUpClubName: clubs['club_eng_pl_2']?.name || 'Manchester City',
+    },
+    {
+      id: 'trp_2425_eng',
+      season: '2024/25',
+      competitionId: 'ENG_PL',
+      competitionName: 'English Premier League',
+      winnerClubId: 'club_eng_pl_3',
+      winnerClubName: clubs['club_eng_pl_3']?.name || 'Liverpool',
+      runnerUpClubId: 'club_eng_pl_1',
+      runnerUpClubName: clubs['club_eng_pl_1']?.name || 'Arsenal',
+    },
+    {
+      id: 'trp_2425_esp',
+      season: '2024/25',
+      competitionId: 'ESP_LL',
+      competitionName: 'Spanish La Liga',
+      winnerClubId: 'club_esp_ll_2',
+      winnerClubName: clubs['club_esp_ll_2']?.name || 'Barcelona',
+      runnerUpClubId: 'club_esp_ll_1',
+      runnerUpClubName: clubs['club_esp_ll_1']?.name || 'Real Madrid',
+    },
+    {
+      id: 'trp_2425_ger',
+      season: '2024/25',
+      competitionId: 'GER_BL',
+      competitionName: 'German Bundesliga',
+      winnerClubId: 'club_ger_bl_1',
+      winnerClubName: clubs['club_ger_bl_1']?.name || 'Bayern Munich',
+      runnerUpClubId: 'club_ger_bl_2',
+      runnerUpClubName: clubs['club_ger_bl_2']?.name || 'Bayer Leverkusen',
+    },
+    {
+      id: 'trp_2425_ita',
+      season: '2024/25',
+      competitionId: 'ITA_SA',
+      competitionName: 'Italian Serie A',
+      winnerClubId: 'club_ita_sa_1',
+      winnerClubName: clubs['club_ita_sa_1']?.name || 'Inter Milan',
+      runnerUpClubId: 'club_ita_sa_2',
+      runnerUpClubName: clubs['club_ita_sa_2']?.name || 'Napoli',
+    },
+    {
+      id: 'trp_2425_fra',
+      season: '2024/25',
+      competitionId: 'FRA_L1',
+      competitionName: 'French Ligue 1',
+      winnerClubId: 'club_fra_l1_1',
+      winnerClubName: clubs['club_fra_l1_1']?.name || 'Paris Saint-Germain',
+      runnerUpClubId: 'club_fra_l1_2',
+      runnerUpClubName: clubs['club_fra_l1_2']?.name || 'Monaco',
+    },
+  ];
+
+  const allPlayerList = Object.values(players).sort((a, b) => b.currentAbility - a.currentAbility);
+  const topStar = allPlayerList[0];
+  const topScorer = allPlayerList.find((p) => p.positions.includes('ST')) || topStar;
+  const topU21 =
+    allPlayerList.find((p) => {
+      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2006;
+      return 2026 - birthYear <= 21;
+    }) || topStar;
+
+  const seasonAwardsHistory: SeasonAwardRecord[] = [
+    {
+      season: '2024/25',
+      ballonDor: {
+        playerId: topStar.id,
+        playerName: `${topStar.firstName} ${topStar.lastName}`,
+        clubId: topStar.clubId,
+        clubName: clubs[topStar.clubId]?.name || 'Real Madrid',
+        goals: 31,
+        assists: 14,
+        averageRating: 8.12,
+      },
+      goldenBoot: {
+        playerId: topScorer.id,
+        playerName: `${topScorer.firstName} ${topScorer.lastName}`,
+        clubId: topScorer.clubId,
+        clubName: clubs[topScorer.clubId]?.name || 'Manchester City',
+        goals: 36,
+      },
+      goldenBoy: {
+        playerId: topU21.id,
+        playerName: `${topU21.firstName} ${topU21.lastName}`,
+        clubId: topU21.clubId,
+        clubName: clubs[topU21.clubId]?.name || 'Barcelona',
+        age: 18,
+        ca: topU21.currentAbility,
+        averageRating: 7.78,
+      },
+      managerOfTheSeason: {
+        managerName: 'Carlo Ancelotti',
+        clubId: 'club_esp_ll_1',
+        clubName: clubs['club_esp_ll_1']?.name || 'Real Madrid',
+      },
+    },
+  ];
+
   return {
     saveId: `save_${Date.now()}`,
     saveName: `${controlledClub.name} — ${currentSeason}`,
@@ -893,6 +1253,10 @@ export function createInitialWorldState(
     scoutReports: {},
     transactions,
     inbox,
+    mentoringGroups,
+    trophyHistory,
+    seasonAwardsHistory,
   };
 }
+
 

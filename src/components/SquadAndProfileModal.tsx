@@ -7,9 +7,13 @@ import {
 } from '../types/game';
 import { getAgeAtDate } from '../engine/worldSimulationService';
 import {
+  computePlayerPolygon8Axes,
+  computeSquadDepthChart,
+  derivePlayerTraitsFromAttributes,
   evaluatePlayerInjuryRisk,
   evaluateSquadRegistration,
   isPlayerHomegrownForClub,
+  PLAYER_TRAIT_CATALOG,
   ROLES_BY_POSITION,
 } from '../engine/tacticsEngine';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -45,9 +49,14 @@ export const SquadView: React.FC<SquadViewProps> = ({
   const [posFilter, setPosFilter] = useState<'ALL' | PositionGroup>('ALL');
   const [subFilter, setSubFilter] = useState<'ALL' | 'REGISTERED' | 'HOMEGROWN' | 'RESERVES' | 'UNHAPPY'>('ALL');
   const [sortBy, setSortBy] = useState<'ca' | 'fitness' | 'sharpness' | 'morale' | 'age' | 'wage' | 'value' | 'rating'>('ca');
+  const [viewMode, setViewMode] = useState<'table' | 'planner'>('table');
 
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
   const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId);
+  const depthChart = computeSquadDepthChart(
+    clubPlayers,
+    parseInt(world.gameDate.slice(0, 4), 10) || 2026
+  );
 
   const avgCondition = Math.round(
     clubPlayers.reduce((sum, p) => sum + p.fitness, 0) / Math.max(1, clubPlayers.length)
@@ -245,9 +254,36 @@ export const SquadView: React.FC<SquadViewProps> = ({
         </div>
       )}
 
-      {/* Filter & Search Bar */}
+      {/* Filter & Search Bar + Squad Table / Depth Chart Toggle */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3">
+          {/* View Mode Switcher: Squad Table vs FM27 Squad Planner & Depth Chart */}
+          <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                viewMode === 'table'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              {tr('Squad Roster Table', 'ตารางขุมกำลัง (Squad Table)')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('planner')}
+              data-testid="squad-planner-toggle-btn"
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                viewMode === 'planner'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              {tr('Squad Planner & Depth Chart', 'ผังความลึกขุมกำลัง (Depth Chart)')}
+            </button>
+          </div>
+
           <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
             {(['ALL', 'GK', 'DEF', 'MID', 'ATT'] as const).map((grp) => (
               <button
@@ -322,7 +358,160 @@ export const SquadView: React.FC<SquadViewProps> = ({
         </div>
       </div>
 
-      {/* Squad Data Table */}
+      {viewMode === 'planner' ? (
+        <div
+          className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
+          data-testid="squad-planner-depth-chart"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-display font-bold text-white">
+                {tr(
+                  'FM27 Squad Planner & Positional Depth Chart (9 Tactical Zones)',
+                  'ผังวางแผนขุมกำลัง & ความลึกรายตำแหน่ง 9 โซน (FM27 Squad Planner)'
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {tr(
+                  'Evaluate 1st Choice starters, Senior Backups, and U21 Prospects across every zone to identify transfer priorities.',
+                  'วิเคราะห์มือ 1 (1st Choice), ตัวสำรองหมุนเวียน (Backup) และดาวรุ่ง U21 ในแต่ละตำแหน่งเพื่อหาจุดที่ต้องเสริมทัพ'
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] font-mono">
+              <span className="text-emerald-400">■ Elite / Strong</span>
+              <span className="text-amber-400">■ Thin Depth</span>
+              <span className="text-red-400">■ Critical Shortage</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {depthChart.map((zone) => {
+              const gradeBadgeClass =
+                zone.grade === 'strong'
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                  : zone.grade === 'balanced'
+                    ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
+                    : 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+
+              return (
+                <div
+                  key={zone.code}
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 flex flex-col justify-between"
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                    <div>
+                      <span className="text-xs font-mono font-bold text-emerald-400 mr-2">
+                        [{zone.code}]
+                      </span>
+                      <span className="text-xs font-semibold text-white">
+                        {tr(zone.labelEn, zone.labelTh)}
+                      </span>
+                    </div>
+                    <span className={`px-2 py-0.5 text-[10px] font-mono font-bold rounded border ${gradeBadgeClass}`}>
+                      {tr(zone.gradeLabelEn, zone.gradeLabelTh)}
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5 text-xs">
+                    {/* 1st Choice */}
+                    <div>
+                      <div className="text-[10px] font-mono uppercase text-emerald-400 mb-1">
+                        {tr('1st Choice Starter', 'ตัวจริงมือ 1 (1st Choice)')}
+                      </div>
+                      {zone.firstChoice ? (
+                        <button
+                          type="button"
+                          onClick={() => onSelectPlayer(zone.firstChoice!.id)}
+                          className="w-full flex items-center justify-between p-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-left cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <PlayerAvatar player={zone.firstChoice} club={club} size="sm" />
+                            <div className="truncate">
+                              <div className="font-semibold text-white truncate">
+                                {zone.firstChoice.firstName} {zone.firstChoice.lastName}
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono">
+                                {tr('Age', 'อายุ')} {getAgeAtDate(zone.firstChoice.dateOfBirth, world.gameDate)} · Cond {zone.firstChoice.fitness}%
+                              </div>
+                            </div>
+                          </div>
+                          <span className="font-mono font-bold text-emerald-400 ml-2">
+                            {(zone.firstChoice.currentAbility / 10).toFixed(1)}
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="text-[11px] text-red-400 italic py-1">
+                          {tr('No natural player available!', 'ไม่มีนักเตะธรรมชาติในตำแหน่งนี้!')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Backups */}
+                    <div>
+                      <div className="text-[10px] font-mono uppercase text-sky-400 mb-1">
+                        {tr(`Rotation / Backups (${zone.backups.length})`, `สำรองหมุนเวียน (${zone.backups.length} คน)`)}
+                      </div>
+                      {zone.backups.length > 0 ? (
+                        <div className="space-y-1">
+                          {zone.backups.map((bp) => (
+                            <button
+                              key={bp.id}
+                              type="button"
+                              onClick={() => onSelectPlayer(bp.id)}
+                              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded bg-slate-900/70 hover:bg-slate-800 border border-slate-800/70 text-left cursor-pointer"
+                            >
+                              <span className="text-slate-200 truncate">
+                                {bp.firstName} {bp.lastName}{' '}
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  ({getAgeAtDate(bp.dateOfBirth, world.gameDate)}y)
+                                </span>
+                              </span>
+                              <span className="font-mono text-sky-300">
+                                {(bp.currentAbility / 10).toFixed(1)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-amber-400/90">
+                          {tr('No senior backup — transfer target advised', 'ขาดตัวสำรองอาวุโส แนะนำให้เสริมทัพ')}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* U21 Youth Prospects */}
+                    <div>
+                      <div className="text-[10px] font-mono uppercase text-amber-300 mb-1">
+                        {tr(`U21 Prospects (${zone.youths.length})`, `ดาวรุ่ง U21 (${zone.youths.length} คน)`)}
+                      </div>
+                      {zone.youths.length > 0 ? (
+                        <div className="flex flex-wrap gap-1.5">
+                          {zone.youths.map((yp) => (
+                            <button
+                              key={yp.id}
+                              type="button"
+                              onClick={() => onSelectPlayer(yp.id)}
+                              className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] text-amber-200 font-mono cursor-pointer"
+                            >
+                              {yp.lastName} ({(yp.currentAbility / 10).toFixed(1)} → {Math.round(yp.potentialRange[1] / 10)})
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-500">
+                          {tr('No U21 prospect in pipeline', 'ยังไม่มีดาวรุ่ง U21 ในตำแหน่งนี้')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+      /* Squad Data Table */
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -386,6 +575,10 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         <span className="text-red-400 font-semibold">
                           INJ ({p.injuryStatus.daysRemaining}d)
                         </span>
+                      ) : (p.suspensionMatchesRemaining || 0) > 0 ? (
+                        <span className="text-amber-400 font-bold">
+                          SUSP ({p.suspensionMatchesRemaining}m)
+                        </span>
                       ) : isStarter ? (
                         <span className="text-emerald-400 font-semibold">
                           {tr('XI Starter', '11 ตัวจริง')}
@@ -426,7 +619,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                       <div className="flex items-center gap-2.5">
                         <PlayerAvatar player={p} club={club} size="sm" />
                         <div>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span>
                               {p.firstName} {p.lastName}
                             </span>
@@ -438,8 +631,15 @@ export const SquadView: React.FC<SquadViewProps> = ({
                                 · HG
                               </span>
                             )}
+                            {(p.isWonderkid || (age <= 21 && p.potentialAbility >= 170)) && (
+                              <span className="text-[10px] font-mono text-amber-300 font-bold">
+                                · ★ WONDERKID
+                              </span>
+                            )}
                             {p.isYouthAcademy && (
-                              <span className="text-[10px] font-mono text-amber-400">· U19</span>
+                              <span className="text-[10px] font-mono text-emerald-400">
+                                · {p.youthSquad ? p.youthSquad.toUpperCase() : 'U18'}
+                              </span>
                             )}
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono">
@@ -577,6 +777,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
           </table>
         </div>
       </div>
+      )}
     </div>
   );
 };
@@ -605,6 +806,17 @@ interface PlayerProfileModalProps {
   ) => void;
   onToggleShortlist: (playerId: string) => void;
   onGenerateScoutReport: (playerId: string) => void;
+  onUpdatePlayerTransferAndSquadStatus?: (
+    playerId: string,
+    updates: {
+      transferListed?: boolean;
+      loanListed?: boolean;
+      askingPrice?: number;
+      squadStatus?: Player['squadStatus'];
+    }
+  ) => void;
+  onSignBosmanFree?: (playerId: string, proposedWage: number, contractYears: number) => void;
+  onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
@@ -616,9 +828,13 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   onUpdateIndividualTraining,
   onToggleShortlist,
   onGenerateScoutReport,
+  onUpdatePlayerTransferAndSquadStatus,
+  onSignBosmanFree,
+  onActivateReleaseClause,
 }) => {
   const { tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<'attributes' | 'contract_transfer' | 'development'>('attributes');
+  const [comparePlayerId, setComparePlayerId] = useState<string>('');
   const playerClub = world.clubs[player.clubId];
   const isMyPlayer = player.clubId === world.controlledClubId;
   const age = getAgeAtDate(player.dateOfBirth, world.gameDate);
@@ -635,6 +851,33 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
   const scoutReport = world.scoutReports[player.id];
   const isShortlisted = world.shortlistPlayerIds.includes(player.id);
+  const comparePlayer = comparePlayerId ? world.players[comparePlayerId] : undefined;
+  const comparisonCandidates = Object.values(world.players)
+    .filter((p) => p.id !== player.id && (p.clubId === world.controlledClubId || p.positions[0] === player.positions[0]))
+    .sort((a, b) => b.currentAbility - a.currentAbility)
+    .slice(0, 60);
+
+  const playerAxes = computePlayerPolygon8Axes(player);
+  const compareAxes = comparePlayer ? computePlayerPolygon8Axes(comparePlayer) : null;
+  const activeTraits =
+    player.traits && player.traits.length > 0
+      ? player.traits
+      : derivePlayerTraitsFromAttributes(player);
+
+  const contractEndYear = parseInt(player.contractEndDate.slice(0, 4), 10);
+  const currentYear = parseInt(world.gameDate.slice(0, 4), 10);
+  const isBosmanEligible = !isMyPlayer && contractEndYear - currentYear <= 1;
+
+  const buildPolygonPoints = (axes: { value: number }[], radius = 78, cx = 115, cy = 110): string =>
+    axes
+      .map((ax, i) => {
+        const angle = (Math.PI * 2 * i) / axes.length - Math.PI / 2;
+        const r = (Math.max(1, Math.min(20, ax.value)) / 20) * radius;
+        const x = cx + r * Math.cos(angle);
+        const y = cy + r * Math.sin(angle);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
 
   const renderAttrColor = (val: number) => {
     if (val >= 16) return 'text-emerald-400 font-bold';
@@ -735,6 +978,218 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
         <div className="p-6 overflow-y-auto space-y-6">
           {activeTab === 'attributes' && (
             <>
+              {/* Player Comparison Bar */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold text-slate-300">
+                    {tr('Side-by-Side Comparison:', 'เปรียบเทียบค่าพลังกับนักเตะอื่น:')}
+                  </span>
+                  <select
+                    aria-label={tr('Select player to compare', 'เลือกนักเตะเพื่อเปรียบเทียบ')}
+                    value={comparePlayerId}
+                    onChange={(e) => setComparePlayerId(e.target.value)}
+                    className="px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white"
+                  >
+                    <option value="">
+                      {tr('— None (Single Player View) —', '— ไม่เปรียบเทียบ (ดูเฉพาะคนนี้) —')}
+                    </option>
+                    {comparisonCandidates.map((cp) => (
+                      <option key={cp.id} value={cp.id}>
+                        {cp.firstName} {cp.lastName} ({cp.positions.join('/')} · CA {(cp.currentAbility / 10).toFixed(1)} · {world.clubs[cp.clubId]?.shortName})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {comparePlayer && (
+                  <div className="flex items-center gap-3 text-xs font-mono">
+                    <span className="text-emerald-400 font-semibold">
+                      ■ {player.lastName} (CA {(player.currentAbility / 10).toFixed(1)})
+                    </span>
+                    <span className="text-slate-500">vs</span>
+                    <span className="text-cyan-400 font-semibold">
+                      ■ {comparePlayer.lastName} (CA {(comparePlayer.currentAbility / 10).toFixed(1)})
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* FM27 8-Axis SVG Attribute Polygon Radar (Single & Dual Overlay) */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                <div className="md:col-span-5 flex flex-col items-center">
+                  <div className="text-xs font-semibold text-emerald-400 mb-1">
+                    {tr('8-Axis Attribute Polygon (FM27 Radar)', 'กราฟใยแมงมุม 8 แกน (8-Axis Attribute Polygon)')}
+                  </div>
+                  <svg viewBox="0 0 230 220" className="w-56 h-52 select-none">
+                    {/* Concentric Octagon Rings (5, 10, 15, 20) */}
+                    {[5, 10, 15, 20].map((level) => {
+                      const pts = buildPolygonPoints(
+                        Array.from({ length: 8 }, () => ({ value: level })),
+                        78,
+                        115,
+                        110
+                      );
+                      return (
+                        <polygon
+                          key={level}
+                          points={pts}
+                          fill="none"
+                          stroke="rgba(148, 163, 184, 0.22)"
+                          strokeWidth="1"
+                        />
+                      );
+                    })}
+
+                    {/* Axis Spokes & Labels */}
+                    {playerAxes.map((ax, i) => {
+                      const angle = (Math.PI * 2 * i) / 8 - Math.PI / 2;
+                      const xOuter = 115 + 78 * Math.cos(angle);
+                      const yOuter = 110 + 78 * Math.sin(angle);
+                      const xLabel = 115 + 98 * Math.cos(angle);
+                      const yLabel = 110 + 95 * Math.sin(angle);
+                      return (
+                        <g key={ax.key}>
+                          <line
+                            x1="115"
+                            y1="110"
+                            x2={xOuter}
+                            y2={yOuter}
+                            stroke="rgba(148, 163, 184, 0.22)"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x={xLabel}
+                            y={yLabel + 3}
+                            textAnchor="middle"
+                            fill="#cbd5e1"
+                            fontSize="8.5"
+                            fontWeight="600"
+                          >
+                            {tr(ax.labelEn, ax.labelTh)}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Compare Player B Polygon Overlay (Cyan) */}
+                    {compareAxes && (
+                      <polygon
+                        points={buildPolygonPoints(compareAxes, 78, 115, 110)}
+                        fill="rgba(6, 182, 212, 0.24)"
+                        stroke="#06b6d4"
+                        strokeWidth="2"
+                      />
+                    )}
+
+                    {/* Primary Player A Polygon (Emerald) */}
+                    <polygon
+                      points={buildPolygonPoints(playerAxes, 78, 115, 110)}
+                      fill="rgba(16, 185, 129, 0.28)"
+                      stroke="#10b981"
+                      strokeWidth="2.2"
+                    />
+                  </svg>
+                </div>
+
+                <div className="md:col-span-7 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-300">
+                      {tr('8-Dimension Tactical Profile Breakdown', 'วิเคราะห์ค่าพลัง 8 มิติหลัก')}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {comparePlayer
+                        ? `${player.lastName} vs ${comparePlayer.lastName}`
+                        : `${player.positions.join('/')} · ${player.preferredRole}`}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {playerAxes.map((ax, idx) => {
+                      const compVal = compareAxes ? compareAxes[idx]?.value : undefined;
+                      const diff = compVal !== undefined ? Number((ax.value - compVal).toFixed(1)) : 0;
+                      return (
+                        <div
+                          key={ax.key}
+                          className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex flex-col justify-between"
+                        >
+                          <div className="text-[11px] text-slate-400 truncate">
+                            {tr(ax.labelEn, ax.labelTh)}
+                          </div>
+                          <div className="flex items-baseline justify-between mt-1 font-mono tabular-nums">
+                            <span
+                              className={`text-sm font-bold ${
+                                ax.value >= 15
+                                  ? 'text-emerald-400'
+                                  : ax.value >= 12
+                                    ? 'text-sky-300'
+                                    : 'text-slate-200'
+                              }`}
+                            >
+                              {ax.value.toFixed(1)}
+                            </span>
+                            {compVal !== undefined && (
+                              <span
+                                className={`text-[10px] font-semibold ${
+                                  diff > 0
+                                    ? 'text-emerald-400'
+                                    : diff < 0
+                                      ? 'text-cyan-400'
+                                      : 'text-slate-500'
+                                }`}
+                              >
+                                vs {compVal.toFixed(1)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Player Traits / Preferred Moves (Checkpoint 11) */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-amber-400">
+                    {tr('PLAYER TRAITS / PREFERRED MOVES (นิสัยการเล่นเฉพาะตัว)', 'PLAYER TRAITS / PREFERRED MOVES (นิสัยการเล่นเฉพาะตัว)')}
+                  </h3>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {tr(
+                      'Affects live 2D Match Engine behavior & can be passed on via Mentoring',
+                      'ส่งผลต่อการตัดสินใจใน Match Engine และถ่ายทอดสู่รุ่นน้องผ่านระบบ Mentoring ได้'
+                    )}
+                  </span>
+                </div>
+                {activeTraits.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                    {activeTraits.map((trait) => {
+                      const meta = PLAYER_TRAIT_CATALOG[trait];
+                      return (
+                        <div
+                          key={trait}
+                          className="p-2.5 rounded-lg bg-slate-900 border border-amber-500/30 flex flex-col justify-between"
+                        >
+                          <div className="text-xs font-semibold text-amber-300">
+                            ★ {meta ? tr(meta.labelEn, meta.labelTh) : trait}
+                          </div>
+                          {meta && (
+                            <div className="text-[11px] text-slate-400 mt-1">
+                              {tr(meta.descEn, meta.descTh)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-slate-400">
+                    {tr(
+                      'No signature Preferred Moves unlocked yet — assign to a Veteran Mentor in Training to learn traits.',
+                      'ยังไม่มีนิสัยการเล่นเฉพาะตัว — สามารถเข้ากลุ่มติวเข้ม (Mentoring) กับรุ่นพี่เพื่อเรียนรู้ทักษะพิเศษได้'
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* 3-Column 1-20 Attributes Grid: Technical, Mental, Physical */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Technical */}
@@ -743,12 +1198,33 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     TECHNICAL ATTRIBUTES (1–20)
                   </h3>
                   <div className="space-y-1 text-xs">
-                    {Object.entries(player.attributes.technical).map(([k, val]) => (
-                      <div key={k} className="flex items-center justify-between py-0.5 border-b border-slate-900">
-                        <span className="text-slate-300 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
-                        <span className={`font-mono tabular-nums ${renderAttrColor(val)}`}>{val}</span>
-                      </div>
-                    ))}
+                    {Object.entries(player.attributes.technical).map(([k, val]) => {
+                      const compVal = comparePlayer
+                        ? comparePlayer.attributes.technical[k as keyof typeof player.attributes.technical]
+                        : undefined;
+                      const diff = compVal !== undefined ? val - compVal : 0;
+                      return (
+                        <div key={k} className="flex items-center justify-between py-0.5 border-b border-slate-900">
+                          <span className="text-slate-300 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
+                          <div className="flex items-center gap-2 font-mono tabular-nums">
+                            <span className={renderAttrColor(val)}>{val}</span>
+                            {compVal !== undefined && (
+                              <span
+                                className={`text-[11px] ${
+                                  diff > 0
+                                    ? 'text-emerald-400'
+                                    : diff < 0
+                                      ? 'text-red-400'
+                                      : 'text-slate-500'
+                                }`}
+                              >
+                                vs {compVal} ({diff > 0 ? `+${diff}` : diff})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -758,12 +1234,33 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     MENTAL ATTRIBUTES (1–20)
                   </h3>
                   <div className="space-y-1 text-xs">
-                    {Object.entries(player.attributes.mental).map(([k, val]) => (
-                      <div key={k} className="flex items-center justify-between py-0.5 border-b border-slate-900">
-                        <span className="text-slate-300 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
-                        <span className={`font-mono tabular-nums ${renderAttrColor(val)}`}>{val}</span>
-                      </div>
-                    ))}
+                    {Object.entries(player.attributes.mental).map(([k, val]) => {
+                      const compVal = comparePlayer
+                        ? comparePlayer.attributes.mental[k as keyof typeof player.attributes.mental]
+                        : undefined;
+                      const diff = compVal !== undefined ? val - compVal : 0;
+                      return (
+                        <div key={k} className="flex items-center justify-between py-0.5 border-b border-slate-900">
+                          <span className="text-slate-300 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
+                          <div className="flex items-center gap-2 font-mono tabular-nums">
+                            <span className={renderAttrColor(val)}>{val}</span>
+                            {compVal !== undefined && (
+                              <span
+                                className={`text-[11px] ${
+                                  diff > 0
+                                    ? 'text-emerald-400'
+                                    : diff < 0
+                                      ? 'text-red-400'
+                                      : 'text-slate-500'
+                                }`}
+                              >
+                                vs {compVal} ({diff > 0 ? `+${diff}` : diff})
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -774,12 +1271,33 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       PHYSICAL ATTRIBUTES (1–20)
                     </h3>
                     <div className="space-y-1 text-xs">
-                      {Object.entries(player.attributes.physical).map(([k, val]) => (
-                        <div key={k} className="flex items-center justify-between py-0.5 border-b border-slate-900">
-                          <span className="text-slate-300 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
-                          <span className={`font-mono tabular-nums ${renderAttrColor(val)}`}>{val}</span>
-                        </div>
-                      ))}
+                      {Object.entries(player.attributes.physical).map(([k, val]) => {
+                        const compVal = comparePlayer
+                          ? comparePlayer.attributes.physical[k as keyof typeof player.attributes.physical]
+                          : undefined;
+                        const diff = compVal !== undefined ? val - compVal : 0;
+                        return (
+                          <div key={k} className="flex items-center justify-between py-0.5 border-b border-slate-900">
+                            <span className="text-slate-300 capitalize">{k.replace(/([A-Z])/g, ' $1')}</span>
+                            <div className="flex items-center gap-2 font-mono tabular-nums">
+                              <span className={renderAttrColor(val)}>{val}</span>
+                              {compVal !== undefined && (
+                                <span
+                                  className={`text-[11px] ${
+                                    diff > 0
+                                      ? 'text-emerald-400'
+                                      : diff < 0
+                                        ? 'text-red-400'
+                                        : 'text-slate-500'
+                                  }`}
+                                >
+                                  vs {compVal} ({diff > 0 ? `+${diff}` : diff})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -791,7 +1309,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     <div className="flex justify-between">
                       <span className="text-slate-400">Current Ability (CA):</span>
                       <span className="font-mono tabular-nums text-emerald-400 font-semibold">
-                        {(player.currentAbility / 10).toFixed(1)} / 20.0
+                        {isMyPlayer || scoutReport
+                          ? `${(player.currentAbility / 10).toFixed(1)} / 20.0`
+                          : `${Math.max(5, Math.round((player.currentAbility - 12) / 10))}–${Math.min(20, Math.round((player.currentAbility + 12) / 10))} / 20 (${tr('Unscouted', 'ยังไม่สเกาต์')})`}
                       </span>
                     </div>
                     <div className="flex justify-between">
@@ -886,140 +1406,307 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => onRenewContract(player.id, proposedWage, proposedYears, signingBonus)}
-                      className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
-                    >
-                      {tr('Submit Contract Renewal Offer', 'ยืนยันยื่นข้อเสนอต่อสัญญา')}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <h3 className="text-sm font-semibold text-emerald-400">
-                      {tr(`Make Transfer / Loan Offer (${playerClub?.name})`, `ยื่นข้อเสนอซื้อตัว / ยืมตัว (${playerClub?.name})`)}
-                    </h3>
-                    <div className="text-xs text-slate-400 font-mono tabular-nums">
-                      {tr('Asking Price:', 'ราคาประเมินที่สโมสรต้องการ:')} €{(player.askingPrice / 1_000_000).toFixed(2)}M
-                      {player.releaseClause
-                        ? ` · ${tr('Release Clause:', 'ค่าฉีกสัญญา')} €${(player.releaseClause / 1_000_000).toFixed(2)}M`
-                        : ''}
-                    </div>
+                      <button
+                        type="button"
+                        onClick={() => onRenewContract(player.id, proposedWage, proposedYears, signingBonus)}
+                        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+                      >
+                        {tr('Submit Contract Renewal Offer', 'ยืนยันยื่นข้อเสนอต่อสัญญา')}
+                      </button>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="trf-type" className="block text-xs text-slate-400 mb-1">
-                          {tr('Offer Type', 'ประเภทข้อเสนอ')}
-                        </label>
-                        <select
-                          id="trf-type"
-                          value={offerType}
-                          onChange={(e) => setOfferType(e.target.value as 'Transfer' | 'Loan')}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
-                        >
-                          <option value="Transfer">{tr('Permanent Transfer', 'ซื้อขาด (Permanent Transfer)')}</option>
-                          <option value="Loan">{tr('Season Loan', 'ยืมตัวจนจบฤดูกาล (Loan)')}</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label htmlFor="trf-upfront" className="block text-xs text-slate-400 mb-1">
-                          {tr('Upfront Fee (€)', 'เงินก้อนแรก Upfront Fee (€)')}
-                        </label>
-                        <input
-                          id="trf-upfront"
-                          type="number"
-                          step={100000}
-                          value={upfrontFee}
-                          onChange={(e) => setUpfrontFee(Number(e.target.value) || 0)}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
-                        />
-                      </div>
-                    </div>
+                      {/* Own-Player Transfer / Loan List, Asking Price & Squad Status Controls (Checkpoint 5) */}
+                      {onUpdatePlayerTransferAndSquadStatus && (
+                        <div className="pt-4 mt-4 border-t border-slate-800 space-y-3">
+                          <h4 className="text-xs font-semibold text-sky-400">
+                            {tr(
+                              'Squad Status & Transfer / Loan Listing Controls',
+                              'จัดการสถานะในทีม & ตั้งขาย / ปล่อยยืม (Squad & Transfer Status)'
+                            )}
+                          </h4>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="trf-inst" className="block text-xs text-slate-400 mb-1">
-                          {tr('Installments (€)', 'ผ่อนชำระ Installments (€)')}
-                        </label>
-                        <input
-                          id="trf-inst"
-                          type="number"
-                          step={100000}
-                          value={installmentsFee}
-                          onChange={(e) => setInstallmentsFee(Number(e.target.value) || 0)}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="trf-sellon" className="block text-xs text-slate-400 mb-1">
-                          {tr('Sell-on Clause (%)', 'ส่วนแบ่งขายต่อ Sell-on (%)')}
-                        </label>
-                        <input
-                          id="trf-sellon"
-                          type="number"
-                          min={0}
-                          max={40}
-                          value={sellOnPct}
-                          onChange={(e) => setSellOnPct(Number(e.target.value) || 0)}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
-                        />
-                      </div>
-                    </div>
+                          <div>
+                            <label htmlFor="own-squad-status" className="block text-[11px] text-slate-400 mb-1">
+                              {tr('Agreed Playing Time / Squad Status', 'บทบาทและเวลาลงสนาม (Squad Status)')}
+                            </label>
+                            <select
+                              id="own-squad-status"
+                              value={player.squadStatus}
+                              onChange={(e) =>
+                                onUpdatePlayerTransferAndSquadStatus(player.id, {
+                                  squadStatus: e.target.value as Player['squadStatus'],
+                                })
+                              }
+                              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                            >
+                              <option value="Star Player">Star Player (ตัวหลักซูเปอร์สตาร์)</option>
+                              <option value="Important Player">Important Player (ตัวหลักสำคัญ)</option>
+                              <option value="Regular Starter">Regular Starter (ตัวจริงสม่ำเสมอ)</option>
+                              <option value="Squad Player">Squad Player (หมุนเวียน/สำรอง)</option>
+                              <option value="Breakthrough Prospect">Breakthrough Prospect (ดาวรุ่งสอดแทรก)</option>
+                              <option value="Youth">Youth (เยาวชน)</option>
+                            </select>
+                          </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor="trf-wage" className="block text-xs text-slate-400 mb-1">
-                          {tr('Proposed Wage (€/wk)', 'ค่าเหนื่อยที่เสนอ (€/สัปดาห์)')}
-                        </label>
-                        <input
-                          id="trf-wage"
-                          type="number"
-                          step={500}
-                          value={proposedWage}
-                          onChange={(e) => setProposedWage(Number(e.target.value) || 0)}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="trf-status" className="block text-xs text-slate-400 mb-1">
-                          {tr('Squad Status', 'สถานะในทีม (Squad Status)')}
-                        </label>
-                        <select
-                          id="trf-status"
-                          value={proposedStatus}
-                          onChange={(e) => setProposedStatus(e.target.value as Player['squadStatus'])}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
-                        >
-                          <option value="Star Player">Star Player</option>
-                          <option value="Important Player">Important Player</option>
-                          <option value="Regular Starter">Regular Starter</option>
-                          <option value="Squad Player">Squad Player</option>
-                        </select>
-                      </div>
-                    </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdatePlayerTransferAndSquadStatus(player.id, {
+                                  transferListed: !player.transferListed,
+                                })
+                              }
+                              className={`py-2 px-3 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
+                                player.transferListed
+                                  ? 'bg-amber-500 text-slate-950 border-amber-400'
+                                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white'
+                              }`}
+                            >
+                              {player.transferListed
+                                ? tr('✓ Transfer Listed', '✓ ขึ้นบัญชีขายอยู่')
+                                : tr('Set Transfer Listed', 'ตั้งขึ้นบัญชีขาย')}
+                            </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onMakeTransferOffer({
-                          playerId: player.id,
-                          offerType,
-                          upfrontFee,
-                          installmentsFee,
-                          sellOnPercentage: sellOnPct,
-                          proposedWagePerWeek: proposedWage,
-                          proposedContractYears: proposedYears,
-                          proposedSquadStatus: proposedStatus,
-                          signingBonus,
-                        })
-                      }
-                      className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
-                    >
-                      {tr('Submit Transfer Offer & Negotiate Contract', 'ยื่นข้อเสนอซื้อขายและเจรจาสัญญาทันที')}
-                    </button>
-                  </>
-                )}
-              </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdatePlayerTransferAndSquadStatus(player.id, {
+                                  loanListed: !player.loanListed,
+                                })
+                              }
+                              className={`py-2 px-3 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
+                                player.loanListed
+                                  ? 'bg-sky-500 text-slate-950 border-sky-400'
+                                  : 'bg-slate-900 text-slate-300 border-slate-700 hover:text-white'
+                              }`}
+                            >
+                              {player.loanListed
+                                ? tr('✓ Loan Listed', '✓ ขึ้นบัญชีปล่อยยืมอยู่')
+                                : tr('Set Loan Listed', 'ตั้งขึ้นบัญชีปล่อยยืม')}
+                            </button>
+                          </div>
+
+                          <div>
+                            <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                              <span>{tr('Asking Price Valuation:', 'ตั้งราคาขาย (Asking Price):')}</span>
+                              <span className="font-mono text-emerald-400 font-semibold">
+                                €{(player.askingPrice / 1_000_000).toFixed(2)}M
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {[
+                                { mult: 0.75, label: '0.75x (Sale)' },
+                                { mult: 1.0, label: '1.0x (MV)' },
+                                { mult: 1.25, label: '1.25x' },
+                                { mult: 1.5, label: '1.5x' },
+                              ].map((preset) => {
+                                const targetVal = Math.round((player.marketValue * preset.mult) / 50_000) * 50_000;
+                                return (
+                                  <button
+                                    key={preset.label}
+                                    type="button"
+                                    onClick={() =>
+                                      onUpdatePlayerTransferAndSquadStatus(player.id, {
+                                        askingPrice: targetVal,
+                                      })
+                                    }
+                                    className="py-1.5 px-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded text-[11px] font-mono text-slate-200 cursor-pointer"
+                                  >
+                                    {preset.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <h3 className="text-sm font-semibold text-emerald-400">
+                        {tr(`Make Transfer / Loan Offer (${playerClub?.name})`, `ยื่นข้อเสนอซื้อตัว / ยืมตัว (${playerClub?.name})`)}
+                      </h3>
+                      <div className="text-xs text-slate-400 font-mono tabular-nums">
+                        {tr('Asking Price:', 'ราคาประเมินที่สโมสรต้องการ:')} €{(player.askingPrice / 1_000_000).toFixed(2)}M
+                        {player.releaseClause
+                          ? ` · ${tr('Release Clause:', 'ค่าฉีกสัญญา')} €${(player.releaseClause / 1_000_000).toFixed(2)}M`
+                          : ''}
+                      </div>
+
+                      {/* Bosman Free Pre-Contract Signing Banner (Checkpoint 8) */}
+                      {isBosmanEligible && onSignBosmanFree && (
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/40 space-y-2">
+                          <div className="text-xs font-semibold text-amber-300">
+                            {tr(
+                              `⚡ Bosman Rule Eligible (Expires ${player.contractEndDate})`,
+                              `⚡ เข้าเกณฑ์กฎ Bosman เซ็นฟรี (สัญญาหมด ${player.contractEndDate})`
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-300">
+                            {tr(
+                              'This player has less than 12 months remaining on his contract. You can approach him directly on a Bosman Free transfer (€0 Transfer Fee).',
+                              'นักเตะรายนี้เหลือสัญญาไม่ถึง 1 ปี คุณสามารถเจรจาค่าเหนื่อยเพื่อเซ็นคว้าตัวมาร่วมทีมแบบไร้ค่าตัว (€0) ตามกฎ Bosman ได้ทันที!'
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => onSignBosmanFree(player.id, proposedWage, proposedYears)}
+                            className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+                          >
+                            {tr(
+                              'Approach to Sign (Bosman Free — €0 Fee)',
+                              'ยื่นสัญญาคว้าตัวฟรีตามกฎ Bosman (€0 ค่าตัว)'
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Release Clause Immediate Activation Banner (Checkpoint 12) */}
+                      {!isMyPlayer && player.releaseClause && onActivateReleaseClause && (
+                        <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/40 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-semibold text-emerald-300">
+                              {tr(
+                                '🔓 Active Contract Release Clause',
+                                '🔓 ค่าฉีกสัญญาระบุไว้ในสัญญา (Release Clause)'
+                              )}
+                            </span>
+                            <span className="text-xs font-mono font-bold text-emerald-400">
+                              €{(player.releaseClause / 1_000_000).toFixed(2)}M
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-300">
+                            {tr(
+                              `Triggering the €${(player.releaseClause / 1_000_000).toFixed(2)}M release clause forces ${playerClub?.shortName} to accept immediately and finalizes personal terms right away.`,
+                              `การจ่ายค่าฉีกสัญญา €${(player.releaseClause / 1_000_000).toFixed(2)}M จะบังคับให้ ${playerClub?.shortName} ต้องปล่อยตัวทันทีโดยปฏิเสธไม่ได้!`
+                            )}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => onActivateReleaseClause(player.id, false)}
+                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+                          >
+                            {tr(
+                              `Trigger Release Clause (€${(player.releaseClause / 1_000_000).toFixed(2)}M — Instant Sign)`,
+                              `จ่ายค่าฉีกสัญญาคว้าตัวทันที (€${(player.releaseClause / 1_000_000).toFixed(2)}M)`
+                            )}
+                          </button>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="trf-type" className="block text-xs text-slate-400 mb-1">
+                            {tr('Offer Type', 'ประเภทข้อเสนอ')}
+                          </label>
+                          <select
+                            id="trf-type"
+                            value={offerType}
+                            onChange={(e) => setOfferType(e.target.value as 'Transfer' | 'Loan')}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                          >
+                            <option value="Transfer">{tr('Permanent Transfer', 'ซื้อขาด (Permanent Transfer)')}</option>
+                            <option value="Loan">{tr('Season Loan', 'ยืมตัวจนจบฤดูกาล (Loan)')}</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label htmlFor="trf-upfront" className="block text-xs text-slate-400 mb-1">
+                            {tr('Upfront Fee (€)', 'เงินก้อนแรก Upfront Fee (€)')}
+                          </label>
+                          <input
+                            id="trf-upfront"
+                            type="number"
+                            step={100000}
+                            value={upfrontFee}
+                            onChange={(e) => setUpfrontFee(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="trf-inst" className="block text-xs text-slate-400 mb-1">
+                            {tr('Installments (€)', 'ผ่อนชำระ Installments (€)')}
+                          </label>
+                          <input
+                            id="trf-inst"
+                            type="number"
+                            step={100000}
+                            value={installmentsFee}
+                            onChange={(e) => setInstallmentsFee(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="trf-sellon" className="block text-xs text-slate-400 mb-1">
+                            {tr('Sell-on Clause (%)', 'ส่วนแบ่งขายต่อ Sell-on (%)')}
+                          </label>
+                          <input
+                            id="trf-sellon"
+                            type="number"
+                            min={0}
+                            max={40}
+                            value={sellOnPct}
+                            onChange={(e) => setSellOnPct(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="trf-wage" className="block text-xs text-slate-400 mb-1">
+                            {tr('Proposed Wage (€/wk)', 'ค่าเหนื่อยที่เสนอ (€/สัปดาห์)')}
+                          </label>
+                          <input
+                            id="trf-wage"
+                            type="number"
+                            step={500}
+                            value={proposedWage}
+                            onChange={(e) => setProposedWage(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="trf-status" className="block text-xs text-slate-400 mb-1">
+                            {tr('Squad Status', 'สถานะในทีม (Squad Status)')}
+                          </label>
+                          <select
+                            id="trf-status"
+                            value={proposedStatus}
+                            onChange={(e) => setProposedStatus(e.target.value as Player['squadStatus'])}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                          >
+                            <option value="Star Player">Star Player</option>
+                            <option value="Important Player">Important Player</option>
+                            <option value="Regular Starter">Regular Starter</option>
+                            <option value="Squad Player">Squad Player</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onMakeTransferOffer({
+                            playerId: player.id,
+                            offerType,
+                            upfrontFee,
+                            installmentsFee,
+                            sellOnPercentage: sellOnPct,
+                            proposedWagePerWeek: proposedWage,
+                            proposedContractYears: proposedYears,
+                            proposedSquadStatus: proposedStatus,
+                            signingBonus,
+                          })
+                        }
+                        className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+                      >
+                        {tr('Submit Transfer Offer & Negotiate Contract', 'ยื่นข้อเสนอซื้อขายและเจรจาสัญญาทันที')}
+                      </button>
+                    </>
+                  )}
+                </div>
 
               {/* Right Column: Scout Report */}
               <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">

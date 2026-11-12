@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import {
   AttackingWidth,
   BuildUpPlay,
+  CornerRoutineType,
   DefensiveLine,
   FormationId,
+  FreeKickRoutineType,
   LineOfEngagement,
   Mentality,
   PassingDirectness,
@@ -12,6 +14,7 @@ import {
   PossessionLostInstruction,
   PossessionWonInstruction,
   PressingIntensity,
+  SetPieceSetup,
   TacticalSystem,
   TacklingStyle,
   Tempo,
@@ -22,12 +25,16 @@ import {
   analyzeTacticalRisks,
   autoPickLineup,
   calculatePositionFit,
+  computeAutoSetPieceTakers,
+  computeTacticalChemistryLinks,
+  computeTacticalPhaseCoordinates,
   evaluateAttributeSynergy,
   evaluatePlayerInjuryRisk,
   evaluateRoleSuitability,
   FORMATION_BLUEPRINTS,
   getRoleProfileInfo,
   ROLES_BY_POSITION,
+  TacticalShapeMode,
   togglePlayerInstructionWithExclusions,
 } from '../engine/tacticsEngine';
 import { soundService } from '../engine/soundService';
@@ -69,6 +76,8 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
   const club = world.clubs[world.controlledClubId];
   const [editingSecondary, setEditingSecondary] = useState(false);
   const [phaseTab, setPhaseTab] = useState<PhaseTab>('in_possession');
+  const [pitchShapeMode, setPitchShapeMode] = useState<TacticalShapeMode>('base');
+  const [showChemistryLinks, setShowChemistryLinks] = useState(true);
   const activeTactic = editingSecondary ? club.secondaryTactic : club.primaryTactic;
 
   const [selectedSlotIdx, setSelectedSlotIdx] = useState<number | null>(0);
@@ -77,6 +86,8 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
   const alerts = analyzeTacticalRisks(activeTactic, world.players);
   const synergy = evaluateAttributeSynergy(activeTactic, world.players);
+  const phaseCoords = computeTacticalPhaseCoordinates(activeTactic, pitchShapeMode);
+  const chemistryLinks = computeTacticalChemistryLinks(activeTactic, world.players);
 
   const handleFormationChange = (newFormation: FormationId) => {
     soundService.playClick();
@@ -446,26 +457,70 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
 
       {/* Main 3-Column Tactics Grid: Top-Down Pitch + Starting XI/Swap + 3-Phase Team & Player Instructions */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Left 5 Cols: Top-Down Pitch View with Phase Overlays & Role Vectors */}
+        {/* Left 5 Cols: Top-Down Pitch View with Phase Overlays, 3-Mode Shape Preview & Chemistry Links */}
         <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
             <h3 className="text-xs font-semibold text-slate-300">
               {tr(
                 `Pitch Structure (${FORMATION_BLUEPRINTS[activeTactic.formation].name})`,
                 `ผังตำแหน่งและการเคลื่อนที่ (${FORMATION_BLUEPRINTS[activeTactic.formation].name})`
               )}
             </h3>
-            <span className="text-[11px] text-slate-400">
-              {tr(
-                'Lines show Press & Def Line; arrows show Role runs',
-                'เส้นประแสดงแนวเพรส/แนวรับ ลูกศรแสดงทิศทาง Role'
-              )}
-            </span>
+            <button
+              type="button"
+              onClick={() => setShowChemistryLinks((v) => !v)}
+              className={`px-2.5 py-1 rounded text-[11px] font-medium border cursor-pointer transition-colors ${
+                showChemistryLinks
+                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
+              }`}
+            >
+              {showChemistryLinks
+                ? tr('★ Chemistry Links: ON', '★ เส้นความเข้าขา: เปิด')
+                : tr('☆ Chemistry Links: OFF', '☆ เส้นความเข้าขา: ปิด')}
+            </button>
+          </div>
+
+          {/* 3-Mode Pitch Shape Switcher (Base / In-Possession / Out-of-Possession) */}
+          <div className="grid grid-cols-3 gap-1 p-1 mb-3 bg-slate-950 rounded-lg border border-slate-800">
+            {[
+              {
+                id: 'base' as TacticalShapeMode,
+                labelEn: '1. Base Shape',
+                labelTh: '1. ผังพื้นฐาน (Base)',
+              },
+              {
+                id: 'in_possession' as TacticalShapeMode,
+                labelEn: '2. In-Possession',
+                labelTh: '2. ตอนครองบอลบุก',
+              },
+              {
+                id: 'out_of_possession' as TacticalShapeMode,
+                labelEn: '3. Out-of-Poss',
+                labelTh: '3. ตอนถอยตั้งรับ',
+              },
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  soundService.playClick();
+                  setPitchShapeMode(m.id);
+                }}
+                className={`py-1.5 px-2 rounded text-[11px] font-medium transition-colors cursor-pointer truncate ${
+                  pitchShapeMode === m.id
+                    ? 'bg-emerald-500 text-slate-950 font-semibold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {tr(m.labelEn, m.labelTh)}
+              </button>
+            ))}
           </div>
 
           {/* Interactive SVG/DOM Pitch */}
           <div className="relative w-full aspect-[3/4] rounded-xl overflow-hidden border border-slate-700 bg-[#0d4f38] select-none">
-            {/* Pitch Markings + Tactical Phase Overlays SVG */}
+            {/* Pitch Markings + Tactical Phase Overlays + Chemistry Links SVG */}
             <svg viewBox="0 0 300 400" className="absolute inset-0 w-full h-full pointer-events-none">
               <defs>
                 <marker
@@ -477,7 +532,18 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                   markerHeight="5"
                   orient="auto-start-reverse"
                 >
-                  <path d="M 0 1 L 9 5 L 0 9 z" fill="rgba(52, 211, 153, 0.85)" />
+                  <path d="M 0 1 L 9 5 L 0 9 z" fill="rgba(52, 211, 153, 0.9)" />
+                </marker>
+                <marker
+                  id="shift-arrow"
+                  viewBox="0 0 10 10"
+                  refX="7"
+                  refY="5"
+                  markerWidth="5"
+                  markerHeight="5"
+                  orient="auto-start-reverse"
+                >
+                  <path d="M 0 1 L 9 5 L 0 9 z" fill="rgba(56, 189, 248, 0.95)" />
                 </marker>
               </defs>
 
@@ -527,41 +593,99 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                 DEF LINE ({activeTactic.instructions.defensiveLine.toUpperCase()}{activeTactic.instructions.offsideTrap ? ' · OFFSIDE TRAP' : ''})
               </text>
 
-              {/* Role Movement Vectors for all 11 slots */}
-              {activeTactic.lineup.map((slot) => {
-                const profile = getRoleProfileInfo(slot.role);
-                const startX = (slot.x / 100) * 300;
-                const startY = (slot.y / 100) * 400;
-                // Flip horizontal vector for right-sided players cutting inside (e.g., Inverted Wing Back on DR or Inside Forward on AMR)
-                const isRightFlank = slot.x > 55;
-                const isLeftFlank = slot.x < 45;
-                let dx = profile.pitchVector.dx;
-                if (isRightFlank && dx > 0) dx = -dx;
-                if (!isLeftFlank && !isRightFlank) dx = 0;
+              {/* SVG Tactical Partnership & Chemistry Lines */}
+              {showChemistryLinks &&
+                chemistryLinks.map((link) => {
+                  const cA = phaseCoords[link.fromSlotIndex];
+                  const cB = phaseCoords[link.toSlotIndex];
+                  if (!cA || !cB) return null;
+                  const x1 = (cA.x / 100) * 300;
+                  const y1 = (cA.y / 100) * 400;
+                  const x2 = (cB.x / 100) * 300;
+                  const y2 = (cB.y / 100) * 400;
+                  return (
+                    <g key={link.id}>
+                      <line
+                        x1={x1}
+                        y1={y1}
+                        x2={x2}
+                        y2={y2}
+                        stroke={link.color}
+                        strokeOpacity={0.78}
+                        strokeWidth={link.level === 'strong' ? 2.6 : 2}
+                        strokeDasharray={link.dashed ? '5 3' : undefined}
+                      />
+                    </g>
+                  );
+                })}
 
-                // Apply Individual Instructions overrides (Stay Wider / Cut Inside)
-                if (slot.instructions.includes('Stay Wider')) {
-                  dx = isLeftFlank ? -12 : isRightFlank ? 12 : 0;
-                } else if (slot.instructions.includes('Cut Inside')) {
-                  dx = isLeftFlank ? 14 : isRightFlank ? -14 : 0;
-                }
+              {/* Phase Shift Ghost Origin & Movement Vectors (when In-Possession or Out-of-Possession) */}
+              {pitchShapeMode !== 'base' &&
+                phaseCoords.map((coord) => {
+                  const bx = (coord.baseX / 100) * 300;
+                  const by = (coord.baseY / 100) * 400;
+                  const tx = (coord.x / 100) * 300;
+                  const ty = (coord.y / 100) * 400;
+                  const dist = Math.hypot(tx - bx, ty - by);
+                  if (dist < 4) return null;
+                  return (
+                    <g key={`shift_${coord.slotIndex}`}>
+                      <circle
+                        cx={bx}
+                        cy={by}
+                        r="5"
+                        fill="rgba(15, 23, 42, 0.55)"
+                        stroke="rgba(148, 163, 184, 0.65)"
+                        strokeDasharray="2 2"
+                      />
+                      <line
+                        x1={bx}
+                        y1={by}
+                        x2={tx}
+                        y2={ty}
+                        stroke="rgba(56, 189, 248, 0.9)"
+                        strokeWidth="1.8"
+                        strokeDasharray="4 3"
+                        markerEnd="url(#shift-arrow)"
+                      />
+                    </g>
+                  );
+                })}
 
-                const dy = profile.pitchVector.dy * 1.9;
-                if (dx === 0 && dy === 0) return null;
+              {/* Base Shape Role Movement Vectors */}
+              {pitchShapeMode === 'base' &&
+                activeTactic.lineup.map((slot) => {
+                  const profile = getRoleProfileInfo(slot.role);
+                  const startX = (slot.x / 100) * 300;
+                  const startY = (slot.y / 100) * 400;
+                  const isRightFlank = slot.x > 55;
+                  const isLeftFlank = slot.x < 45;
+                  let dx = profile.pitchVector.dx;
+                  if (isRightFlank && dx > 0) dx = -dx;
+                  if (!isLeftFlank && !isRightFlank) dx = 0;
 
-                return (
-                  <line
-                    key={`vec_${slot.slotIndex}`}
-                    x1={startX}
-                    y1={startY}
-                    x2={startX + dx * 1.8}
-                    y2={startY + dy}
-                    stroke="rgba(52, 211, 153, 0.75)"
-                    strokeWidth="2"
-                    markerEnd="url(#role-arrow)"
-                  />
-                );
-              })}
+                  if (slot.instructions.includes('Stay Wider')) {
+                    dx = isLeftFlank ? -12 : isRightFlank ? 12 : 0;
+                  } else if (slot.instructions.includes('Cut Inside')) {
+                    dx = isLeftFlank ? 14 : isRightFlank ? -14 : 0;
+                  }
+
+                  const dy = profile.pitchVector.dy * 1.9;
+                  if (dx === 0 && dy === 0) return null;
+
+                  return (
+                    <line
+                      key={`vec_${slot.slotIndex}`}
+                      x1={startX}
+                      y1={startY}
+                      x2={startX + dx * 1.8}
+                      y2={startY + dy}
+                      stroke="rgba(52, 211, 153, 0.75)"
+                      strokeWidth="2"
+                      markerEnd="url(#role-arrow)"
+                    />
+                  );
+                })}
             </svg>
 
             {/* 11 Player Nodes on Pitch */}
@@ -571,6 +695,12 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
               const isSwapSource = p && swapSourcePlayerId === p.id;
               const posFit = p ? calculatePositionFit(p, slot.position) : 1;
               const lowCond = p && p.fitness < 70;
+              const coord = phaseCoords[idx] || {
+                x: slot.x,
+                y: slot.y,
+                roleShiftLabelEn: slot.role,
+                roleShiftLabelTh: slot.role,
+              };
 
               return (
                 <button
@@ -582,8 +712,8 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                       handleSwapPlayers(swapSourcePlayerId, p.id);
                     }
                   }}
-                  style={{ left: `${slot.x}%`, top: `${slot.y}%` }}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer transition-transform ${
+                  style={{ left: `${coord.x}%`, top: `${coord.y}%` }}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer transition-all duration-300 ${
                     isSelected ? 'scale-110 z-20' : 'hover:scale-105 z-10'
                   }`}
                 >
@@ -623,17 +753,71 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                     >
                       {slot.position}
                     </span>
+                    {p && activeTactic.setPieces?.captainId === p.id && (
+                      <span
+                        title={tr('Team Captain', 'กัปตันทีม')}
+                        className="absolute -top-1.5 -left-1.5 px-1 rounded bg-amber-400 text-slate-950 text-[9px] font-mono font-extrabold border border-white shadow"
+                      >
+                        C
+                      </span>
+                    )}
                   </div>
                   <div className="mt-1 px-2 py-0.5 rounded bg-slate-950/90 text-[11px] font-medium text-white whitespace-nowrap border border-slate-800">
                     {p ? p.lastName : tr('Empty', 'ว่าง')}
                   </div>
-                  <div className="text-[10px] text-emerald-300 bg-slate-950/80 px-1.5 rounded truncate max-w-[96px]">
-                    {slot.role}
+                  <div
+                    className={`text-[10px] px-1.5 rounded truncate max-w-[105px] ${
+                      pitchShapeMode !== 'base'
+                        ? 'text-sky-300 bg-slate-950/90 border border-sky-500/40'
+                        : 'text-emerald-300 bg-slate-950/80'
+                    }`}
+                  >
+                    {pitchShapeMode === 'base'
+                      ? slot.role
+                      : tr(coord.roleShiftLabelEn, coord.roleShiftLabelTh)}
                   </div>
                 </button>
               );
             })}
           </div>
+
+          {/* Chemistry Partnerships Legend & Summary */}
+          {showChemistryLinks && (
+            <div className="mt-3 pt-2.5 border-t border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-slate-300">
+                  {tr('Tactical Partnerships (Chemistry)', 'ความเข้าขาระหว่างตำแหน่ง (Chemistry Links)')}
+                </span>
+                <div className="flex items-center gap-2.5 text-[10px] font-mono">
+                  <span className="text-emerald-400">● {tr('Strong', 'เข้าขาดี')}</span>
+                  <span className="text-amber-400">● {tr('Developing', 'ปานกลาง')}</span>
+                  <span className="text-red-400">╌ {tr('Conflict', 'ทับซ้อน/ผิดตำแหน่ง')}</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5 max-h-24 overflow-y-auto">
+                {chemistryLinks.map((lk) => (
+                  <div
+                    key={lk.id}
+                    className="px-2 py-1 rounded bg-slate-950 border border-slate-800 flex items-center justify-between text-[10px]"
+                    title={tr(lk.reasonEn, lk.reasonTh)}
+                  >
+                    <span className="text-slate-300 truncate">{lk.pairName}</span>
+                    <span
+                      className={`font-mono font-bold ${
+                        lk.level === 'strong'
+                          ? 'text-emerald-400'
+                          : lk.level === 'medium'
+                            ? 'text-amber-400'
+                            : 'text-red-400'
+                      }`}
+                    >
+                      {lk.score}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Center 4 Cols: Starting XI & Substitutes Table with Condition, Sharpness & Swap */}
@@ -702,6 +886,11 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                         >
                           {p.firstName} {p.lastName}
                         </button>
+                        {activeTactic.setPieces?.captainId === p.id && (
+                          <span className="px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/40 text-[9px] font-mono font-bold">
+                            [C]
+                          </span>
+                        )}
                         {slot.instructions.length > 0 && (
                           <span className="text-[10px] font-mono text-sky-400">
                             [{slot.instructions.length} PI]
@@ -1409,8 +1598,202 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
               </div>
             </div>
           )}
+
+          {/* Checkpoint 10: Captain & Set Piece Creator Card */}
+          {(() => {
+            const starters = activeTactic.lineup
+              .map((s) => (s.playerId ? world.players[s.playerId] : null))
+              .filter((p): p is NonNullable<typeof p> => Boolean(p));
+            const candidatePool = starters.length > 0 ? starters : clubPlayers;
+            const currentSetPieces: SetPieceSetup =
+              activeTactic.setPieces || computeAutoSetPieceTakers(candidatePool);
+
+            const handleUpdateSetPieces = (patch: Partial<SetPieceSetup>) => {
+              onUpdateTactic(
+                {
+                  ...activeTactic,
+                  setPieces: {
+                    ...currentSetPieces,
+                    ...patch,
+                  },
+                },
+                editingSecondary
+              );
+            };
+
+            return (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-semibold text-amber-400">
+                      {tr(
+                        'Captaincy & Set Piece Routines',
+                        'กัปตันทีม & แผนลูกตั้งเตะ (Captain & Set Pieces)'
+                      )}
+                    </h3>
+                    <p className="text-[10px] text-slate-400">
+                      {tr(
+                        'Assign your leader and dead-ball specialists + tactical delivery routines',
+                        'กำหนดกัปตันทีม คนยิงจุดโทษ/ฟรีคิก/เตะมุม และรูปแบบการโจมตีลูกตั้งเตะ'
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateSetPieces(computeAutoSetPieceTakers(candidatePool))
+                    }
+                    className="px-2.5 py-1 rounded bg-slate-800 hover:bg-emerald-500/20 text-emerald-300 border border-slate-700 text-[10px] font-medium cursor-pointer"
+                  >
+                    {tr('Auto-Assign Best', 'เลือกคนแม่นสุดอัตโนมัติ')}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label htmlFor="sp-captain" className="block text-[11px] text-slate-400 mb-1">
+                      {tr('Team Captain [C] (Leadership)', 'กัปตันทีม [C] (Leadership / ความเป็นผู้นำ)')}
+                    </label>
+                    <select
+                      id="sp-captain"
+                      value={currentSetPieces.captainId || ''}
+                      onChange={(e) => handleUpdateSetPieces({ captainId: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-xs text-slate-100"
+                    >
+                      {[...candidatePool]
+                        .sort((a, b) => b.attributes.mental.leadership - a.attributes.mental.leadership)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.firstName[0]}. {p.lastName} (Ldr {p.attributes.mental.leadership} · Det{' '}
+                            {p.attributes.mental.determination})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="sp-penalty" className="block text-[11px] text-slate-400 mb-1">
+                      {tr('Penalty Taker (PK)', 'คนยิงจุดโทษมือ 1 (Penalty Taking)')}
+                    </label>
+                    <select
+                      id="sp-penalty"
+                      value={currentSetPieces.penaltyTakerId || ''}
+                      onChange={(e) => handleUpdateSetPieces({ penaltyTakerId: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-xs text-slate-100"
+                    >
+                      {[...candidatePool]
+                        .sort((a, b) => b.attributes.technical.penaltyTaking - a.attributes.technical.penaltyTaking)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.firstName[0]}. {p.lastName} (PK {p.attributes.technical.penaltyTaking} · Cmp{' '}
+                            {p.attributes.mental.composure})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="sp-freekick" className="block text-[11px] text-slate-400 mb-1">
+                      {tr('Free-Kick Taker (FK)', 'คนยิงฟรีคิกมือ 1 (Free Kick Taking)')}
+                    </label>
+                    <select
+                      id="sp-freekick"
+                      value={currentSetPieces.freeKickTakerId || ''}
+                      onChange={(e) => handleUpdateSetPieces({ freeKickTakerId: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-xs text-slate-100"
+                    >
+                      {[...candidatePool]
+                        .sort((a, b) => b.attributes.technical.freeKickTaking - a.attributes.technical.freeKickTaking)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.firstName[0]}. {p.lastName} (FK {p.attributes.technical.freeKickTaking} · Tech{' '}
+                            {p.attributes.technical.technique})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="sp-corner" className="block text-[11px] text-slate-400 mb-1">
+                      {tr('Corner Taker (CK)', 'คนเปิดเตะมุมหลัก (Corners)')}
+                    </label>
+                    <select
+                      id="sp-corner"
+                      value={currentSetPieces.cornerTakerId || ''}
+                      onChange={(e) => handleUpdateSetPieces({ cornerTakerId: e.target.value })}
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-xs text-slate-100"
+                    >
+                      {[...candidatePool]
+                        .sort((a, b) => b.attributes.technical.corners - a.attributes.technical.corners)
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.firstName[0]}. {p.lastName} (Cor {p.attributes.technical.corners} · Crs{' '}
+                            {p.attributes.technical.crossing})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tactical Routines for Corners & Free Kicks */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-slate-800">
+                  <div>
+                    <label htmlFor="sp-corner-routine" className="block text-[11px] text-slate-300 mb-1">
+                      {tr('Corner Delivery Routine', 'แผนการเปิดลูกเตะมุม (Corner Routine)')}
+                    </label>
+                    <select
+                      id="sp-corner-routine"
+                      value={currentSetPieces.cornerRoutine}
+                      onChange={(e) =>
+                        handleUpdateSetPieces({ cornerRoutine: e.target.value as CornerRoutineType })
+                      }
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-xs text-emerald-300"
+                    >
+                      <option value="near_post">
+                        {tr('Near Post Flick-On (โยนโฉบเสาแรก)', 'โยนโฉบเสาแรก (Near Post)')}
+                      </option>
+                      <option value="far_post">
+                        {tr('Far Post Power Header (โยนกดเสาสอง)', 'โยนกดเสาสอง (Far Post)')}
+                      </option>
+                      <option value="centre">
+                        {tr('Six-Yard Box Crowd (อัดจุดโทษ/กรอบ 6 หลา)', 'อัดกลางกรอบ 6 หลา (Six-Yard Box)')}
+                      </option>
+                      <option value="short">
+                        {tr('Short Corner Overload (เล่นสั้นเซ็ตเข้าเขตโทษ)', 'เล่นสั้นเซ็ตเข้าเขตโทษ (Short Corner)')}
+                      </option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="sp-fk-routine" className="block text-[11px] text-slate-300 mb-1">
+                      {tr('Free-Kick Routine', 'แผนการเล่นลูกฟรีคิก (Free-Kick Routine)')}
+                    </label>
+                    <select
+                      id="sp-fk-routine"
+                      value={currentSetPieces.freeKickRoutine}
+                      onChange={(e) =>
+                        handleUpdateSetPieces({ freeKickRoutine: e.target.value as FreeKickRoutineType })
+                      }
+                      className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded text-xs text-sky-300"
+                    >
+                      <option value="direct_shoot">
+                        {tr('Direct Shot on Goal (ยิงตรงเข้ากรอบ)', 'ยิงปั่นเข้าประตูโดยตรง (Direct Shot)')}
+                      </option>
+                      <option value="cross_box">
+                        {tr('Whipped Cross to Target Men (โยนเข้าหัวตัวโหม่ง)', 'เปิดโค้งเข้าหัวตัวโหม่ง (Cross to Box)')}
+                      </option>
+                      <option value="short_layoff">
+                        {tr('Short Layoff for Long Shot (เขี่ยสั้นให้แถวสองยิง)', 'เขี่ยสั้นให้แถวสองซัดเต็มข้อ (Short Layoff)')}
+                      </option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
   );
 };
+

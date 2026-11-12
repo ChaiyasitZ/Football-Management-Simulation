@@ -260,3 +260,118 @@ export function getLeaguePlayerLeaders(
 
   return { topScorers, topAssists, topRated };
 }
+
+/**
+ * Generates initial Round of 16 knockout fixtures for a Domestic Cup (e.g., FA Cup, Copa del Rey, DFB-Pokal)
+ */
+export function generateInitialDomesticCupFixtures(
+  cupId: import('../types/game').CupId,
+  countryClubs: Club[],
+  seasonId: string,
+  startDate = '2026-10-28'
+): Fixture[] {
+  const sorted = [...countryClubs].sort((a, b) => b.reputation - a.reputation);
+  const participants = sorted.slice(0, 16);
+  if (participants.length < 8) return [];
+
+  const fixtures: Fixture[] = [];
+  const pairCount = Math.floor(participants.length / 2);
+  for (let i = 0; i < pairCount; i++) {
+    const home = participants[i];
+    const away = participants[participants.length - 1 - i];
+    fixtures.push({
+      id: `fix_${cupId}_${seasonId}_R16_${i + 1}`,
+      competitionId: cupId,
+      seasonId,
+      matchday: 1,
+      kickoffDate: startDate,
+      homeClubId: home.id,
+      awayClubId: away.id,
+      status: 'Scheduled',
+      uefaStage: 'R16',
+      tieIndex: i,
+    });
+  }
+  return fixtures;
+}
+
+/**
+ * Determines the winner of a completed single-leg Domestic Cup knockout fixture
+ */
+export function getDomesticCupFixtureWinnerId(fix: Fixture): string | null {
+  if (fix.status !== 'Completed' || !fix.result) return null;
+  if (fix.result.homeGoals > fix.result.awayGoals) return fix.homeClubId;
+  if (fix.result.awayGoals > fix.result.homeGoals) return fix.awayClubId;
+  if (fix.result.penaltyShootout) {
+    return fix.result.penaltyShootout.homePenalties >= fix.result.penaltyShootout.awayPenalties
+      ? fix.homeClubId
+      : fix.awayClubId;
+  }
+  return fix.homeClubId;
+}
+
+function addDaysISO(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Checks if the current round of a Domestic Cup is complete and generates the next round (R16 -> QF -> SF -> FINAL)
+ */
+export function checkAndAdvanceDomesticCup(
+  cupId: import('../types/game').CupId,
+  allFixtures: Fixture[],
+  seasonId: string,
+  currentGameDate: string
+): Fixture[] {
+  const cupFixtures = allFixtures.filter(
+    (f) => f.competitionId === cupId && f.seasonId === seasonId
+  );
+  if (cupFixtures.length === 0) return [];
+  if (cupFixtures.some((f) => f.status !== 'Completed')) return [];
+
+  const stages: import('../types/game').UefaStage[] = ['R16', 'QF', 'SF', 'FINAL'];
+  let latestStageIdx = -1;
+  for (let i = stages.length - 1; i >= 0; i--) {
+    if (cupFixtures.some((f) => f.uefaStage === stages[i])) {
+      latestStageIdx = i;
+      break;
+    }
+  }
+  if (latestStageIdx < 0 || latestStageIdx >= stages.length - 1) return [];
+
+  const currentStage = stages[latestStageIdx];
+  const nextStage = stages[latestStageIdx + 1];
+  const currentRoundFixtures = cupFixtures
+    .filter((f) => f.uefaStage === currentStage)
+    .sort((a, b) => (a.tieIndex ?? 0) - (b.tieIndex ?? 0));
+
+  const winners = currentRoundFixtures
+    .map((f) => getDomesticCupFixtureWinnerId(f))
+    .filter((id): id is string => Boolean(id));
+
+  if (winners.length < 2) return [];
+
+  const nextKickoff = addDaysISO(currentGameDate, 28);
+  const newFixtures: Fixture[] = [];
+  const pairCount = Math.floor(winners.length / 2);
+
+  for (let i = 0; i < pairCount; i++) {
+    newFixtures.push({
+      id: `fix_${cupId}_${seasonId}_${nextStage}_${i + 1}`,
+      competitionId: cupId,
+      seasonId,
+      matchday: latestStageIdx + 2,
+      kickoffDate: nextKickoff,
+      homeClubId: winners[i * 2],
+      awayClubId: winners[i * 2 + 1],
+      status: 'Scheduled',
+      uefaStage: nextStage,
+      tieIndex: i,
+    });
+  }
+
+  return newFixtures;
+}
+

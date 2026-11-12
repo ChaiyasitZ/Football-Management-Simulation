@@ -3,7 +3,15 @@ import { Club, Player } from '../types/game';
 import { getPlayerFaceUrl } from '../engine/engPlayerFaces';
 
 export const PlayerAvatar: React.FC<{
-  player?: Pick<Player, 'id' | 'firstName' | 'lastName' | 'clubId' | 'positions'> | null;
+  player?:
+    | (Pick<Player, 'id' | 'firstName' | 'lastName' | 'clubId' | 'positions'> &
+        Partial<
+          Pick<
+            Player,
+            'isYouthAcademy' | 'isWonderkid' | 'squadStatus' | 'potentialAbility' | 'dateOfBirth'
+          >
+        >)
+    | null;
   club?: Pick<Club, 'id' | 'leagueId' | 'countryId' | 'primaryColor'> | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;

@@ -1081,6 +1081,135 @@ export const ENG_VERIFIED_FALLBACK_FACES: string[] = [
   "https://resources.premierleague.com/premierleague25/photos/players/110x140/216055.png"
 ];
 
+export const WONDERKID_FACES_BY_NAME: Record<string, string> = {
+  "lamine yamal": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/13/Lamine_Yamal_France_v_Spain_7.24.26-142.jpg/250px-Lamine_Yamal_France_v_Spain_7.24.26-142.jpg",
+  "pau cubarsi": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/77/Pau_Cubarsi_Argentina_v_Spain_19_July_2026-181_%28cropped%29.jpg/250px-Pau_Cubarsi_Argentina_v_Spain_19_July_2026-181_%28cropped%29.jpg",
+  "marc bernal": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/Marc_Bernal_%282025%29.png/250px-Marc_Bernal_%282025%29.png",
+  "fermin lopez": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5c/Ferm%C3%ADn_L%C3%B3pez_%28cropped%29.jpg/250px-Ferm%C3%ADn_L%C3%B3pez_%28cropped%29.jpg",
+  "gavi": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Gavi_Argentina_v_Spain_19_July_2026-013.jpg/250px-Gavi_Argentina_v_Spain_19_July_2026-013.jpg",
+  "pablo gavi": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4a/Gavi_Argentina_v_Spain_19_July_2026-013.jpg/250px-Gavi_Argentina_v_Spain_19_July_2026-013.jpg",
+  "pedri": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1c/Pedri_France_v_Spain_7.24.26-245.jpg/250px-Pedri_France_v_Spain_7.24.26-245.jpg",
+  "pedri gonzalez": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1c/Pedri_France_v_Spain_7.24.26-245.jpg/250px-Pedri_France_v_Spain_7.24.26-245.jpg",
+  "alejandro balde": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/93/Esapana-inglaterra-74_%2848899354493%29.jpg/250px-Esapana-inglaterra-74_%2848899354493%29.jpg",
+  "hector fort": "https://resources.premierleague.com/premierleague25/photos/players/110x140/609873.png",
+  "guille fernandez": "https://resources.premierleague.com/premierleague25/photos/players/110x140/651426.png",
+  "jude bellingham": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/23/Jude_Bellingham_England_v_Ghana_23_June_2026-061_%28cropped%29.jpg/250px-Jude_Bellingham_England_v_Ghana_23_June_2026-061_%28cropped%29.jpg",
+  "eduardo camavinga": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/Ofrenda_de_la_Liga_y_la_Champions-13-L.Mill%C3%A1n_%2852109790215%29_%28cropped%29.jpg/250px-Ofrenda_de_la_Liga_y_la_Champions-13-L.Mill%C3%A1n_%2852109790215%29_%28cropped%29.jpg",
+  "arda guler": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9f/Arda_G%C3%BCler_2025.jpg/250px-Arda_G%C3%BCler_2025.jpg",
+  "endrick": "https://resources.premierleague.com/premierleague25/photos/players/110x140/592984.png",
+  "endrick felipe": "https://resources.premierleague.com/premierleague25/photos/players/110x140/592984.png",
+  "dean huijsen": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d6/Dean_Huijsen_2024.jpg/250px-Dean_Huijsen_2024.jpg",
+  "franco mastantuono": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Franco_Mastantuono_in_2025_%28cropped%29.jpg/250px-Franco_Mastantuono_in_2025_%28cropped%29.jpg",
+  "joan martinez": "https://resources.premierleague.com/premierleague25/photos/players/110x140/647850.png",
+  "pablo barrios": "https://resources.premierleague.com/premierleague25/photos/players/110x140/550615.png",
+  "arthur vermeeren": "https://resources.premierleague.com/premierleague25/photos/players/110x140/577016.png",
+  "warren zaire-emery": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2b/Warren_Zaire-Emery_France_v_Senegal_16_June_2026-279.jpg/250px-Warren_Zaire-Emery_France_v_Senegal_16_June_2026-279.jpg",
+  "joao neves": "https://resources.premierleague.com/premierleague25/photos/players/110x140/551210.png",
+  "desire doue": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/92/Desire_Doue_France_v_Senegal_16_June_2026-264.jpg/250px-Desire_Doue_France_v_Senegal_16_June_2026-264.jpg",
+  "bradley barcola": "https://resources.premierleague.com/premierleague25/photos/players/110x140/482616.png",
+  "lucas beraldo": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9b/Beraldo_asse_psg_2425.png/250px-Beraldo_asse_psg_2425.png",
+  "senny mayulu": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/65/Match_Football_Paris_SG_x_AS_Saint_%C3%89tienne_Stade_Parc_Princes_-_Paris_XVI_%28FR75%29_-_2025-01-12_-_65.jpg/250px-Match_Football_Paris_SG_x_AS_Saint_%C3%89tienne_Stade_Parc_Princes_-_Paris_XVI_%28FR75%29_-_2025-01-12_-_65.jpg",
+  "ibrahim mbaye": "https://resources.premierleague.com/premierleague25/photos/players/110x140/661888.png",
+  "jamal musiala": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/44/Jamal_Musiala_Ecuador_v_Germany_25_June_2026-174_%28cropped%29.jpg/250px-Jamal_Musiala_Ecuador_v_Germany_25_June_2026-174_%28cropped%29.jpg",
+  "florian wirtz": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/70/Florian_Wirtz_Ecuador_v_Germany_25_June_2026-181_%28cropped%29.jpg/250px-Florian_Wirtz_Ecuador_v_Germany_25_June_2026-181_%28cropped%29.jpg",
+  "aleksandar pavlovic": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ed/Aleksandar_Pavlovic_Ecuador_v_Germany_25_June_2026-036.jpg/250px-Aleksandar_Pavlovic_Ecuador_v_Germany_25_June_2026-036.jpg",
+  "paul wanner": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/41/Paul_wanner-1772636856_%28cropped%29.JPG/250px-Paul_wanner-1772636856_%28cropped%29.JPG",
+  "mathys tel": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a2/Mathys_Tel_en_2026.png/250px-Mathys_Tel_en_2026.png",
+  "kenan yildiz": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Kenan_Y%C4%B1ld%C4%B1z_in_the_international_match_%28March_2025%29_%28cropped%29.jpg/250px-Kenan_Y%C4%B1ld%C4%B1z_in_the_international_match_%28March_2025%29_%28cropped%29.jpg",
+  "francesco camarda": "https://resources.premierleague.com/premierleague25/photos/players/110x140/610799.png",
+  "nico paz": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0e/Nico_Paz_Argentina_v_Spain_19_July_2026-057.jpg/250px-Nico_Paz_Argentina_v_Spain_19_July_2026-057.jpg",
+  "assane diao": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Assane_Diao_France_v_Senegal_16_June_2026-241.jpg/250px-Assane_Diao_France_v_Senegal_16_June_2026-241.jpg",
+  "antonio silva": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f2/Ant%C3%B3nio_Silva_USMNT_v_Portugal_Mar_31_2026-19_%28cropped%29.jpg/250px-Ant%C3%B3nio_Silva_USMNT_v_Portugal_Mar_31_2026-19_%28cropped%29.jpg",
+  "geovany quenda": "https://resources.premierleague.com/premierleague25/photos/players/110x140/611695.png",
+  "rodrigo mora": "https://resources.premierleague.com/premierleague25/photos/players/110x140/597462.png",
+  "samu aghehowa": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5c/Uzbekistan_vs._Spain%2C_2024_Summer_Olympic_men%27s_association_football%2C_2024-07-24_%28471%29_-_Samu.jpg/250px-Uzbekistan_vs._Spain%2C_2024_Summer_Olympic_men%27s_association_football%2C_2024-07-24_%28471%29_-_Samu.jpg",
+  "samu omorodion": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5c/Uzbekistan_vs._Spain%2C_2024_Summer_Olympic_men%27s_association_football%2C_2024-07-24_%28471%29_-_Samu.jpg/250px-Uzbekistan_vs._Spain%2C_2024_Summer_Olympic_men%27s_association_football%2C_2024-07-24_%28471%29_-_Samu.jpg",
+  "jorrel hato": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/49/Jorrel_Hato_Chelsea_AC_Milan_warm_up.jpg/250px-Jorrel_Hato_Chelsea_AC_Milan_warm_up.jpg",
+  "semih kilicsoy": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f6/Semih_K%C4%B1l%C4%B1%C3%A7soy_20240803.jpg/250px-Semih_K%C4%B1l%C4%B1%C3%A7soy_20240803.jpg",
+  "can uzun": "https://resources.premierleague.com/premierleague25/photos/players/110x140/586309.png",
+  "jobe bellingham": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0e/Jobe_Bellingham_Jan_2022.png/250px-Jobe_Bellingham_Jan_2022.png",
+  "chris rigg": "https://images.fotmob.com/image_resources/playerimages/1327319.png",
+  "archie gray": "https://images.fotmob.com/image_resources/playerimages/1323305.png",
+  "lucas bergvall": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/11/Lucas_Bergvall_France_v_Sweden_6.30.26-050.jpg/250px-Lucas_Bergvall_France_v_Sweden_6.30.26-050.jpg",
+  "mikey moore": "https://resources.premierleague.com/premierleague25/photos/players/110x140/594112.png",
+  "leny yoro": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a2/RC_Lens_-_Lille_OSC_%2808-10-2023%29_12_%28cropped1%29.jpg/250px-RC_Lens_-_Lille_OSC_%2808-10-2023%29_12_%28cropped1%29.jpg",
+  "kobbie mainoo": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Kobbie_Mainoo_England_v_Ghana_23_June_2026-042.jpg/250px-Kobbie_Mainoo_England_v_Ghana_23_June_2026-042.jpg",
+  "chido obi-martin": "https://resources.premierleague.com/premierleague25/photos/players/110x140/577725.png",
+  "ethan nwaneri": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cd/Ethan_Nwaneri.png/250px-Ethan_Nwaneri.png",
+  "myles lewis-skelly": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/70/Myles_Lewis-Skelly_2026_%28cropped%29.jpg/250px-Myles_Lewis-Skelly_2026_%28cropped%29.jpg",
+  "max dowman": "https://resources.premierleague.com/premierleague25/photos/players/110x140/608227.png",
+  "rico lewis": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0f/ManCity20240722-027.jpg/250px-ManCity20240722-027.jpg",
+  "claudio echeverri": "https://resources.premierleague.com/premierleague25/photos/players/110x140/566213.png",
+  "vitor reis": "https://resources.premierleague.com/premierleague25/photos/players/110x140/570794.png",
+  "estevao willian": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b3/Estevao-Palmeiras-Liverpool-abr24_%28cropped%29.jpg/250px-Estevao-Palmeiras-Liverpool-abr24_%28cropped%29.jpg",
+  "kendry paez": "https://resources.premierleague.com/premierleague25/photos/players/110x140/606930.png",
+  "josh acheampong": "https://resources.premierleague.com/premierleague25/photos/players/110x140/539142.png",
+  "tyrique george": "https://resources.premierleague.com/premierleague25/photos/players/110x140/540324.png",
+  "trey nyoni": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9e/Trey_Nyoni_04012026_%281%29.jpg/250px-Trey_Nyoni_04012026_%281%29.jpg",
+  "rio ngumoha": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/89/Rio_Ngumoha_04012026_%286%29.jpg/250px-Rio_Ngumoha_04012026_%286%29.jpg",
+  "ayyoub bouaddi": "https://resources.premierleague.com/premierleague25/photos/players/110x140/637238.png",
+  "eli junior kroupi": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/49/Eli_Junior_Kroupi.jpg/250px-Eli_Junior_Kroupi.jpg",
+  "sverre nypan": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/de/Str%C3%B8msgodset_v_Rosenborg_BK%2C_29_March_2025_%2848%29_%28Sverre_Nypan%29.jpg/250px-Str%C3%B8msgodset_v_Rosenborg_BK%2C_29_March_2025_%2848%29_%28Sverre_Nypan%29.jpg",
+  "julien duranville": "https://resources.premierleague.com/premierleague25/photos/players/110x140/531442.png",
+  "kjell watjen": "https://resources.premierleague.com/premierleague25/photos/players/110x140/543968.png",
+  "paris brunner": "https://resources.premierleague.com/premierleague25/photos/players/110x140/514356.png",
+  "eliesse ben seghir": "https://resources.premierleague.com/premierleague25/photos/players/110x140/508395.png"
+};
+
+export const YOUTH_WONDERKID_FALLBACK_FACES: string[] = [
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/13/Lamine_Yamal_France_v_Spain_7.24.26-142.jpg/250px-Lamine_Yamal_France_v_Spain_7.24.26-142.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/77/Pau_Cubarsi_Argentina_v_Spain_19_July_2026-181_%28cropped%29.jpg/250px-Pau_Cubarsi_Argentina_v_Spain_19_July_2026-181_%28cropped%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/Marc_Bernal_%282025%29.png/250px-Marc_Bernal_%282025%29.png",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9f/Arda_G%C3%BCler_2025.jpg/250px-Arda_G%C3%BCler_2025.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d6/Dean_Huijsen_2024.jpg/250px-Dean_Huijsen_2024.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Franco_Mastantuono_in_2025_%28cropped%29.jpg/250px-Franco_Mastantuono_in_2025_%28cropped%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2b/Warren_Zaire-Emery_France_v_Senegal_16_June_2026-279.jpg/250px-Warren_Zaire-Emery_France_v_Senegal_16_June_2026-279.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/92/Desire_Doue_France_v_Senegal_16_June_2026-264.jpg/250px-Desire_Doue_France_v_Senegal_16_June_2026-264.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ed/Aleksandar_Pavlovic_Ecuador_v_Germany_25_June_2026-036.jpg/250px-Aleksandar_Pavlovic_Ecuador_v_Germany_25_June_2026-036.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/41/Paul_wanner-1772636856_%28cropped%29.JPG/250px-Paul_wanner-1772636856_%28cropped%29.JPG",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e0/Kenan_Y%C4%B1ld%C4%B1z_in_the_international_match_%28March_2025%29_%28cropped%29.jpg/250px-Kenan_Y%C4%B1ld%C4%B1z_in_the_international_match_%28March_2025%29_%28cropped%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0e/Nico_Paz_Argentina_v_Spain_19_July_2026-057.jpg/250px-Nico_Paz_Argentina_v_Spain_19_July_2026-057.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f2/Ant%C3%B3nio_Silva_USMNT_v_Portugal_Mar_31_2026-19_%28cropped%29.jpg/250px-Ant%C3%B3nio_Silva_USMNT_v_Portugal_Mar_31_2026-19_%28cropped%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/49/Jorrel_Hato_Chelsea_AC_Milan_warm_up.jpg/250px-Jorrel_Hato_Chelsea_AC_Milan_warm_up.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f6/Semih_K%C4%B1l%C4%B1%C3%A7soy_20240803.jpg/250px-Semih_K%C4%B1l%C4%B1%C3%A7soy_20240803.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0e/Jobe_Bellingham_Jan_2022.png/250px-Jobe_Bellingham_Jan_2022.png",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a2/RC_Lens_-_Lille_OSC_%2808-10-2023%29_12_%28cropped1%29.jpg/250px-RC_Lens_-_Lille_OSC_%2808-10-2023%29_12_%28cropped1%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cd/Ethan_Nwaneri.png/250px-Ethan_Nwaneri.png",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Kobbie_Mainoo_England_v_Ghana_23_June_2026-042.jpg/250px-Kobbie_Mainoo_England_v_Ghana_23_June_2026-042.jpg",
+  "https://images.fotmob.com/image_resources/playerimages/1323305.png",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/de/Str%C3%B8msgodset_v_Rosenborg_BK%2C_29_March_2025_%2848%29_%28Sverre_Nypan%29.jpg/250px-Str%C3%B8msgodset_v_Rosenborg_BK%2C_29_March_2025_%2848%29_%28Sverre_Nypan%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b3/Estevao-Palmeiras-Liverpool-abr24_%28cropped%29.jpg/250px-Estevao-Palmeiras-Liverpool-abr24_%28cropped%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/11/Lucas_Bergvall_France_v_Sweden_6.30.26-050.jpg/250px-Lucas_Bergvall_France_v_Sweden_6.30.26-050.jpg",
+  "https://images.fotmob.com/image_resources/playerimages/1327319.png",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/49/Eli_Junior_Kroupi.jpg/250px-Eli_Junior_Kroupi.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/70/Myles_Lewis-Skelly_2026_%28cropped%29.jpg/250px-Myles_Lewis-Skelly_2026_%28cropped%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Assane_Diao_France_v_Senegal_16_June_2026-241.jpg/250px-Assane_Diao_France_v_Senegal_16_June_2026-241.jpg",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/637238.png",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9e/Trey_Nyoni_04012026_%281%29.jpg/250px-Trey_Nyoni_04012026_%281%29.jpg",
+  "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/89/Rio_Ngumoha_04012026_%286%29.jpg/250px-Rio_Ngumoha_04012026_%286%29.jpg",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/647850.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/610799.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/611695.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/592984.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/551210.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/577016.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/539142.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/661888.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/566213.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/651426.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/570794.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/550615.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/609873.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/586309.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/577725.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/540324.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/608227.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/597462.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/606930.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/531442.png",
+  "https://resources.premierleague.com/premierleague25/photos/players/110x140/543968.png"
+];
+
 function normalizePlayerName(name: string): string {
   return name
     .toLowerCase()
@@ -1095,19 +1224,55 @@ const NORMALIZED_FACE_MAP: Record<string, string> = {};
 for (const [k, v] of Object.entries(ENG_PLAYER_FACES_BY_NAME)) {
   NORMALIZED_FACE_MAP[normalizePlayerName(k)] = v;
 }
+for (const [k, v] of Object.entries(WONDERKID_FACES_BY_NAME)) {
+  NORMALIZED_FACE_MAP[normalizePlayerName(k)] = v;
+}
 
 export function getPlayerFaceUrl(
-  player?: Pick<Player, "id" | "firstName" | "lastName" | "clubId"> | null,
+  player?:
+    | (Pick<Player, "id" | "firstName" | "lastName" | "clubId"> &
+        Partial<
+          Pick<
+            Player,
+            "isYouthAcademy" | "isWonderkid" | "squadStatus" | "potentialAbility" | "dateOfBirth"
+          >
+        >)
+    | null,
   club?: Pick<Club, "id" | "leagueId" | "countryId"> | null
 ): string | undefined {
   if (!player) return undefined;
   const full = `${player.firstName} ${player.lastName}`;
   const norm = normalizePlayerName(full);
+  if (WONDERKID_FACES_BY_NAME[full.toLowerCase()]) {
+    return WONDERKID_FACES_BY_NAME[full.toLowerCase()];
+  }
   if (ENG_PLAYER_FACES_BY_NAME[full.toLowerCase()]) {
     return ENG_PLAYER_FACES_BY_NAME[full.toLowerCase()];
   }
   if (NORMALIZED_FACE_MAP[norm]) {
     return NORMALIZED_FACE_MAP[norm];
+  }
+
+  let hash = 0;
+  const key = player.id || norm;
+  for (let i = 0; i < key.length; i++) {
+    hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+  }
+
+  // Every wonderkid and youth player across all clubs gets a real verified young player portrait
+  const birthYear = player.dateOfBirth ? parseInt(player.dateOfBirth.slice(0, 4), 10) : 0;
+  const isYouthOrWonderkid =
+    Boolean(player.isYouthAcademy) ||
+    Boolean(player.isWonderkid) ||
+    player.squadStatus === "Youth" ||
+    player.squadStatus === "Breakthrough Prospect" ||
+    (player.potentialAbility !== undefined && player.potentialAbility >= 165) ||
+    birthYear >= 2005 ||
+    player.id?.includes("_youth_") ||
+    player.id?.includes("_wk_");
+
+  if (isYouthOrWonderkid && YOUTH_WONDERKID_FALLBACK_FACES.length > 0) {
+    return YOUTH_WONDERKID_FALLBACK_FACES[hash % YOUTH_WONDERKID_FALLBACK_FACES.length];
   }
 
   // If the player belongs to an English club (ENG_PL or ENG_CH) and has a generated/youth name,
@@ -1119,13 +1284,9 @@ export function getPlayerFaceUrl(
     player.clubId?.startsWith("club_ENG_");
 
   if (isEnglishClub && ENG_VERIFIED_FALLBACK_FACES.length > 0) {
-    let hash = 0;
-    const key = player.id || norm;
-    for (let i = 0; i < key.length; i++) {
-      hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
-    }
     return ENG_VERIFIED_FALLBACK_FACES[hash % ENG_VERIFIED_FALLBACK_FACES.length];
   }
 
   return undefined;
 }
+
