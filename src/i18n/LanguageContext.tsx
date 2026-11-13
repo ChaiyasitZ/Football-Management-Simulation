@@ -223,7 +223,12 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLangState(nextLang);
   };
 
-  const tr = (enText: string, thText: string) => (lang === 'en' ? enText : thText);
+  const tr = (enText: string, thText: string) => {
+    if (lang === 'en') return enText;
+    // Strip redundant trailing English parenthetical labels like "ขุมกำลัง (Squad)" -> "ขุมกำลัง"
+    // while keeping numeric/unit parentheticals like "(U21)", "(25 คน)", "(€5.0M)", "(1-20)"
+    return thText.replace(/\s*\([A-Za-z][A-Za-z\s/&,-]{3,}\)\s*$/, '').trim();
+  };
   const trDynamic = (text: string) => localizeDynamicText(text, lang);
 
   return (

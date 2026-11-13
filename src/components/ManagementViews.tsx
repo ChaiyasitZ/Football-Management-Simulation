@@ -742,6 +742,7 @@ export const InboxView: React.FC<{
 ============================================================================ */
 export const TrainingView: React.FC<{
   world: WorldState;
+  subView?: 'all' | 'training' | 'medical';
   onUpdateClubTraining: (
     focus: Club['trainingFocus'],
     intensity: Club['trainingIntensity']
@@ -752,6 +753,7 @@ export const TrainingView: React.FC<{
   onPrescribeMedicalRest?: (playerId: string) => void;
 }> = ({
   world,
+  subView = 'all',
   onUpdateClubTraining,
   onSelectPlayer,
   onSaveMentoringGroup,
@@ -835,8 +837,13 @@ export const TrainingView: React.FC<{
     },
   ];
 
+  const showTraining = subView === 'all' || subView === 'training';
+  const showMedical = subView === 'all' || subView === 'medical';
+
   return (
     <div className="space-y-4">
+      {showTraining && (
+        <>
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -1138,8 +1145,11 @@ export const TrainingView: React.FC<{
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {/* Checkpoint 24: FM27 Medical Center, Injury Risk Matrix & Preventative Rest */}
+      {showMedical && (
       <div
         className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
         data-testid="medical-center-panel"
@@ -1220,6 +1230,7 @@ export const TrainingView: React.FC<{
           })}
         </div>
       </div>
+      )}
     </div>
   );
 };
@@ -1229,6 +1240,7 @@ export const TrainingView: React.FC<{
 ============================================================================ */
 export const ScoutingView: React.FC<{
   world: WorldState;
+  subView?: 'all' | 'scouting' | 'shortlist';
   onSelectPlayer: (playerId: string) => void;
   onCreateAssignment: (
     region: LeagueId | 'ALL_EUROPE' | 'SOUTH_AMERICA',
@@ -1238,12 +1250,15 @@ export const ScoutingView: React.FC<{
   ) => void;
   onGenerateScoutReport: (playerId: string) => void;
   onDispatchSouthAmericaScout?: () => void;
+  onToggleShortlist?: (playerId: string) => void;
 }> = ({
   world,
+  subView = 'all',
   onSelectPlayer,
   onCreateAssignment,
   onGenerateScoutReport,
   onDispatchSouthAmericaScout,
+  onToggleShortlist,
 }) => {
   const { tr } = useLanguage();
   const [leagueFilter, setLeagueFilter] = useState<'ALL_EUROPE' | 'SOUTH_AMERICA' | LeagueId>('ALL_EUROPE');
@@ -1285,6 +1300,111 @@ export const ScoutingView: React.FC<{
   const displayedPlayers = allExternalPlayers
     .sort((a, b) => b.currentAbility - a.currentAbility)
     .slice(0, 60);
+
+  const shortlistedPlayers = world.shortlistPlayerIds
+    .map((id) => world.players[id])
+    .filter((p): p is Player => Boolean(p));
+
+  if (subView === 'shortlist') {
+    return (
+      <div className="space-y-4" data-testid="shortlist-view">
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-display font-bold text-white">
+              {tr(`Recruitment Shortlist (${shortlistedPlayers.length})`, `รายชื่อเป้าหมายเสริมทัพ (${shortlistedPlayers.length} คน)`)}
+            </h3>
+            <p className="text-xs text-slate-400">
+              {tr(
+                'Monitor contract expiry, market values, and scout scores for your priority transfer targets.',
+                'ติดตามวันหมดสัญญา มูลค่าตลาด และคะแนนประเมินจากแมวมองของนักเตะเป้าหมาย'
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          {shortlistedPlayers.length === 0 ? (
+            <div className="p-10 text-center text-xs text-slate-400">
+              {tr(
+                'Your Shortlist is currently empty. Add players from the Scouting Database or Club rosters.',
+                'ยังไม่มีนักเตะในรายชื่อเป้าหมาย สามารถกดเพิ่มได้จากหน้าค้นหาแมวมองหรือโปรไฟล์นักเตะ'
+              )}
+            </div>
+          ) : (
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 text-slate-400 bg-slate-950/60">
+                  <th className="py-2.5 px-3">{tr('Player Name', 'ชื่อนักเตะ')}</th>
+                  <th className="py-2.5 px-3">{tr('Club', 'สโมสร')}</th>
+                  <th className="py-2.5 px-3">{tr('Pos', 'ตำแหน่ง')}</th>
+                  <th className="py-2.5 px-3 text-right">{tr('Age', 'อายุ')}</th>
+                  <th className="py-2.5 px-3 text-right">CA / PA</th>
+                  <th className="py-2.5 px-3 text-right">{tr('Value', 'มูลค่า')}</th>
+                  <th className="py-2.5 px-3 text-right">{tr('Contract End', 'หมดสัญญา')}</th>
+                  <th className="py-2.5 px-3 text-right">{tr('Actions', 'จัดการ')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/70">
+                {shortlistedPlayers.map((p) => {
+                  const c = world.clubs[p.clubId];
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => onSelectPlayer(p.id)}
+                      className="hover:bg-slate-800/60 cursor-pointer"
+                    >
+                      <td className="py-2.5 px-3 font-medium text-white">
+                        <div className="flex items-center gap-2">
+                          <PlayerAvatar player={p} club={c} size="sm" />
+                          <span>
+                            {p.firstName} {p.lastName}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300">{c?.name}</td>
+                      <td className="py-2.5 px-3 font-mono text-slate-300">{p.positions.join(', ')}</td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
+                        {getAgeAtDate(p.dateOfBirth, world.gameDate)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-emerald-400">
+                        {(p.currentAbility / 10).toFixed(1)} / {Math.round(p.potentialRange[1] / 10)}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-white">
+                        €{(p.marketValue / 1_000_000).toFixed(1)}M
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums text-amber-300">
+                        {p.contractEndDate}
+                      </td>
+                      <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => onSelectPlayer(p.id)}
+                            className="px-2.5 py-1 rounded bg-emerald-500 text-slate-950 font-semibold cursor-pointer"
+                          >
+                            {tr('Offer / Profile', 'ยื่นข้อเสนอ')}
+                          </button>
+                          {onToggleShortlist && (
+                            <button
+                              type="button"
+                              onClick={() => onToggleShortlist(p.id)}
+                              className="px-2 py-1 rounded bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 cursor-pointer"
+                            >
+                              {tr('Remove', 'ลบ')}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -3488,6 +3608,16 @@ export const CompetitionsAndScheduleView: React.FC<{
 ============================================================================ */
 export const ClubStaffYouthWorldView: React.FC<{
   mode: 'club' | 'staff' | 'youth' | 'world' | 'manager';
+  subView?: string;
+  externalInspectedClubId?: string | null;
+  densityMode?: 'compact' | 'comfortable';
+  onChangeDensityMode?: (mode: 'compact' | 'comfortable') => void;
+  useClubAccent?: boolean;
+  onChangeUseClubAccent?: (val: boolean) => void;
+  developerMode?: boolean;
+  onChangeDeveloperMode?: (val: boolean) => void;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
   world: WorldState;
   saveSlots: SaveSlotMeta[];
   authUser: User | null;
@@ -3539,6 +3669,16 @@ export const ClubStaffYouthWorldView: React.FC<{
   onImportDatabaseJson?: (rawJson: string) => void;
 }> = ({
   mode,
+  subView = 'all',
+  externalInspectedClubId,
+  densityMode = 'compact',
+  onChangeDensityMode,
+  useClubAccent = true,
+  onChangeUseClubAccent,
+  developerMode = false,
+  onChangeDeveloperMode,
+  isMuted = false,
+  onToggleMute,
   world,
   saveSlots,
   authUser,
@@ -3578,6 +3718,14 @@ export const ClubStaffYouthWorldView: React.FC<{
   const [budgetSliderPct, setBudgetSliderPct] = useState<number>(65);
   const [youthTab, setYouthTab] = useState<'academy' | 'wonderkids' | 'mentoring'>('academy');
 
+  useEffect(() => {
+    if (externalInspectedClubId && world.clubs[externalInspectedClubId]) {
+      const targetClub = world.clubs[externalInspectedClubId];
+      setWorldLeagueFilter(targetClub.leagueId);
+      setInspectedClubId(targetClub.id);
+    }
+  }, [externalInspectedClubId, world.clubs]);
+
   // Checkpoint 21: Exhibition Club Clash state
   const allClubList = Object.values(world.clubs);
   const [exhibitionHomeId, setExhibitionHomeId] = useState<string>(club.id);
@@ -3603,9 +3751,13 @@ export const ClubStaffYouthWorldView: React.FC<{
   if (mode === 'club') {
     const ffpStatus = evaluateClubFFPStatus(world, club.id);
     const tourDoneThisSeason = club.preSeasonTourCompletedSeason === world.currentSeason;
+    const showClubOverviewOrFinances =
+      subView === 'all' || subView === 'overview' || subView === 'finances';
+    const showClubHistory = subView === 'all' || subView === 'history';
 
     return (
       <div className="space-y-4">
+        {showClubOverviewOrFinances && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           {/* Finances & Board Requests */}
           <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -3930,8 +4082,10 @@ export const ClubStaffYouthWorldView: React.FC<{
             </div>
           </div>
         </div>
+        )}
 
         {/* Club Trophy Cabinet & Annual Awards Gala (Checkpoint 12) */}
+        {showClubHistory && (
         <div
           className="grid grid-cols-1 lg:grid-cols-12 gap-4"
           data-testid="club-trophy-and-awards-section"
@@ -4101,6 +4255,7 @@ export const ClubStaffYouthWorldView: React.FC<{
             </div>
           </div>
         </div>
+        )}
       </div>
     );
   }
@@ -4700,9 +4855,14 @@ export const ClubStaffYouthWorldView: React.FC<{
       .sort((a, b) => b.currentAbility - a.currentAbility);
     const euroCupFixtures = world.fixtures.filter((f) => f.competitionId === 'INT_EURO');
 
+    const showInternational = subView === 'all' || subView === 'international';
+    const showClubsDirectory = subView === 'all' || subView === 'clubs';
+    const showWorldAwardsAndClash = subView === 'all' || subView === 'awards';
+
     return (
       <div className="space-y-4">
         {/* Checkpoint 13: Dual Club & International Management + European Nations Cup (INT_EURO) */}
+        {showInternational && (
         <div
           className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
           data-testid="international-management-card"
@@ -4842,7 +5002,10 @@ export const ClubStaffYouthWorldView: React.FC<{
             </div>
           )}
         </div>
+        )}
 
+        {showClubsDirectory && (
+          <>
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2">
           {(Object.keys(LEAGUES_CONFIG) as LeagueId[]).map((lId) => (
             <button
@@ -4972,8 +5135,11 @@ export const ClubStaffYouthWorldView: React.FC<{
             </div>
           </div>
         </div>
+          </>
+        )}
 
         {/* Checkpoint 21: All-Time Hall of Fame Leaderboard & Exhibition Club Clash Simulator */}
+        {showWorldAwardsAndClash && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
           <div
             className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
@@ -5106,6 +5272,7 @@ export const ClubStaffYouthWorldView: React.FC<{
             )}
           </div>
         </div>
+        )}
       </div>
     );
   }
@@ -5117,55 +5284,173 @@ export const ClubStaffYouthWorldView: React.FC<{
       ? Math.round((mgr.careerStats.won / mgr.careerStats.matchesManaged) * 100)
       : 0;
 
+  const showSettings = subView === 'all' || subView === 'settings';
+  const showSaves = subView === 'all' || subView === 'saves';
+  const showSandbox = subView === 'all' || subView === 'sandbox' || developerMode;
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {showSettings && (
         <div className="space-y-4">
-          {/* Language & Display Preferences Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between">
+          {/* Language & Display Preferences Card (User Answers #2, #3, #4) */}
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
+            data-testid="system-settings-card"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h3 className="text-base font-display font-bold text-white">
-                  {tr('Language & Interface Settings', 'ตั้งค่าภาษาและการแสดงผล (Language Settings)')}
+                  {tr('Interface, Language & Theme Preferences', 'ตั้งค่าภาษา ความหนาแน่นข้อมูล และธีมสีสโมสร')}
                 </h3>
                 <p className="text-xs text-slate-400">
                   {tr(
-                    'Choose your preferred display language. English is the default.',
-                    'เลือกภาษาที่ต้องการแสดงผลในเกม (ค่าเริ่มต้น: English)'
+                    'Customize display language, table density (FM Classic vs FM26), and dynamic club accent color.',
+                    'ปรับแต่งภาษา โหมดตารางข้อมูล (แน่นแบบ FM Classic หรือโปร่งแบบ FM26) และสีธีมตามสโมสรที่คุม'
                   )}
                 </p>
               </div>
               <LanguageSwitcher />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 pt-1">
+            {/* 1. Language Switcher */}
+            <div className="space-y-1.5">
+              <div className="text-xs font-semibold text-slate-300">
+                {tr('1. Display Language', '1. ภาษาที่ใช้แสดงผล')}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  data-testid="lang-en-btn"
+                  onClick={() => setLang('en')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    lang === 'en'
+                      ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-emerald-400">English</div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    International football management terminology
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="lang-th-btn"
+                  onClick={() => setLang('th')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    lang === 'th'
+                      ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-emerald-400">ภาษาไทย</div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    แสดงผลเมนู ตารางคะแนน และคำอธิบายภาษาไทยล้วน
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. Data Density Mode (Compact FM Classic vs Comfortable FM26) */}
+            <div className="space-y-1.5 pt-2 border-t border-slate-800">
+              <div className="text-xs font-semibold text-slate-300">
+                {tr('2. Data Table & Card Density', '2. ความหนาแน่นของตารางและข้อมูล')}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  data-testid="density-compact-btn"
+                  onClick={() => onChangeDensityMode?.('compact')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    densityMode === 'compact'
+                      ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-emerald-400">
+                    {tr('Compact (FM Classic)', 'โหมดข้อมูลแน่น (FM Classic)')}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {tr('High-density rows for seeing more players at once', 'แถวตารางกระชับ เห็นรายชื่อนักเตะได้มากในหน้าเดียว')}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  data-testid="density-comfortable-btn"
+                  onClick={() => onChangeDensityMode?.('comfortable')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    densityMode === 'comfortable'
+                      ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
+                      : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-sky-400">
+                    {tr('Comfortable (FM26)', 'โหมดโปร่งสบายตา (FM26)')}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    {tr('More breathing room and taller table rows', 'เพิ่มระยะห่างระหว่างแถวและการ์ดให้อ่านง่ายขึ้น')}
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            {/* 3. Dynamic Club Accent Color & Audio / Sandbox Toggles */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-800">
               <button
                 type="button"
-                onClick={() => setLang('en')}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                  lang === 'en'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
-                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                data-testid="toggle-club-accent-btn"
+                onClick={() => onChangeUseClubAccent?.(!useClubAccent)}
+                className={`p-3 rounded-xl border text-left cursor-pointer ${
+                  useClubAccent
+                    ? 'bg-emerald-500/15 border-emerald-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-300'
                 }`}
               >
-                <div className="text-xs font-bold text-emerald-400">English (Default)</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  Standard international football management terminology
+                <div className="flex items-center gap-2">
+                  <span
+                    className="w-3.5 h-3.5 rounded-full border border-white/30"
+                    style={{ backgroundColor: club.primaryColor }}
+                  />
+                  <span className="text-xs font-bold">
+                    {tr('Club Theme Color', 'สีธีมตามสโมสร')}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 mt-1 font-mono">
+                  {useClubAccent ? tr('ON (Active)', 'เปิดใช้งาน') : tr('OFF (Emerald)', 'ปิด (สีเขียวมรกต)')}
                 </div>
               </button>
 
               <button
                 type="button"
-                onClick={() => setLang('th')}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                  lang === 'th'
-                    ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
-                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                onClick={() => onToggleMute?.()}
+                className="p-3 rounded-xl border bg-slate-950 border-slate-800 text-left cursor-pointer"
+              >
+                <div className="text-xs font-bold text-white">
+                  {tr('Match & UI Audio', 'เสียงประกอบในเกม')}
+                </div>
+                <div className="text-xs text-emerald-400 mt-1 font-mono">
+                  {isMuted ? tr('Muted (OFF)', 'ปิดเสียงอยู่') : tr('Active (ON)', 'เปิดเสียงอยู่')}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                data-testid="toggle-developer-sandbox-btn"
+                onClick={() => onChangeDeveloperMode?.(!developerMode)}
+                className={`p-3 rounded-xl border text-left cursor-pointer ${
+                  developerMode
+                    ? 'bg-amber-500/15 border-amber-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-300'
                 }`}
               >
-                <div className="text-xs font-bold text-emerald-400">ภาษาไทย (Thai)</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  แสดงผลเมนู ตารางคะแนน และคำอธิบายภาษาไทยเต็มรูปแบบ
+                <div className="text-xs font-bold text-amber-400">
+                  {tr('Sandbox & Editor', 'โหมด Sandbox / แก้ไขเกม')}
+                </div>
+                <div className="text-xs text-slate-400 mt-1 font-mono">
+                  {developerMode ? tr('Enabled', 'แสดงเครื่องมือแล้ว') : tr('Hidden', 'ซ่อนไว้')}
                 </div>
               </button>
             </div>
@@ -5174,7 +5459,7 @@ export const ClubStaffYouthWorldView: React.FC<{
           {/* Manager Career Profile Card */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <h3 className="text-base font-display font-bold text-white">
-              {tr('Manager Career Profile', 'โปรไฟล์ผู้จัดการทีม (Manager Career Profile)')}
+              {tr('Manager Career Profile', 'โปรไฟล์ผู้จัดการทีม')}
             </h3>
             <div className="space-y-2 text-xs">
               <div className="flex justify-between py-1.5 border-b border-slate-800">
@@ -5201,13 +5486,15 @@ export const ClubStaffYouthWorldView: React.FC<{
                 </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-800">
-                <span className="text-slate-400">{tr('Win Percentage:', 'อัตราชนะ (Win Percentage):')}</span>
+                <span className="text-slate-400">{tr('Win Percentage:', 'อัตราชนะ:')}</span>
                 <span className="font-mono tabular-nums text-emerald-400 font-bold">{winRate}%</span>
               </div>
             </div>
           </div>
         </div>
+        )}
 
+        {showSaves && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -5320,9 +5607,11 @@ export const ClubStaffYouthWorldView: React.FC<{
             })}
           </div>
         </div>
+        )}
       </div>
 
       {/* Checkpoint 20: In-Game Database Editor, Create-a-Player (Wonderkid Builder) & JSON Import/Export */}
+      {showSandbox && (
       <div
         className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
         data-testid="ingame-editor-panel"
@@ -5331,14 +5620,14 @@ export const ClubStaffYouthWorldView: React.FC<{
           <div>
             <h3 className="text-base font-display font-bold text-amber-400">
               {tr(
-                '🛠️ In-Game Database Editor, Wonderkid Builder & JSON Import/Export',
-                '🛠️ เครื่องมือแก้ไขฐานข้อมูล (In-Game Editor), สร้างนักเตะวันเดอร์คิด & นำเข้า/ส่งออก JSON'
+                '🛠️ Sandbox Simulation Controls & In-Game Database Editor',
+                '🛠️ เครื่องมือจำลองเหตุการณ์ (Sandbox) & แก้ไขฐานข้อมูล (In-Game Editor)'
               )}
             </h3>
             <p className="text-xs text-slate-400">
               {tr(
-                'Create custom players, live-edit club budgets/facilities, or export/import your entire Career World JSON.',
-                'สร้างนักเตะใหม่เข้าสู่สโมสร แก้ไขงบประมาณ/ศูนย์ฝึกแบบเรียลไทม์ หรือส่งออก/นำเข้าไฟล์ฐานข้อมูลเซฟเกม JSON'
+                'Create custom players, live-edit club budgets/facilities, trigger global events, or export/import your Career World JSON.',
+                'สร้างนักเตะใหม่ แก้ไขงบประมาณ/ศูนย์ฝึก จำลองเหตุการณ์พิเศษ หรือส่งออก/นำเข้าไฟล์ฐานข้อมูลเซฟเกม JSON'
               )}
             </p>
           </div>
@@ -5519,6 +5808,7 @@ export const ClubStaffYouthWorldView: React.FC<{
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };

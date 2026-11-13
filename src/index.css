@@ -3,19 +3,22 @@
 
 @layer base {
   :root {
-    --font-display: 'Barlow Condensed', sans-serif;
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-display: 'Barlow Condensed', 'Prompt', sans-serif;
+    --font-sans: 'Plus Jakarta Sans', 'IBM Plex Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+    --club-accent: #10b981;
   }
 
   body {
     font-family: var(--font-sans);
     background-color: #090d16;
     color: #f1f5f9;
+    font-size: 13.5px;
+    line-height: 1.5;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
-  h1, h2, .font-display {
+  h1, h2, h3, .font-display {
     font-family: var(--font-display);
     letter-spacing: 0.02em;
   }
@@ -24,6 +27,48 @@
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
   }
+}
+
+/* Enforce readable minimum font size (12px) even if legacy classes use text-[10px] */
+.text-\[10px\], .text-\[11px\] {
+  font-size: 0.75rem !important;
+  line-height: 1.125rem !important;
+}
+
+/* Data Density Modes: Compact (FM Classic) vs Comfortable (FM26) */
+[data-density="compact"] table th,
+[data-density="compact"] table td {
+  padding-top: 0.35rem !important;
+  padding-bottom: 0.35rem !important;
+}
+
+[data-density="comfortable"] table th,
+[data-density="comfortable"] table td {
+  padding-top: 0.65rem !important;
+  padding-bottom: 0.65rem !important;
+}
+
+/* FM Attribute Tier Colors (1-20 scale) */
+.attr-poor {
+  color: #64748b;
+  background-color: rgba(100, 116, 139, 0.12);
+  border-color: rgba(100, 116, 139, 0.25);
+}
+.attr-avg {
+  color: #e2e8f0;
+  background-color: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+.attr-good {
+  color: #34d399;
+  background-color: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+.attr-elite {
+  color: #fbbf24;
+  background-color: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.45);
+  font-weight: 700;
 }
 
 /* Custom subtle scrollbars for dense management tables */

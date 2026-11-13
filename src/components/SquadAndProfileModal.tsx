@@ -22,6 +22,8 @@ import { PlayerAvatar } from './PlayerAvatar';
 interface SquadViewProps {
   world: WorldState;
   onSelectPlayer: (playerId: string) => void;
+  onQuickPeekPlayer?: (playerId: string) => void;
+  initialViewMode?: 'table' | 'planner';
   onToggleRegistration?: (playerId: string) => void;
   onAutoRegisterSquad?: () => void;
   onTogglePlayInReserves?: (playerId: string) => void;
@@ -38,6 +40,8 @@ export function getPositionGroup(pos: string): PositionGroup {
 export const SquadView: React.FC<SquadViewProps> = ({
   world,
   onSelectPlayer,
+  onQuickPeekPlayer,
+  initialViewMode = 'table',
   onToggleRegistration,
   onAutoRegisterSquad,
   onTogglePlayInReserves,
@@ -49,7 +53,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
   const [posFilter, setPosFilter] = useState<'ALL' | PositionGroup>('ALL');
   const [subFilter, setSubFilter] = useState<'ALL' | 'REGISTERED' | 'HOMEGROWN' | 'RESERVES' | 'UNHAPPY'>('ALL');
   const [sortBy, setSortBy] = useState<'ca' | 'fitness' | 'sharpness' | 'morale' | 'age' | 'wage' | 'value' | 'rating'>('ca');
-  const [viewMode, setViewMode] = useState<'table' | 'planner'>('table');
+  const [viewMode, setViewMode] = useState<'table' | 'planner'>(initialViewMode);
+  const [tablePreset, setTablePreset] = useState<'ALL' | 'OVERVIEW' | 'CONDITION' | 'CONTRACT' | 'STATS'>('ALL');
+
+  React.useEffect(() => {
+    setViewMode(initialViewMode);
+  }, [initialViewMode]);
 
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
   const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId);
@@ -336,8 +345,25 @@ export const SquadView: React.FC<SquadViewProps> = ({
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <label htmlFor="squad-sort" className="text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="squad-preset" className="text-xs text-slate-400">
+            {tr('View:', 'มุมมอง:')}
+          </label>
+          <select
+            id="squad-preset"
+            data-testid="squad-view-preset-select"
+            value={tablePreset}
+            onChange={(e) => setTablePreset(e.target.value as typeof tablePreset)}
+            className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-emerald-300 font-medium"
+          >
+            <option value="ALL">{tr('Full Columns', 'ตารางข้อมูลครบ')}</option>
+            <option value="OVERVIEW">{tr('General Info', 'ข้อมูลทั่วไป')}</option>
+            <option value="CONDITION">{tr('Condition & Medical', 'ความฟิต & การแพทย์')}</option>
+            <option value="CONTRACT">{tr('Contract & Value', 'สัญญา & มูลค่า')}</option>
+            <option value="STATS">{tr('Season Stats', 'สถิติฤดูกาล')}</option>
+          </select>
+
+          <label htmlFor="squad-sort" className="text-xs text-slate-400 ml-1">
             {tr('Sort by:', 'เรียงตาม:')}
           </label>
           <select
@@ -521,15 +547,37 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 <th className="py-2.5 px-3">{tr('Squad Role / U23', 'สถานะลงสนาม / ทีมสำรอง')}</th>
                 <th className="py-2.5 px-3">{tr('Pos', 'ตำแหน่ง')}</th>
                 <th className="py-2.5 px-3">{tr('Player Name & Quota', 'ชื่อนักเตะ & โควตา')}</th>
-                <th className="py-2.5 px-3">{tr('Hierarchy Expectation', 'บทบาทคาดหวัง (Hierarchy)')}</th>
+                {(tablePreset === 'ALL' || tablePreset === 'OVERVIEW' || tablePreset === 'CONTRACT') && (
+                  <th className="py-2.5 px-3">{tr('Hierarchy Expectation', 'บทบาทคาดหวัง')}</th>
+                )}
                 <th className="py-2.5 px-3 text-right">{tr('Age', 'อายุ')}</th>
                 <th className="py-2.5 px-3 text-right">CA / PA</th>
-                <th className="py-2.5 px-3 text-right">{tr('Condition', 'ความฟิต')}</th>
-                <th className="py-2.5 px-3 text-right">{tr('Sharpness', 'ความเฉียบคม')}</th>
-                <th className="py-2.5 px-3">{tr('Injury Risk', 'โอกาสบาดเจ็บ')}</th>
-                <th className="py-2.5 px-3 text-right">{tr('Morale', 'กำลังใจ')}</th>
-                <th className="py-2.5 px-3 text-right">{tr('Apps/G/A', 'นัด/ประตู/แอสซิสต์')}</th>
-                <th className="py-2.5 px-3 text-right">{tr('Avg Rat', 'เรตติ้ง')}</th>
+                {tablePreset === 'CONTRACT' && (
+                  <>
+                    <th className="py-2.5 px-3 text-right">{tr('Wage', 'ค่าเหนื่อย')}</th>
+                    <th className="py-2.5 px-3 text-right">{tr('Market Value', 'มูลค่าตลาด')}</th>
+                    <th className="py-2.5 px-3 text-right">{tr('Contract End', 'หมดสัญญา')}</th>
+                  </>
+                )}
+                {(tablePreset === 'ALL' || tablePreset === 'OVERVIEW' || tablePreset === 'CONDITION') && (
+                  <>
+                    <th className="py-2.5 px-3 text-right">{tr('Condition', 'ความฟิต')}</th>
+                    <th className="py-2.5 px-3 text-right">{tr('Sharpness', 'ความเฉียบคม')}</th>
+                  </>
+                )}
+                {(tablePreset === 'ALL' || tablePreset === 'CONDITION') && (
+                  <th className="py-2.5 px-3">{tr('Injury Risk', 'โอกาสบาดเจ็บ')}</th>
+                )}
+                {(tablePreset === 'ALL' || tablePreset === 'OVERVIEW' || tablePreset === 'CONDITION') && (
+                  <th className="py-2.5 px-3 text-right">{tr('Morale', 'กำลังใจ')}</th>
+                )}
+                {(tablePreset === 'ALL' || tablePreset === 'STATS') && (
+                  <>
+                    <th className="py-2.5 px-3 text-right">{tr('Apps/G/A', 'นัด/ประตู/แอสซิสต์')}</th>
+                    <th className="py-2.5 px-3 text-right">{tr('Avg Rat', 'เรตติ้ง')}</th>
+                  </>
+                )}
+                <th className="py-2.5 px-3 text-right">{tr('Actions', 'ดูข้อมูล')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/70 text-xs">
@@ -594,7 +642,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                               onClick={() => onTogglePlayInReserves(p.id)}
                               title={tr(
                                 'Send to Reserves / U23 to recover Match Sharpness',
-                                'ส่งลงเล่นทีมสำรอง (U23) เพื่อเรียกความเฉียบคม (Match Sharpness)'
+                                'ส่งลงเล่นทีมสำรอง (U23) เพื่อเรียกความเฉียบคม'
                               )}
                               className={`px-1.5 py-0.5 rounded text-[10px] font-sans cursor-pointer border ${
                                 p.playInReserves
@@ -650,47 +698,49 @@ export const SquadView: React.FC<SquadViewProps> = ({
                     </td>
 
                     {/* Squad Hierarchy & Consecutive Benched Warning */}
-                    <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-col gap-0.5">
-                        {onUpdateSquadStatus ? (
-                          <select
-                            aria-label={`Hierarchy status for ${p.firstName} ${p.lastName}`}
-                            value={p.squadStatus}
-                            onChange={(e) =>
-                              onUpdateSquadStatus(p.id, e.target.value as Player['squadStatus'])
-                            }
-                            className={`bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-[11px] ${
-                              p.squadStatus === 'Star Player'
-                                ? 'text-amber-300 font-semibold'
-                                : p.squadStatus === 'Important Player'
-                                  ? 'text-emerald-300'
-                                  : 'text-slate-300'
-                            }`}
-                          >
-                            <option value="Star Player">Star Player</option>
-                            <option value="Important Player">Important Player</option>
-                            <option value="Regular Starter">Regular Starter</option>
-                            <option value="Squad Player">Squad Rotation</option>
-                            <option value="Breakthrough Prospect">Breakthrough</option>
-                            <option value="Youth">Youth / Backup</option>
-                          </select>
-                        ) : (
-                          <span className="text-slate-300">{p.squadStatus}</span>
-                        )}
-                        {benchedCount >= 2 && (
-                          <span
-                            className={`text-[10px] font-mono ${
-                              isDroppedStar ? 'text-red-400 font-semibold' : 'text-amber-400'
-                            }`}
-                          >
-                            {tr(
-                              `Dropped ${benchedCount}x in a row`,
-                              `สำรอง ${benchedCount} นัดติด`
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    </td>
+                    {(tablePreset === 'ALL' || tablePreset === 'OVERVIEW' || tablePreset === 'CONTRACT') && (
+                      <td className="py-2.5 px-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-col gap-0.5">
+                          {onUpdateSquadStatus ? (
+                            <select
+                              aria-label={`Hierarchy status for ${p.firstName} ${p.lastName}`}
+                              value={p.squadStatus}
+                              onChange={(e) =>
+                                onUpdateSquadStatus(p.id, e.target.value as Player['squadStatus'])
+                              }
+                              className={`bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-[11px] ${
+                                p.squadStatus === 'Star Player'
+                                  ? 'text-amber-300 font-semibold'
+                                  : p.squadStatus === 'Important Player'
+                                    ? 'text-emerald-300'
+                                    : 'text-slate-300'
+                              }`}
+                            >
+                              <option value="Star Player">Star Player</option>
+                              <option value="Important Player">Important Player</option>
+                              <option value="Regular Starter">Regular Starter</option>
+                              <option value="Squad Player">Squad Rotation</option>
+                              <option value="Breakthrough Prospect">Breakthrough</option>
+                              <option value="Youth">Youth / Backup</option>
+                            </select>
+                          ) : (
+                            <span className="text-slate-300">{p.squadStatus}</span>
+                          )}
+                          {benchedCount >= 2 && (
+                            <span
+                              className={`text-[10px] font-mono ${
+                                isDroppedStar ? 'text-red-400 font-semibold' : 'text-amber-400'
+                              }`}
+                            >
+                              {tr(
+                                `Dropped ${benchedCount}x in a row`,
+                                `สำรอง ${benchedCount} นัดติด`
+                              )}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    )}
 
                     <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
                       {age}
@@ -701,74 +751,124 @@ export const SquadView: React.FC<SquadViewProps> = ({
                       <span className="text-slate-500"> / {paHigh20}</span>
                     </td>
 
-                    {/* Condition (Stamina) */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums">
-                      <span
-                        className={
-                          p.fitness >= 85
-                            ? 'text-emerald-400 font-semibold'
-                            : p.fitness >= 70
-                              ? 'text-amber-400'
-                              : 'text-red-400 font-bold'
-                        }
-                      >
-                        {p.fitness}%
-                      </span>
-                    </td>
+                    {tablePreset === 'CONTRACT' && (
+                      <>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-amber-300">
+                          €{p.wagePerWeek.toLocaleString()}/w
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-white">
+                          €{(p.marketValue / 1_000_000).toFixed(1)}M
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
+                          {p.contractEndDate}
+                        </td>
+                      </>
+                    )}
 
-                    {/* Match Sharpness */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums">
-                      <span
-                        className={
-                          p.matchSharpness >= 82
-                            ? 'text-sky-300'
-                            : p.matchSharpness >= 72
-                              ? 'text-amber-300'
-                              : 'text-red-400 font-semibold'
-                        }
-                      >
-                        {p.matchSharpness}%
-                      </span>
-                    </td>
+                    {/* Condition (Stamina) */}
+                    {(tablePreset === 'ALL' || tablePreset === 'OVERVIEW' || tablePreset === 'CONDITION') && (
+                      <>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums">
+                          <span
+                            className={
+                              p.fitness >= 85
+                                ? 'text-emerald-400 font-semibold'
+                                : p.fitness >= 70
+                                  ? 'text-amber-400'
+                                  : 'text-red-400 font-bold'
+                            }
+                          >
+                            {p.fitness}%
+                          </span>
+                        </td>
+
+                        {/* Match Sharpness */}
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums">
+                          <span
+                            className={
+                              p.matchSharpness >= 82
+                                ? 'text-sky-300'
+                                : p.matchSharpness >= 72
+                                  ? 'text-amber-300'
+                                  : 'text-red-400 font-semibold'
+                            }
+                          >
+                            {p.matchSharpness}%
+                          </span>
+                        </td>
+                      </>
+                    )}
 
                     {/* Muscle Injury Risk */}
-                    <td className="py-2.5 px-3 text-[11px]">
-                      <span
-                        className={
-                          injRisk.level === 'Critical'
-                            ? 'text-red-400 font-semibold'
-                            : injRisk.level === 'High'
-                              ? 'text-amber-400 font-semibold'
-                              : injRisk.level === 'Moderate'
-                                ? 'text-slate-300'
-                                : 'text-emerald-400/90'
-                        }
-                      >
-                        {tr(injRisk.labelEn, injRisk.labelTh)}
-                      </span>
-                    </td>
+                    {(tablePreset === 'ALL' || tablePreset === 'CONDITION') && (
+                      <td className="py-2.5 px-3 text-[11px]">
+                        <span
+                          className={
+                            injRisk.level === 'Critical'
+                              ? 'text-red-400 font-semibold'
+                              : injRisk.level === 'High'
+                                ? 'text-amber-400 font-semibold'
+                                : injRisk.level === 'Moderate'
+                                  ? 'text-slate-300'
+                                  : 'text-emerald-400/90'
+                          }
+                        >
+                          {tr(injRisk.labelEn, injRisk.labelTh)}
+                        </span>
+                      </td>
+                    )}
 
                     {/* Morale */}
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums">
-                      <span
-                        className={
-                          p.morale >= 80
-                            ? 'text-emerald-400'
-                            : p.morale >= 65
-                              ? 'text-slate-200'
-                              : 'text-red-400 font-semibold'
-                        }
-                      >
-                        {p.morale}%
-                      </span>
-                    </td>
+                    {(tablePreset === 'ALL' || tablePreset === 'OVERVIEW' || tablePreset === 'CONDITION') && (
+                      <td className="py-2.5 px-3 text-right font-mono tabular-nums">
+                        <span
+                          className={
+                            p.morale >= 80
+                              ? 'text-emerald-400'
+                              : p.morale >= 65
+                                ? 'text-slate-200'
+                                : 'text-red-400 font-semibold'
+                          }
+                        >
+                          {p.morale}%
+                        </span>
+                      </td>
+                    )}
 
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
-                      {p.stats.appearances}/{p.stats.goals}/{p.stats.assists}
-                    </td>
+                    {(tablePreset === 'ALL' || tablePreset === 'STATS') && (
+                      <>
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
+                          {p.stats.appearances}/{p.stats.goals}/{p.stats.assists}
+                        </td>
 
-                    <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-white">
-                      {p.stats.appearances > 0 ? p.stats.averageRating.toFixed(2) : '-'}
+                        <td className="py-2.5 px-3 text-right font-mono tabular-nums font-semibold text-white">
+                          {p.stats.appearances > 0 ? p.stats.averageRating.toFixed(2) : '-'}
+                        </td>
+                      </>
+                    )}
+
+                    {/* Quick Peek / Full Profile Actions */}
+                    <td className="py-2.5 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                      <div className="inline-flex items-center gap-1">
+                        {onQuickPeekPlayer && (
+                          <button
+                            type="button"
+                            data-testid={`quick-peek-${p.id}`}
+                            onClick={() => onQuickPeekPlayer(p.id)}
+                            title={tr('Quick Peek Drawer', 'ดูข้อมูลแบบย่อด้านข้าง')}
+                            className="px-2 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-xs cursor-pointer"
+                          >
+                            {tr('Peek', 'ย่อ')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onSelectPlayer(p.id)}
+                          className="px-2 py-1 rounded bg-emerald-500/15 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/30 text-xs font-semibold cursor-pointer"
+                        >
+                          {tr('Profile', 'โปรไฟล์')}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
