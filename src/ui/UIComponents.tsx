@@ -30,6 +30,11 @@ import {
 } from '../engine/tacticsEngine';
 import { ClubBadge } from '../components/ClubBadge';
 import { PlayerAvatar } from '../components/PlayerAvatar';
+import {
+  ClubKitJersey,
+  CompetitionBadge,
+  TrophyArtwork,
+} from '../components/TrophyAndKitVisuals';
 import { useLanguage } from '../i18n/LanguageContext';
 
 /* ============================================================================
@@ -264,19 +269,28 @@ export const PlayerPeekDrawer: React.FC<{
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-        <div className="flex items-center gap-3">
-          <PlayerAvatar player={player} club={club} size="md" />
-          <div className="min-w-0">
-            <div className="text-base font-display font-bold text-white truncate">
-              {player.firstName} {player.lastName}
-            </div>
-            <div className="text-slate-400 font-mono">
-              {player.positions.join('/')} · {tr('Age', 'อายุ')} {age} · {player.nationality}
-            </div>
-            <div className="text-emerald-400 font-semibold truncate">
-              {club?.name || 'Free Agent'}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <PlayerAvatar player={player} club={club} size="md" />
+            <div className="min-w-0">
+              <div className="text-base font-display font-bold text-white truncate">
+                {player.firstName} {player.lastName}
+              </div>
+              <div className="text-slate-400 font-mono">
+                {player.positions.join('/')} · {tr('Age', 'อายุ')} {age} · {player.nationality}
+              </div>
+              <div className="text-emerald-400 font-semibold truncate">
+                {club?.name || 'Free Agent'}
+              </div>
             </div>
           </div>
+          {club && (
+            <ClubKitJersey
+              club={club}
+              variant={player.positions.includes('GK') ? 'gk' : 'home'}
+              size="xs"
+            />
+          )}
         </div>
 
         {/* Key Metric Grid */}
@@ -621,7 +635,10 @@ export const PortalView: React.FC<{
         <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-emerald-400" />
+              <CompetitionBadge
+                competitionId={nextFixture?.competitionId || club.leagueId}
+                size="xs"
+              />
               <h2 className="text-base font-display font-bold text-white">
                 {tr('Next Fixture Preview', 'พรีวิวแมตช์ถัดไป')}
               </h2>
@@ -635,12 +652,17 @@ export const PortalView: React.FC<{
 
           {nextFixture && nextOpponent ? (
             <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4">
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
                 {/* Home Team */}
-                <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <ClubBadge
                     club={nextFixture.homeClubId === club.id ? club : nextOpponent}
                     size="md"
+                  />
+                  <ClubKitJersey
+                    club={nextFixture.homeClubId === club.id ? club : nextOpponent}
+                    variant="home"
+                    size="xs"
                   />
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-white truncate">
@@ -658,12 +680,12 @@ export const PortalView: React.FC<{
                   </div>
                 </div>
 
-                <div className="px-3 py-1 rounded bg-slate-900 border border-slate-800 font-display font-bold text-sm text-emerald-400">
+                <div className="px-2.5 py-1 rounded bg-slate-900 border border-slate-800 font-display font-bold text-sm text-emerald-400 shrink-0">
                   VS
                 </div>
 
                 {/* Away Team */}
-                <div className="flex items-center justify-end gap-3 min-w-0 flex-1 text-right">
+                <div className="flex items-center justify-end gap-2.5 min-w-0 flex-1 text-right">
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-white truncate">
                       {nextFixture.awayClubId === club.id ? club.name : nextOpponent.name}
@@ -678,6 +700,11 @@ export const PortalView: React.FC<{
                       )}
                     />
                   </div>
+                  <ClubKitJersey
+                    club={nextFixture.awayClubId === club.id ? club : nextOpponent}
+                    variant="away"
+                    size="xs"
+                  />
                   <ClubBadge
                     club={nextFixture.awayClubId === club.id ? club : nextOpponent}
                     size="md"
@@ -764,10 +791,11 @@ export const PortalView: React.FC<{
         <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-400" />
+              <CompetitionBadge competitionId={club.leagueId} size="xs" />
               <h3 className="text-sm font-display font-bold text-white">
                 {LEAGUES_CONFIG[club.leagueId].name}
               </h3>
+              <TrophyArtwork competitionId={club.leagueId} size="xs" />
             </div>
             <button
               type="button"

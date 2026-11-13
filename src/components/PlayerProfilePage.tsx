@@ -24,6 +24,7 @@ import {
 import { useLanguage } from '../i18n/LanguageContext';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
+import { ClubKitJersey, CompetitionBadge } from './TrophyAndKitVisuals';
 import { AttrBadge } from '../ui/UIComponents';
 
 export interface PlayerProfilePageProps {
@@ -295,6 +296,17 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
         <div className="p-5 flex flex-wrap items-center justify-between gap-6">
           <div className="flex items-center gap-4">
             <PlayerAvatar player={player} club={playerClub} size="lg" />
+            {playerClub && (
+              <div className="hidden sm:block shrink-0">
+                <ClubKitJersey
+                  club={playerClub}
+                  variant={player.positions.includes('GK') ? 'gk' : 'home'}
+                  size="sm"
+                  number={currentIdx >= 0 && currentIdx < 99 ? currentIdx + 1 : 10}
+                  playerName={player.lastName}
+                />
+              </div>
+            )}
             <div className="space-y-1">
               <div className="flex items-center gap-2.5 flex-wrap">
                 <h1 className="text-2xl font-display font-bold text-white">
@@ -319,7 +331,8 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                 {playerClub && (
                   <span className="inline-flex items-center gap-1.5 font-semibold text-white">
                     <ClubBadge club={playerClub} size="xs" />
-                    {playerClub.name}
+                    <span>{playerClub.name}</span>
+                    <CompetitionBadge competitionId={playerClub.leagueId} size="xs" />
                   </span>
                 )}
                 <span>·</span>

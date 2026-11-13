@@ -43,6 +43,12 @@ import {
 import { getPositionGroup } from './SquadAndProfileModal';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
+import {
+  ClubKitJersey,
+  ClubKitShowcaseCard,
+  CompetitionBadge,
+  TrophyArtwork,
+} from './TrophyAndKitVisuals';
 import type { User } from '../firebase';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 
@@ -2642,31 +2648,43 @@ export const CompetitionsAndScheduleView: React.FC<{
                 key={l.cupId}
                 type="button"
                 onClick={() => setSelectedCup(l.cupId)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-2 ${
                   selectedCup === l.cupId
                     ? 'bg-amber-500 text-slate-950'
                     : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
                 }`}
               >
-                {l.countryFlag} {l.cupName}
+                <CompetitionBadge competitionId={l.cupId} size="xs" />
+                <span>
+                  {l.countryFlag} {l.cupName}
+                </span>
               </button>
             ))}
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-display font-bold text-white">
-                  {domesticCupsList.find((l) => l.cupId === selectedCup)?.cupName} —{' '}
-                  {tr('Single-Leg Knockout Bracket (Extra Time & Penalties)', 'สายการแข่งขันน็อกเอาต์นัดเดียวรู้ผล (ต่อเวลาพิเศษ & ดวลจุดโทษ)')}
-                </h3>
-                <p className="text-xs text-slate-400">
-                  {tr(
-                    'Winners advance automatically from Round of 16 → Quarter-Finals → Semi-Finals → Grand Final (€3.50M Champion Prize).',
-                    'ผู้ชนะจะผ่านเข้าสู่รอบถัดไปอัตโนมัติ (รอบ 16 ทีม → รอบ 8 ทีม → รอบรองชนะเลิศ → รอบชิงชนะเลิศ เงินรางวัลแชมป์ €3.50M)'
-                  )}
-                </p>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <CompetitionBadge competitionId={selectedCup} size="md" />
+                <div>
+                  <h3 className="text-base font-display font-bold text-white">
+                    {domesticCupsList.find((l) => l.cupId === selectedCup)?.cupName} —{' '}
+                    {tr('Single-Leg Knockout Bracket (Extra Time & Penalties)', 'สายการแข่งขันน็อกเอาต์นัดเดียวรู้ผล (ต่อเวลาพิเศษ & ดวลจุดโทษ)')}
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    {tr(
+                      'Winners advance automatically from Round of 16 → Quarter-Finals → Semi-Finals → Grand Final (€3.50M Champion Prize).',
+                      'ผู้ชนะจะผ่านเข้าสู่รอบถัดไปอัตโนมัติ (รอบ 16 ทีม → รอบ 8 ทีม → รอบรองชนะเลิศ → รอบชิงชนะเลิศ เงินรางวัลแชมป์ €3.50M)'
+                    )}
+                  </p>
+                </div>
               </div>
+              <TrophyArtwork
+                competitionId={selectedCup}
+                size="md"
+                showLabel
+                customLabel={domesticCupsList.find((l) => l.cupId === selectedCup)?.cupName}
+              />
             </div>
 
             {(['R16', 'QF', 'SF', 'FINAL'] as const).map((stage) => {
@@ -2749,8 +2767,10 @@ export const CompetitionsAndScheduleView: React.FC<{
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
                     }`}
                   >
+                    <CompetitionBadge competitionId={uId} size="xs" />
                     <span className="font-mono font-bold text-sky-400">{u.shortName}</span>
                     <span>{u.name}</span>
+                    <TrophyArtwork competitionId={uId} size="xs" />
                     <span className="text-[10px] font-mono text-slate-400">
                       {tr(`(36 Teams · ${u.leaguePhaseMatches} MD)`, `(36 ทีม · ${u.leaguePhaseMatches} นัด)`)}
                     </span>
@@ -3348,13 +3368,16 @@ export const CompetitionsAndScheduleView: React.FC<{
                       setSelectedLeague(lId);
                       setSelectedMatchday(1);
                     }}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer flex items-center gap-1.5 ${
                       selectedLeague === lId
                         ? 'bg-emerald-500 text-slate-950 font-semibold'
                         : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
                     }`}
                   >
-                    {lCfg.countryFlag} · {lCfg.name}
+                    <CompetitionBadge competitionId={lId} size="xs" />
+                    <span>
+                      {lCfg.countryFlag} · {lCfg.name}
+                    </span>
                   </button>
                 );
               })}
@@ -3386,6 +3409,33 @@ export const CompetitionsAndScheduleView: React.FC<{
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Active League Emblem & Official Trophy Header Banner */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <CompetitionBadge competitionId={selectedLeague} size="md" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-display font-bold text-white">{cfg.name}</h3>
+                  <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400">
+                    {cfg.countryFlag} {cfg.countryName} · Tier {cfg.tier || 1}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    `${cfg.targetClubCount} Clubs · ${cfg.matchesPerClub} Matchdays · Champion Prize €${(cfg.prizePoolTotal / 4_000_000).toFixed(1)}M`,
+                    `${cfg.targetClubCount} สโมสร · แข่งขัน ${cfg.matchesPerClub} นัด · เงินรางวัลแชมป์ €${(cfg.prizePoolTotal / 4_000_000).toFixed(1)}M`
+                  )}
+                </p>
+              </div>
+            </div>
+            <TrophyArtwork
+              competitionId={selectedLeague}
+              size="md"
+              showLabel
+              customLabel={`${cfg.name} Trophy`}
+            />
           </div>
 
           {subView === 'table' && (
@@ -3758,9 +3808,12 @@ export const ClubStaffYouthWorldView: React.FC<{
     return (
       <div className="space-y-4">
         {showClubOverviewOrFinances && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-          {/* Finances & Board Requests */}
-          <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+          <>
+            {/* Authentic Club Kits Showcase (Home, Away & GK Jerseys) */}
+            <ClubKitShowcaseCard club={club} tr={tr} />
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* Finances & Board Requests */}
+              <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-display font-bold text-white">
                 {tr(`Club Overview & Financial Status (${club.name})`, `ข้อมูลสโมสรและสถานะการเงิน (${club.name})`)}
@@ -4082,6 +4135,7 @@ export const ClubStaffYouthWorldView: React.FC<{
             </div>
           </div>
         </div>
+          </>
         )}
 
         {/* Club Trophy Cabinet & Annual Awards Gala (Checkpoint 12) */}
@@ -4091,7 +4145,7 @@ export const ClubStaffYouthWorldView: React.FC<{
           data-testid="club-trophy-and-awards-section"
         >
           {/* Left 6 Cols: Club & European Trophy Cabinet */}
-          <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+          <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-display font-bold text-amber-400">
@@ -4117,6 +4171,32 @@ export const ClubStaffYouthWorldView: React.FC<{
               </span>
             </div>
 
+            {/* Authentic Trophy Showcase Shelf */}
+            <div className="grid grid-cols-4 gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
+              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
+                <TrophyArtwork competitionId="UEFA_UCL" size="sm" showLabel customLabel="UCL" />
+              </div>
+              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
+                <TrophyArtwork
+                  competitionId={club.leagueId}
+                  size="sm"
+                  showLabel
+                  customLabel={LEAGUES_CONFIG[club.leagueId]?.name}
+                />
+              </div>
+              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
+                <TrophyArtwork
+                  competitionId={LEAGUES_CONFIG[club.leagueId]?.cupId || 'DOMESTIC_CUP'}
+                  size="sm"
+                  showLabel
+                  customLabel={LEAGUES_CONFIG[club.leagueId]?.cupName || 'Domestic Cup'}
+                />
+              </div>
+              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
+                <TrophyArtwork competitionId="WORLD_CUP" size="sm" showLabel customLabel="World Cup / CWC" />
+              </div>
+            </div>
+
             <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1">
               {(world.trophyHistory || []).map((trp) => {
                 const winClub = world.clubs[trp.winnerClubId];
@@ -4131,6 +4211,10 @@ export const ClubStaffYouthWorldView: React.FC<{
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
+                      <TrophyArtwork
+                        competitionId={trp.competitionId || trp.competitionName}
+                        size="xs"
+                      />
                       <ClubBadge club={winClub} size="xs" />
                       <div>
                         <div className="font-bold text-white">
@@ -4159,19 +4243,25 @@ export const ClubStaffYouthWorldView: React.FC<{
 
           {/* Right 6 Cols: Annual Awards Gala (Ballon d'Or / Golden Boot / Golden Boy) */}
           <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-            <div>
-              <h3 className="text-sm font-display font-bold text-emerald-400">
-                {tr(
-                  "🌟 Annual World & European Awards Gala (Ballon d'Or · Golden Boot · Golden Boy)",
-                  "🌟 ทำเนียบรางวัลเกียรติยศประจำปี (Ballon d'Or · รองเท้าทองคำ · Golden Boy)"
-                )}
-              </h3>
-              <p className="text-xs text-slate-400">
-                {tr(
-                  'Crowned at the end of every season based on goals, assists, average ratings, and trophies.',
-                  'ประกาศผลทุกจบฤดูกาลจากสถิติประตู แอสซิสต์ และเรตติ้งเฉลี่ยสูงสุดทั่วยุโรป'
-                )}
-              </p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-display font-bold text-emerald-400">
+                  {tr(
+                    "🌟 Annual World & European Awards Gala (Ballon d'Or · Golden Boot · Golden Boy)",
+                    "🌟 ทำเนียบรางวัลเกียรติยศประจำปี (Ballon d'Or · รองเท้าทองคำ · Golden Boy)"
+                  )}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    'Crowned at the end of every season based on goals, assists, average ratings, and trophies.',
+                    'ประกาศผลทุกจบฤดูกาลจากสถิติประตู แอสซิสต์ และเรตติ้งเฉลี่ยสูงสุดทั่วยุโรป'
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <TrophyArtwork competitionId="BALLON_DOR" size="sm" />
+                <TrophyArtwork competitionId="GOLDEN_BOOT" size="sm" />
+              </div>
             </div>
 
             <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
@@ -5016,13 +5106,16 @@ export const ClubStaffYouthWorldView: React.FC<{
                 const first = Object.values(world.clubs).find((c) => c.leagueId === lId);
                 if (first) setInspectedClubId(first.id);
               }}
-              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
+              className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer flex items-center gap-1.5 ${
                 worldLeagueFilter === lId
                   ? 'bg-emerald-500 text-slate-950 font-semibold'
                   : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
               }`}
             >
-              {LEAGUES_CONFIG[lId].name} ({LEAGUES_CONFIG[lId].targetClubCount} {tr('Clubs', 'สโมสร')})
+              <CompetitionBadge competitionId={lId} size="xs" />
+              <span>
+                {LEAGUES_CONFIG[lId].name} ({LEAGUES_CONFIG[lId].targetClubCount} {tr('Clubs', 'สโมสร')})
+              </span>
             </button>
           ))}
         </div>
@@ -5042,8 +5135,11 @@ export const ClubStaffYouthWorldView: React.FC<{
                       : 'bg-slate-950 text-slate-300 hover:bg-slate-900'
                   }`}
                 >
-                  <span className="font-medium truncate">{c.name}</span>
-                  <div className="flex items-center gap-1.5 font-mono">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ClubBadge club={c} size="xs" />
+                    <span className="font-medium truncate">{c.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 font-mono shrink-0">
                     {jobSec <= 52 && c.id !== club.id && (
                       <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px]">
                         {tr('Under Pressure', 'เก้าอี้ร้อน')}
@@ -5057,21 +5153,32 @@ export const ClubStaffYouthWorldView: React.FC<{
           </div>
 
           <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div>
-                <h3 className="text-lg font-display font-bold text-white">{inspectedClub.name}</h3>
-                <div className="text-xs text-slate-400">
-                  {tr('Manager:', 'ผู้จัดการทีม:')}{' '}
-                  {inspectedClub.id === club.id ? world.manager.name : inspectedClub.aiManager.name}{' '}
-                  ({inspectedClub.aiManager.style}) ·{' '}
-                  {tr('Job Security:', 'ความมั่นคงเก้าอี้:')}{' '}
-                  <span className="font-mono text-emerald-400">
-                    {inspectedClub.aiManager.jobSecurity ?? 78}%
-                  </span>{' '}
-                  · {tr('Stadium:', 'สนาม')} {inspectedClub.stadiumName}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <ClubBadge club={inspectedClub} size="md" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-lg font-display font-bold text-white">{inspectedClub.name}</h3>
+                    <CompetitionBadge competitionId={inspectedClub.leagueId} size="xs" />
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {tr('Manager:', 'ผู้จัดการทีม:')}{' '}
+                    {inspectedClub.id === club.id ? world.manager.name : inspectedClub.aiManager.name}{' '}
+                    ({inspectedClub.aiManager.style}) ·{' '}
+                    {tr('Job Security:', 'ความมั่นคงเก้าอี้:')}{' '}
+                    <span className="font-mono text-emerald-400">
+                      {inspectedClub.aiManager.jobSecurity ?? 78}%
+                    </span>{' '}
+                    · {tr('Stadium:', 'สนาม')} {inspectedClub.stadiumName}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
+                  <ClubKitJersey club={inspectedClub} variant="home" size="xs" />
+                  <ClubKitJersey club={inspectedClub} variant="away" size="xs" />
+                  <ClubKitJersey club={inspectedClub} variant="gk" size="xs" />
+                </div>
                 <div className="text-right font-mono tabular-nums text-xs">
                   <div className="text-emerald-400">
                     {tr('Transfer Budget:', 'งบซื้อขาย')} €{(inspectedClub.finances.transferBudget / 1_000_000).toFixed(1)}M

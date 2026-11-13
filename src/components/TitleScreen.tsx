@@ -28,6 +28,7 @@ import { SaveSlotMeta } from '../engine/worldSimulationService';
 import { soundService } from '../engine/soundService';
 import type { User } from '../firebase';
 import { ClubBadge } from './ClubBadge';
+import { ClubKitJersey, CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 
 interface TitleScreenProps {
@@ -719,22 +720,34 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     <span className="text-xs font-mono font-bold text-emerald-400">
                       {tr('FEATURED CLUB SPOTLIGHT', 'สโมสรแนะนำพร้อมคุมทันที')}
                     </span>
-                    <span className="text-xs font-mono text-slate-400">
-                      {LEAGUES_CONFIG[defaultQuickClub.leagueId]?.name}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <CompetitionBadge
+                        competitionId={defaultQuickClub.leagueId}
+                        size="xs"
+                      />
+                      <span className="text-xs font-mono text-slate-300">
+                        {LEAGUES_CONFIG[defaultQuickClub.leagueId]?.name}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-3.5">
-                    <ClubBadge club={defaultQuickClub} size="lg" />
-                    <div>
-                      <div className="text-lg font-display font-bold text-white">
-                        {defaultQuickClub.name}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3.5 min-w-0">
+                      <ClubBadge club={defaultQuickClub} size="lg" />
+                      <div className="min-w-0">
+                        <div className="text-lg font-display font-bold text-white truncate">
+                          {defaultQuickClub.name}
+                        </div>
+                        <div className="text-xs text-slate-400 truncate">
+                          {defaultQuickClub.stadiumName} (
+                          {defaultQuickClub.stadiumCapacity.toLocaleString()}{' '}
+                          {tr('seats', 'ที่นั่ง')})
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-400">
-                        {defaultQuickClub.stadiumName} (
-                        {defaultQuickClub.stadiumCapacity.toLocaleString()}{' '}
-                        {tr('seats', 'ที่นั่ง')})
-                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <ClubKitJersey club={defaultQuickClub} variant="home" size="xs" />
+                      <ClubKitJersey club={defaultQuickClub} variant="away" size="xs" />
                     </div>
                   </div>
 
@@ -1350,17 +1363,18 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 {/* Selected Club Summary */}
                 {activeClub && (
                   <div
-                    className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+                    className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5"
                     style={{ borderLeft: `4px solid ${activeClub.primaryColor}` }}
                   >
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex items-center gap-3">
                         <ClubBadge club={activeClub} size="md" />
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-base font-bold text-white">{activeClub.name}</span>
-                            <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-emerald-400">
-                              {LEAGUES_CONFIG[activeClub.leagueId]?.name}
+                            <span className="inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-emerald-400">
+                              <CompetitionBadge competitionId={activeClub.leagueId} size="xs" />
+                              <span>{LEAGUES_CONFIG[activeClub.leagueId]?.name}</span>
                             </span>
                           </div>
                           <div className="text-xs text-slate-400">
@@ -1368,12 +1382,20 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                           </div>
                         </div>
                       </div>
-                      <div className="text-right font-mono tabular-nums">
-                        <div className="text-xs text-emerald-400 font-semibold">
-                          {tr('Transfer Budget:', 'งบซื้อขาย:')} €{(activeClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800">
+                          <ClubKitJersey club={activeClub} variant="home" size="xs" showLabel label={tr('Home', 'เหย้า')} />
+                          <ClubKitJersey club={activeClub} variant="away" size="xs" showLabel label={tr('Away', 'เยือน')} />
+                          <ClubKitJersey club={activeClub} variant="gk" size="xs" showLabel label="GK" />
                         </div>
-                        <div className="text-xs text-slate-400">
-                          {tr('Wage Budget:', 'เพดานค่าเหนื่อย:')} €{(activeClub.finances.wageBudgetPerWeek / 1_000).toFixed(0)}K/{tr('wk', 'สัปดาห์')}
+                        <TrophyArtwork competitionId={activeClub.leagueId} size="sm" />
+                        <div className="text-right font-mono tabular-nums">
+                          <div className="text-xs text-emerald-400 font-semibold">
+                            {tr('Transfer Budget:', 'งบซื้อขาย:')} €{(activeClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+                          </div>
+                          <div className="text-xs text-slate-400">
+                            {tr('Wage Budget:', 'เพดานค่าเหนื่อย:')} €{(activeClub.finances.wageBudgetPerWeek / 1_000).toFixed(0)}K/{tr('wk', 'สัปดาห์')}
+                          </div>
                         </div>
                       </div>
                     </div>
