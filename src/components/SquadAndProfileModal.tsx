@@ -797,6 +797,8 @@ interface PlayerProfileModalProps {
     proposedContractYears: number;
     proposedSquadStatus: Player['squadStatus'];
     signingBonus: number;
+    loanOptionToBuyFee?: number;
+    buyBackClauseFee?: number;
   }) => void;
   onUpdateIndividualTraining: (
     playerId: string,
@@ -817,6 +819,7 @@ interface PlayerProfileModalProps {
   ) => void;
   onSignBosmanFree?: (playerId: string, proposedWage: number, contractYears: number) => void;
   onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
+  onSendToAffiliateLoan?: (playerId: string) => void;
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
@@ -831,6 +834,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   onUpdatePlayerTransferAndSquadStatus,
   onSignBosmanFree,
   onActivateReleaseClause,
+  onSendToAffiliateLoan,
 }) => {
   const { tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<'attributes' | 'contract_transfer' | 'development'>('attributes');
@@ -848,6 +852,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   const [proposedYears, setProposedYears] = useState(4);
   const [proposedStatus, setProposedStatus] = useState<Player['squadStatus']>(player.squadStatus);
   const [signingBonus, setSigningBonus] = useState(Math.round(player.wagePerWeek * 3));
+  const [loanOptionToBuyFee, setLoanOptionToBuyFee] = useState(Math.round(player.marketValue * 1.15));
+  const [buyBackClauseFee, setBuyBackClauseFee] = useState(Math.round(player.marketValue * 1.6));
 
   const scoutReport = world.scoutReports[player.id];
   const isShortlisted = world.shortlistPlayerIds.includes(player.id);
@@ -1517,6 +1523,20 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                               })}
                             </div>
                           </div>
+
+                          {onSendToAffiliateLoan && (
+                            <button
+                              type="button"
+                              data-testid="send-affiliate-loan-btn"
+                              onClick={() => onSendToAffiliateLoan(player.id)}
+                              className="w-full py-2 bg-indigo-500/20 hover:bg-indigo-500 text-indigo-300 hover:text-slate-950 border border-indigo-500/40 font-semibold text-xs rounded-lg transition-colors cursor-pointer"
+                            >
+                              {tr(
+                                '🤝 Send to Affiliate / Feeder Club on Loan',
+                                '🤝 ส่งยืมตัวไปเก็บเลเวลกับสโมสรพันธมิตร (Affiliate Loan)'
+                              )}
+                            </button>
+                          )}
                         </div>
                       )}
                     </>
@@ -1685,6 +1705,36 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                         </div>
                       </div>
 
+                      {/* Advanced Transfer Clauses: Loan Option to Buy & Buy-Back Clause (Checkpoint 26) */}
+                      <div className="grid grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label htmlFor="trf-option-buy" className="block text-[11px] text-slate-400 mb-1">
+                            {tr('Loan Option to Buy Clause (€)', 'ออปชันซื้อขาดหลังหมดสัญญายืม (€)')}
+                          </label>
+                          <input
+                            id="trf-option-buy"
+                            type="number"
+                            step={250000}
+                            value={loanOptionToBuyFee}
+                            onChange={(e) => setLoanOptionToBuyFee(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-amber-300 font-mono tabular-nums"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="trf-buyback" className="block text-[11px] text-slate-400 mb-1">
+                            {tr('Buy-Back Clause (€)', 'เงื่อนไขซื้อกลับ Buy-Back Clause (€)')}
+                          </label>
+                          <input
+                            id="trf-buyback"
+                            type="number"
+                            step={500000}
+                            value={buyBackClauseFee}
+                            onChange={(e) => setBuyBackClauseFee(Number(e.target.value) || 0)}
+                            className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-sky-300 font-mono tabular-nums"
+                          />
+                        </div>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() =>
@@ -1698,6 +1748,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                             proposedContractYears: proposedYears,
                             proposedSquadStatus: proposedStatus,
                             signingBonus,
+                            loanOptionToBuyFee: offerType === 'Loan' ? loanOptionToBuyFee : undefined,
+                            buyBackClauseFee: offerType === 'Transfer' ? buyBackClauseFee : undefined,
                           })
                         }
                         className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"

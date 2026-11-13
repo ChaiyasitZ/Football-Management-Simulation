@@ -29,36 +29,45 @@ import {
   assignYouthMentor,
   buildScoutReportForPlayer,
   completeUserMatchdayAndSyncWorld,
+  createCustomPlayerInWorld,
   deleteSavedSlot,
   deleteSaveSlotFromFirestore,
+  dispatchSouthAmericaWonderkidScout,
   expandClubStadium,
   generateAnnualYouthIntake,
   getClubStaffBonuses,
   getPendingUrgentInboxItem,
   getSavedSlotsList,
   hireStaffMember,
+  importWorldDatabaseJson,
+  liveEditClubFinancesAndFacilities,
   loadWorldStateFromFirestoreSlot,
   loadWorldStateFromSlot,
   organizePreSeasonTour,
+  prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
   recruitYouthAcademyProspect,
   releaseYouthProspect,
   removeMentoringGroup,
   renewPlayerContract,
+  requestAffiliateFeederClub,
   respondToIncomingTransferOffer,
   saveMentoringGroup,
   SaveSlotMeta,
   saveWorldStateToFirestoreSlot,
   saveWorldStateToSlot,
+  sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
   signPlayerOnBosmanFree,
+  simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
   submitAndEvaluateTransferOffer,
   syncUserSaveSlotsFromFirestore,
   triggerAIManagerialCarouselCheck,
   triggerClubTakeoverEvent,
   triggerFifaInternationalBreak,
+  triggerGlobalSuperClubBid,
   updatePlayerSquadAndTransferStatus,
   upgradeJuniorOrRecruitmentFacility,
 } from './engine/worldSimulationService';
@@ -124,6 +133,8 @@ function TouchlineShell() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
+  const [commandQuery, setCommandQuery] = useState<string>('');
 
   const isAdvancingRef = useRef(false);
 
@@ -192,13 +203,31 @@ function TouchlineShell() {
     document.body.dataset.state = shellState;
   }, [shellState]);
 
-  // Keyboard shortcuts in playing / paused states
+  // Keyboard shortcuts in playing / paused states (including Ctrl+K / Cmd+K Command Palette)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        if (shellState !== 'title') {
+          setCommandPaletteOpen((prev) => !prev);
+          setCommandQuery('');
+        }
+        return;
+      }
+
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') {
+        if (e.key === 'Escape' && commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+        }
+        return;
+      }
 
       if (e.key === 'Escape' || e.key === 'p' || e.key === 'P') {
+        if (commandPaletteOpen) {
+          setCommandPaletteOpen(false);
+          return;
+        }
         if (selectedPlayerId) {
           setSelectedPlayerId(null);
           return;
@@ -211,7 +240,7 @@ function TouchlineShell() {
       } else if ((e.key === 'm' || e.key === 'M') && shellState !== 'title') {
         const nextMute = soundService.toggleMute();
         setIsMuted(nextMute);
-      } else if ((e.key === 'c' || e.key === 'C') && shellState === 'playing' && !selectedPlayerId) {
+      } else if ((e.key === 'c' || e.key === 'C') && shellState === 'playing' && !selectedPlayerId && !commandPaletteOpen) {
         handleAdvanceDay();
       }
     };
@@ -423,6 +452,8 @@ function TouchlineShell() {
     proposedContractYears: number;
     proposedSquadStatus: Player['squadStatus'];
     signingBonus: number;
+    loanOptionToBuyFee?: number;
+    buyBackClauseFee?: number;
   }) => {
     const res = submitAndEvaluateTransferOffer(world, params);
     setWorld(res.nextState);
@@ -718,6 +749,21 @@ function TouchlineShell() {
           </div>
 
           <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              data-testid="command-palette-trigger"
+              onClick={() => {
+                setCommandPaletteOpen(true);
+                setCommandQuery('');
+              }}
+              className="px-3 py-1.5 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-mono text-xs rounded-lg cursor-pointer flex items-center gap-2"
+            >
+              <span>🔍 {tr('Search', 'ค้นหาด่วน')}</span>
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] text-emerald-400">
+                Ctrl+K
+              </kbd>
+            </button>
+
             <LanguageSwitcher />
 
             <button
@@ -975,6 +1021,11 @@ function TouchlineShell() {
                 setWorld(res.nextState);
                 showToast(res.message);
               }}
+              onPrescribeMedicalRest={(playerId) => {
+                const res = prescribePlayerMedicalRest(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
             />
           )}
 
@@ -983,7 +1034,7 @@ function TouchlineShell() {
               world={world}
               onSelectPlayer={setSelectedPlayerId}
               onCreateAssignment={(
-                region: LeagueId | 'ALL_EUROPE',
+                region: LeagueId | 'ALL_EUROPE' | 'SOUTH_AMERICA',
                 posGroup: PositionGroup | 'ANY',
                 maxAge: number,
                 maxBudget: number
@@ -1013,6 +1064,11 @@ function TouchlineShell() {
                 );
               }}
               onGenerateScoutReport={handleGenerateScoutReport}
+              onDispatchSouthAmericaScout={() => {
+                const res = dispatchSouthAmericaWonderkidScout(world);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
             />
           )}
 
@@ -1027,6 +1083,11 @@ function TouchlineShell() {
               }}
               onActivateReleaseClause={(playerId, useBargainDiscount) => {
                 const res = activateReleaseClauseTransfer(world, playerId, useBargainDiscount);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onTriggerGlobalSuperBid={() => {
+                const res = triggerGlobalSuperClubBid(world);
                 setWorld(res.nextState);
                 showToast(res.message);
               }}
@@ -1148,6 +1209,36 @@ function TouchlineShell() {
                 setWorld(res.nextState);
                 showToast(res.message);
               }}
+              onRequestAffiliateClub={() => {
+                const res = requestAffiliateFeederClub(world);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onSendToAffiliateLoan={(playerId, affId) => {
+                const res = sendPlayerToAffiliateLoan(world, playerId, affId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onSimulateCWCStage={() => {
+                const res = simulateClubWorldCupNextStage(world);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onCreateCustomPlayer={(params) => {
+                const res = createCustomPlayerInWorld(world, params);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onLiveEditClub={(params) => {
+                const res = liveEditClubFinancesAndFacilities(world, params);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onImportDatabaseJson={(rawJson) => {
+                const res = importWorldDatabaseJson(world, rawJson);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
               onSaveToSlot={async (slotId) => {
                 const slots = authUser
                   ? await saveWorldStateToFirestoreSlot(slotId, world)
@@ -1210,7 +1301,164 @@ function TouchlineShell() {
               setSelectedPlayerId(null);
             }
           }}
+          onSendToAffiliateLoan={(playerId) => {
+            const res = sendPlayerToAffiliateLoan(world, playerId);
+            setWorld(res.nextState);
+            showToast(res.message);
+          }}
         />
+      )}
+
+      {/* Checkpoint 22: Global Command Palette (Ctrl+K / Cmd+K) */}
+      {commandPaletteOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 flex items-start justify-center pt-20 p-4"
+          data-testid="command-palette-modal"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setCommandPaletteOpen(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-xl overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-3.5 border-b border-slate-800 flex items-center gap-3">
+              <span className="text-emerald-400 font-mono text-sm">⌘K</span>
+              <input
+                type="text"
+                autoFocus
+                data-testid="command-palette-input"
+                value={commandQuery}
+                onChange={(e) => setCommandQuery(e.target.value)}
+                placeholder={tr(
+                  'Search any player, 280 clubs, or jump to a management screen...',
+                  'ค้นหาชื่อนักเตะ, 280 สโมสรยุโรป, หรือพิมพ์ชื่อเมนูเพื่อข้ามหน้า...'
+                )}
+                className="flex-1 bg-transparent text-sm text-white focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => setCommandPaletteOpen(false)}
+                className="px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white text-xs cursor-pointer"
+              >
+                Esc
+              </button>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto p-3 space-y-3 text-xs">
+              {/* Navigation Screens */}
+              <div>
+                <div className="text-[10px] font-mono uppercase text-slate-400 px-2 mb-1">
+                  {tr('Management Screens (15)', 'หน้าต่างการจัดการทีม (15 เมนู)')}
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {NAV_ITEMS.filter((item) => {
+                    if (!commandQuery.trim()) return true;
+                    const q = commandQuery.toLowerCase();
+                    return (
+                      item.labelEn.toLowerCase().includes(q) ||
+                      item.labelTh.toLowerCase().includes(q)
+                    );
+                  })
+                    .slice(0, 6)
+                    .map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          setCommandPaletteOpen(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 text-left text-slate-200 flex items-center justify-between cursor-pointer"
+                      >
+                        <span className="truncate">{tr(item.labelEn, item.labelTh)}</span>
+                        <span className="text-[10px] font-mono text-emerald-400">Go →</span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* Matching Players */}
+              <div>
+                <div className="text-[10px] font-mono uppercase text-slate-400 px-2 mb-1">
+                  {tr('Players Database', 'ฐานข้อมูลนักเตะ')}
+                </div>
+                <div className="space-y-1">
+                  {Object.values(world.players)
+                    .filter((p) => {
+                      if (!commandQuery.trim()) return p.clubId === controlledClub.id;
+                      const q = commandQuery.toLowerCase();
+                      return `${p.firstName} ${p.lastName}`.toLowerCase().includes(q);
+                    })
+                    .sort((a, b) => b.currentAbility - a.currentAbility)
+                    .slice(0, 6)
+                    .map((p) => {
+                      const c = world.clubs[p.clubId];
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedPlayerId(p.id);
+                            setCommandPaletteOpen(false);
+                          }}
+                          className="w-full px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 flex items-center justify-between text-left cursor-pointer"
+                        >
+                          <div>
+                            <span className="font-semibold text-white">
+                              {p.firstName} {p.lastName}
+                            </span>{' '}
+                            <span className="text-slate-400 font-mono">
+                              ({p.positions[0]} · {c?.shortName})
+                            </span>
+                          </div>
+                          <span className="font-mono text-emerald-400">
+                            CA {(p.currentAbility / 10).toFixed(1)} · €
+                            {(p.marketValue / 1_000_000).toFixed(1)}M
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* Matching Clubs */}
+              <div>
+                <div className="text-[10px] font-mono uppercase text-slate-400 px-2 mb-1">
+                  {tr('European Clubs (280)', 'สโมสรยุโรป (280 ทีม)')}
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {Object.values(world.clubs)
+                    .filter((c) => {
+                      if (!commandQuery.trim()) return c.leagueId === controlledClub.leagueId;
+                      const q = commandQuery.toLowerCase();
+                      return (
+                        c.name.toLowerCase().includes(q) ||
+                        c.shortName.toLowerCase().includes(q)
+                      );
+                    })
+                    .slice(0, 6)
+                    .map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveTab('world');
+                          setCommandPaletteOpen(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 flex items-center justify-between text-left cursor-pointer"
+                      >
+                        <span className="text-white truncate">{c.name}</span>
+                        <span className="text-[10px] font-mono text-sky-400">
+                          {c.countryId} · Rep {c.reputation}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Pause / Save Modal (Triggered by Esc or P) */}

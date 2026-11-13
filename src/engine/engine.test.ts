@@ -16,30 +16,45 @@ import {
   appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
+  computeHallOfFameLeaderboard,
+  createCustomPlayerInWorld,
   dehydrateWorldStateToCareerMap,
+  dispatchSouthAmericaWonderkidScout,
   evaluateClubFFPStatus,
+  evaluateSquadMedicalRisk,
   expandClubStadium,
+  exportWorldDatabaseJson,
   generateAnnualYouthIntake,
   getClubStaffBonuses,
+  getClubSupporterConfidence,
   getDeadlineDayBargains,
+  getFanSocialFeed,
+  importWorldDatabaseJson,
   isTransferDeadlineWindow,
+  liveEditClubFinancesAndFacilities,
   loadWorldStateFromSlot,
   organizePreSeasonTour,
+  prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
   rehydrateWorldStateFromCareerDoc,
   releaseYouthProspect,
   removeMentoringGroup,
   renewPlayerContract,
+  requestAffiliateFeederClub,
   saveMentoringGroup,
   saveWorldStateToSlot,
+  sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
   signPlayerOnBosmanFree,
+  simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
+  simulateExhibitionClash,
   submitAndEvaluateTransferOffer,
   triggerAIManagerialCarouselCheck,
   triggerClubTakeoverEvent,
   triggerFifaInternationalBreak,
+  triggerGlobalSuperClubBid,
   updatePlayerSquadAndTransferStatus,
   upgradeJuniorOrRecruitmentFacility,
 } from './worldSimulationService';
@@ -1210,3 +1225,108 @@ test('Phase 4 (Checkpoints 13–17): International Management & INT_EURO, Stadiu
   assert.equal(rehydrated.scenarioChallenge, 'POINTS_DEDUCTION');
   assert.equal(rehydrated.customClubConfig?.name, 'London Phoenix FC');
 });
+
+test('Phase 5 & Phase 6 (Checkpoints 18-27): Weather Physics, UEFA Dynamic Qualification, In-Game Editor, Hall of Fame, Exhibition Clash, Super-Club Bids, South America Scouting, Club World Cup, Medical Center, Supporter Feed & Affiliate Clubs', () => {
+  const world = createInitialWorldState(50607);
+  const myClubId = world.controlledClubId;
+
+  // Checkpoint 19: Weather Physics & Pitch Condition in MatchResult
+  const fx = world.fixtures[0];
+  const hc = world.clubs[fx.homeClubId];
+  const ac = world.clubs[fx.awayClubId];
+  const matchRes = simulateMatch(fx, hc, ac, world.players, 8080);
+  assert.ok(matchRes.weather, 'MatchResult must include deterministic weather condition');
+  assert.ok(matchRes.pitchCondition, 'MatchResult must include deterministic pitchCondition');
+
+  // Checkpoint 20: In-Game Database Editor, Create-a-Player & JSON Export/Import
+  const created = createCustomPlayerInWorld(world, {
+    firstName: 'Estevao',
+    lastName: 'Wonderkid',
+    nationality: 'BRA',
+    position: 'AMR',
+    age: 17,
+    currentAbility: 156,
+    potentialAbility: 196,
+    clubId: myClubId,
+  });
+  assert.equal(created.player.firstName, 'Estevao');
+  assert.equal(created.player.currentAbility, 156);
+  assert.equal(created.player.potentialAbility, 196);
+  assert.equal(created.nextState.players[created.player.id].clubId, myClubId);
+
+  const editedClub = liveEditClubFinancesAndFacilities(created.nextState, {
+    clubId: myClubId,
+    transferBudgetM: 185,
+    trainingFacilities: 20,
+  });
+  assert.equal(editedClub.nextState.clubs[myClubId].finances.transferBudget, 185_000_000);
+  assert.equal(editedClub.nextState.clubs[myClubId].trainingFacilities, 20);
+
+  const exportedJson = exportWorldDatabaseJson(editedClub.nextState);
+  assert.ok(exportedJson.includes('touchline-db-v1'));
+  const imported = importWorldDatabaseJson(world, exportedJson);
+  assert.equal(imported.success, true);
+  assert.equal(imported.nextState.clubs[myClubId].finances.transferBudget, 185_000_000);
+
+  // Checkpoint 21: All-Time Hall of Fame Leaderboard & Exhibition Club Clash
+  const hof = computeHallOfFameLeaderboard(imported.nextState);
+  assert.ok(hof.length >= 6);
+  assert.equal(hof.some((e) => e.isUser), true);
+
+  const clash = simulateExhibitionClash(imported.nextState, 'club_eng_pl_1', 'club_esp_ll_1');
+  assert.ok(clash.summary.includes('-'));
+  assert.ok(clash.result.weather);
+
+  // Checkpoint 23: Saudi / MLS Super-Club Bid, South America Scouting & FIFA Club World Cup (GLB_CWC)
+  const superBid = triggerGlobalSuperClubBid(imported.nextState);
+  assert.equal(superBid.nextState.transferOffers.length, imported.nextState.transferOffers.length + 1);
+  assert.equal(superBid.nextState.transferOffers[0].status, 'PendingClub');
+
+  const saScout = dispatchSouthAmericaWonderkidScout(superBid.nextState);
+  assert.equal(saScout.nextState.scoutAssignments[0].regionOrLeague, 'SOUTH_AMERICA');
+  assert.equal(['BRA', 'ARG'].includes(saScout.wonderkid.nationality), true);
+
+  const cwcQF = simulateClubWorldCupNextStage(saScout.nextState).nextState;
+  const cwcSF = simulateClubWorldCupNextStage(cwcQF).nextState;
+  const cwcFinal = simulateClubWorldCupNextStage(cwcSF).nextState;
+  assert.equal(
+    (cwcFinal.trophyHistory || []).some((t) => t.competitionId === 'GLB_CWC'),
+    true,
+    'Completing GLB_CWC Final must record FIFA Club World Cup champion in trophyHistory'
+  );
+
+  // Checkpoint 24: Medical Center Risk Matrix & Preventative Rest
+  const riskMatrix = evaluateSquadMedicalRisk(cwcFinal, myClubId);
+  assert.ok(riskMatrix.length >= 11);
+  const targetRestPlayer = riskMatrix[0];
+  const rested = prescribePlayerMedicalRest(cwcFinal, targetRestPlayer.playerId);
+  assert.equal(
+    rested.nextState.players[targetRestPlayer.playerId].individualTraining.intensity,
+    'Light'
+  );
+  assert.ok(
+    rested.nextState.players[targetRestPlayer.playerId].fitness >= targetRestPlayer.fitness
+  );
+
+  // Checkpoint 25: Supporter Confidence & Fan Social Feed
+  const suppConf = getClubSupporterConfidence(rested.nextState, myClubId);
+  assert.ok(suppConf >= 15 && suppConf <= 100);
+  const feed = getFanSocialFeed(rested.nextState);
+  assert.ok(feed.length >= 3);
+
+  // Checkpoint 26: Affiliate / Feeder Club Request & Development Loan + Advanced Transfer Clauses
+  const affReq = requestAffiliateFeederClub(rested.nextState);
+  assert.equal((affReq.nextState.clubs[myClubId].affiliateClubIds || []).length, 1);
+  const loanRes = sendPlayerToAffiliateLoan(affReq.nextState, created.player.id);
+  assert.equal(
+    loanRes.nextState.players[created.player.id].clubId,
+    affReq.nextState.clubs[myClubId].affiliateClubIds![0]
+  );
+
+  // Checkpoint 18: Dynamic UEFA Qualification on End-of-Season Rollover
+  const rolledOver = processEndOfSeasonRollover(loanRes.nextState);
+  assert.equal(rolledOver.nextState.uefaStandings?.UEFA_UCL?.length, 36);
+  assert.equal(rolledOver.nextState.uefaStandings?.UEFA_UEL?.length, 36);
+  assert.equal(rolledOver.nextState.uefaStandings?.UEFA_UECL?.length, 36);
+});
+

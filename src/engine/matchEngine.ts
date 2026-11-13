@@ -8,9 +8,11 @@ import {
   MatchResult,
   MatchTeamStats,
   Mentality,
+  PitchCondition,
   Player,
   TacticalSystem,
   TouchlineShoutType,
+  WeatherCondition,
 } from '../types/game';
 import { SeededRNG } from './random';
 import {
@@ -540,6 +542,41 @@ export function simulateMatch(
   const homeStrength = evaluateTeamMatchStrength(homeClub, homeTactic, playersById, true);
   const awayStrength = evaluateTeamMatchStrength(awayClub, awayTactic, playersById, false);
 
+  // Deterministic Weather & Pitch Condition physics (Checkpoint 19)
+  const weatherHash = Math.abs(seed + fixture.matchday * 37) % 100;
+  const monthNum = Number(fixture.kickoffDate?.slice(5, 7) || '10');
+  const isWinter = monthNum === 12 || monthNum === 1 || monthNum === 2;
+  let weather: WeatherCondition = 'Clear';
+  let pitchCondition: PitchCondition = 'Perfect';
+  if (isWinter && weatherHash < 12) {
+    weather = 'Snow';
+    pitchCondition = 'Frozen';
+  } else if (weatherHash < 24) {
+    weather = 'Heavy Rain';
+    pitchCondition = 'Waterlogged';
+  } else if (weatherHash < 44) {
+    weather = 'Light Rain';
+    pitchCondition = 'Slick';
+  } else if (weatherHash < 58) {
+    weather = 'Strong Wind';
+    pitchCondition = 'Perfect';
+  }
+
+  const weatherPassAccDelta =
+    weather === 'Heavy Rain' || weather === 'Snow'
+      ? -4
+      : weather === 'Strong Wind'
+        ? -2
+        : weather === 'Light Rain'
+          ? 1
+          : 0;
+  const weatherReboundGoalBonus =
+    pitchCondition === 'Waterlogged' || pitchCondition === 'Slick' ? 0.025 : 0;
+  if (weather === 'Strong Wind') {
+    homeStrength.cornerMultiplier *= 0.9;
+    awayStrength.cornerMultiplier *= 0.9;
+  }
+
   const homeStats = createEmptyTeamStats();
   const awayStats = createEmptyTeamStats();
   const events: MatchEvent[] = [];
@@ -564,21 +601,25 @@ export function simulateMatch(
   homeStats.possession = Math.max(32, Math.min(68, rawHomePoss));
   awayStats.possession = 100 - homeStats.possession;
 
-  // Base pass counts & accuracy (including passingDirectness & buildUp bonuses)
+  // Base pass counts & accuracy (including passingDirectness, buildUp & weather physics)
   homeStats.passes = Math.round(homeStats.possession * rng.float(8.2, 10.4));
   awayStats.passes = Math.round(awayStats.possession * rng.float(8.2, 10.4));
   homeStats.passAccuracy = Math.min(
     95,
     Math.max(
-      68,
-      Math.round(74 + (homeStrength.midfield / 100) * 16 + homeStrength.passAccBonus + rng.int(-2, 2))
+      64,
+      Math.round(
+        74 + (homeStrength.midfield / 100) * 16 + homeStrength.passAccBonus + weatherPassAccDelta + rng.int(-2, 2)
+      )
     )
   );
   awayStats.passAccuracy = Math.min(
     95,
     Math.max(
-      68,
-      Math.round(74 + (awayStrength.midfield / 100) * 16 + awayStrength.passAccBonus + rng.int(-2, 2))
+      64,
+      Math.round(
+        74 + (awayStrength.midfield / 100) * 16 + awayStrength.passAccBonus + weatherPassAccDelta + rng.int(-2, 2)
+      )
     )
   );
 
@@ -1220,7 +1261,10 @@ export function simulateMatch(
         attacker.traits?.includes('Places Shots') || attacker.traits?.includes('Curls Ball') ? 0.03 : 0;
       const goalThreshold = Math.max(
         0.06,
-        Math.min(0.38, shotXg * (0.85 + finishSkill * 0.4 - gkSkill * 0.25) + traitFinishBonus)
+        Math.min(
+          0.41,
+          shotXg * (0.85 + finishSkill * 0.4 - gkSkill * 0.25) + traitFinishBonus + weatherReboundGoalBonus
+        )
       );
 
       if (shotOutcomeRoll < goalThreshold) {
@@ -1448,6 +1492,8 @@ export function simulateMatch(
     substitutions: recordedSubstitutions.length > 0 ? recordedSubstitutions : undefined,
     extraTimePlayed: extraTimePlayed || undefined,
     penaltyShootout,
+    weather,
+    pitchCondition,
   };
 
   return reconcileMatchResultEventsAndStats(fixture, homeClub, awayClub, initialResult, events);

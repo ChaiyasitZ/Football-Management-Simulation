@@ -674,6 +674,28 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             <div className="text-[11px] text-slate-400 mt-0.5">
               {homeClub.stadiumName}
             </div>
+            {(() => {
+              const wCond = simResult?.weather || 'Clear';
+              const pCond = simResult?.pitchCondition || 'Perfect';
+              const wIcon =
+                wCond === 'Heavy Rain'
+                  ? '🌧️'
+                  : wCond === 'Light Rain'
+                    ? '🌦️'
+                    : wCond === 'Strong Wind'
+                      ? '💨'
+                      : wCond === 'Snow'
+                        ? '❄️'
+                        : '☀️';
+              return (
+                <div
+                  data-testid="match-weather-badge"
+                  className="mt-1 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-[10px] font-mono text-sky-300"
+                >
+                  {wIcon} {wCond} · {tr('Pitch:', 'สภาพสนาม:')} {pCond}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Away Team */}
@@ -852,6 +874,96 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             })}
           </div>
         </div>
+
+        {/* Live Assistant Manager 1-Click Tactical Co-Pilot (Checkpoint 27) */}
+        {(() => {
+          const myGoals = isUserHome ? visibleHomeGoals : visibleAwayGoals;
+          const oppGoals = isUserHome ? visibleAwayGoals : visibleHomeGoals;
+          const mostFatiguedStarter = [...myStarters].sort((a, b) => a.fitness - b.fitness)[0];
+          const liveConditionLow =
+            mostFatiguedStarter
+              ? Math.max(
+                  35,
+                  Math.round(
+                    mostFatiguedStarter.fitness -
+                      (currentMinute / 90) * (24 - mostFatiguedStarter.attributes.physical.stamina * 0.5)
+                  )
+                )
+              : 90;
+          const bestBenchReplacement =
+            mostFatiguedStarter && myBench.length > 0
+              ? myBench.find((b) => b.positions[0] === mostFatiguedStarter.positions[0]) || myBench[0]
+              : null;
+
+          const shouldSub =
+            currentMinute >= 55 &&
+            liveConditionLow < 72 &&
+            liveSubstitutions.length < 5 &&
+            Boolean(mostFatiguedStarter && bestBenchReplacement);
+
+          const recommendedMentality: Mentality =
+            myGoals < oppGoals
+              ? 'Attacking'
+              : myGoals > oppGoals && currentMinute >= 70
+                ? 'Cautious'
+                : 'Positive';
+
+          const adviceText = shouldSub
+            ? tr(
+                `AssMan Advice: ${mostFatiguedStarter.lastName} is fatigued (${liveConditionLow}% condition). Substitute with fresh legs ${bestBenchReplacement!.lastName} (${bestBenchReplacement!.positions[0]}) & switch to "${recommendedMentality}".`,
+                `คำแนะนำผู้ช่วยโค้ช: ${mostFatiguedStarter.lastName} เริ่มอ่อนล้า (${liveConditionLow}%) แนะนำเปลี่ยนส่ง ${bestBenchReplacement!.lastName} (${bestBenchReplacement!.positions[0]}) ลงแทน และปรับ Mentality เป็น "${recommendedMentality}"`
+              )
+            : myGoals < oppGoals
+              ? tr(
+                  `AssMan Advice: We are trailing ${myGoals}-${oppGoals}. Shift Mentality to "Attacking" and issue a "Demand More" touchline shout to overload the final third!`,
+                  `คำแนะนำผู้ช่วยโค้ช: ทีมกำลังตามหลัง ${myGoals}-${oppGoals} แนะนำปรับเป็น "Attacking" พร้อมตะโกนสั่งการ "Demand More" เพื่อเร่งเกมรุกทวงประตูคืน!`
+                )
+              : myGoals > oppGoals && currentMinute >= 70
+                ? tr(
+                    `AssMan Advice: Protect our ${myGoals}-${oppGoals} lead in the closing stages by shifting to "Cautious" mentality and issuing a "Focus" shout.`,
+                    `คำแนะนำผู้ช่วยโค้ช: รักษาสกอร์นำ ${myGoals}-${oppGoals} ช่วงท้ายเกมด้วยการปรับเป็น "Cautious" และสั่งการ "Focus" เน้นวินัยเกมรับ`
+                  )
+                : tr(
+                    `AssMan Advice: Control midfield tempo with "${recommendedMentality}" mentality and issue an "Encourage" touchline boost.`,
+                    `คำแนะนำผู้ช่วยโค้ช: คุมจังหวะแดนกลางด้วยแท็กติก "${recommendedMentality}" พร้อมกระตุ้นลูกทีมด้วย "Encourage"`
+                  );
+
+          return (
+            <div
+              data-testid="assman-copilot-panel"
+              className="mt-3 pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950/70 px-3 py-2 rounded-lg border border-indigo-500/30"
+            >
+              <div className="text-xs text-slate-200 flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-semibold text-[11px] shrink-0">
+                  {tr('🤖 AssMan Co-Pilot', '🤖 ผู้ช่วยโค้ชอัจฉริยะ')}
+                </span>
+                <span>{adviceText}</span>
+              </div>
+              <button
+                type="button"
+                data-testid="assman-apply-advice-btn"
+                disabled={currentMinute >= maxMatchMinute}
+                onClick={() => {
+                  if (currentMinute === 0) {
+                    ensureSimulationComputed();
+                  }
+                  if (shouldSub && mostFatiguedStarter && bestBenchReplacement) {
+                    handleMakeSubstitution(mostFatiguedStarter.id, bestBenchReplacement.id);
+                  }
+                  handleMentalityChange(recommendedMentality);
+                  if (currentMinute > 0 && currentMinute - lastShoutMinute >= 15) {
+                    handleTouchlineShout(
+                      myGoals < oppGoals ? 'Demand More' : myGoals > oppGoals ? 'Focus' : 'Encourage'
+                    );
+                  }
+                }}
+                className="px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 text-slate-950 font-semibold text-xs cursor-pointer whitespace-nowrap shrink-0"
+              >
+                {tr('⚡ 1-Click Apply Advice', '⚡ ปรับแท็กติกตามคำแนะนำ (1-Click)')}
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Half-time Dressing Room Team Talk (Checkpoint 9: 5 Options at 45') */}
         {currentMinute === 45 && !teamTalkGiven && (
@@ -1128,6 +1240,27 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       </g>
                     );
                   })}
+
+                  {/* Curved SVG Quadratic Bezier Ball Trajectory Trail (Checkpoint 19) */}
+                  {(() => {
+                    const prevEv = visibleEvents.length >= 2 ? visibleEvents[visibleEvents.length - 2] : null;
+                    const startX = 3 + ((prevEv ? Math.max(6, Math.min(94, prevEv.pitchX)) : 50) / 100) * 94;
+                    const startY = 3 + ((prevEv ? Math.max(8, Math.min(92, prevEv.pitchY)) : 50) / 100) * 58;
+                    const endX = 3 + (ballX / 100) * 94;
+                    const endY = 3 + (ballY / 100) * 58;
+                    const ctrlX = (startX + endX) / 2;
+                    const ctrlY = Math.max(5, Math.min(59, (startY + endY) / 2 - 7));
+                    return (
+                      <path
+                        data-testid="ball-bezier-trail"
+                        d={`M ${startX.toFixed(1)} ${startY.toFixed(1)} Q ${ctrlX.toFixed(1)} ${ctrlY.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`}
+                        fill="none"
+                        stroke="rgba(250, 204, 21, 0.55)"
+                        strokeWidth="0.65"
+                        strokeDasharray="1.5 1"
+                      />
+                    );
+                  })()}
 
                   {/* Live Ball Marker */}
                   <g className="transition-all duration-500">

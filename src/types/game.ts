@@ -26,7 +26,7 @@ export type CupId =
   | 'TUR_CUP'
   | 'SCO_CUP';
 export type UefaCompetitionId = 'UEFA_UCL' | 'UEFA_UEL' | 'UEFA_UECL';
-export type InternationalCompetitionId = 'INT_EURO';
+export type InternationalCompetitionId = 'INT_EURO' | 'GLB_CWC';
 export type CompetitionId = LeagueId | CupId | UefaCompetitionId | InternationalCompetitionId;
 export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R16' | 'QF' | 'SF' | 'FINAL';
 
@@ -34,6 +34,8 @@ export type NationalTeamCode = 'ENG' | 'ESP' | 'GER' | 'ITA' | 'FRA' | 'BRA' | '
 export type PreSeasonTourRegion = 'ASIA' | 'USA' | 'MIDDLE_EAST';
 export type MindGameTone = 'attack' | 'praise' | 'deflect';
 export type ScenarioChallengeId = 'STANDARD' | 'POINTS_DEDUCTION' | 'INJURY_CRISIS' | 'YOUTH_ONLY';
+export type WeatherCondition = 'Clear' | 'Light Rain' | 'Heavy Rain' | 'Strong Wind' | 'Snow';
+export type PitchCondition = 'Perfect' | 'Slick' | 'Waterlogged' | 'Frozen';
 
 export interface CustomClubConfig {
   enabled: boolean;
@@ -431,6 +433,8 @@ export interface Club {
   transferEmbargoUntil?: string | null;
   preSeasonTourCompletedSeason?: string | null;
   pointsDeduction?: number;
+  affiliateClubIds?: string[];
+  supporterConfidence?: number; // 1-100
   finances: {
     balance: number;
     transferBudget: number;
@@ -577,6 +581,8 @@ export interface MatchResult {
   substitutions?: { minute: number; teamId: string; playerOutId: string; playerInId: string }[];
   extraTimePlayed?: boolean;
   penaltyShootout?: { homePenalties: number; awayPenalties: number };
+  weather?: WeatherCondition;
+  pitchCondition?: PitchCondition;
 }
 
 export interface Fixture {
@@ -629,12 +635,14 @@ export interface TransferOffer {
   status: 'PendingClub' | 'ClubAccepted' | 'CounterOffer' | 'Completed' | 'Rejected' | 'Cancelled';
   counterAmount?: number;
   rejectionReason?: string;
+  loanOptionToBuyFee?: number;
+  buyBackClauseFee?: number;
 }
 
 export interface ScoutAssignment {
   id: string;
   scoutId: string;
-  regionOrLeague: LeagueId | 'ALL_EUROPE';
+  regionOrLeague: LeagueId | 'ALL_EUROPE' | 'SOUTH_AMERICA';
   positionGroup: PositionGroup | 'ANY';
   maxAge: number;
   maxBudget: number;
@@ -770,6 +778,29 @@ export interface SeasonAwardRecord {
   };
 }
 
+export interface FanSocialPost {
+  id: string;
+  handle: string;
+  author: string;
+  text: string;
+  body: string;
+  likes: number;
+  sentiment: 'positive' | 'neutral' | 'negative' | 'POSITIVE' | 'NEUTRAL' | 'CRITICAL';
+  date: string;
+}
+
+export interface HallOfFameEntry {
+  rank: number;
+  managerName: string;
+  nationality: string;
+  clubsSummary: string;
+  clubName: string;
+  majorTrophies: number;
+  winRatePct: number;
+  points: number;
+  isUser?: boolean;
+}
+
 export interface WorldState {
   saveId: string;
   saveName: string;
@@ -802,4 +833,5 @@ export interface WorldState {
   scenarioChallenge?: ScenarioChallengeId;
   customClubConfig?: CustomClubConfig | null;
   lastMindGameMatchday?: number;
+  socialFeed?: FanSocialPost[];
 }

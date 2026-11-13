@@ -1,8 +1,10 @@
 import {
   Club,
   CustomClubConfig,
+  FanSocialPost,
   FinanceTransaction,
   Fixture,
+  HallOfFameEntry,
   LeagueId,
   LeagueStanding,
   ManagerProfile,
@@ -13,7 +15,9 @@ import {
   NationalTeamCode,
   NewsItem,
   Player,
+  PlayerRole,
   PlayerTrait,
+  PositionCode,
   PositionGroup,
   PreSeasonTourRegion,
   ScenarioChallengeId,
@@ -58,8 +62,11 @@ import { simulateMatch } from './matchEngine';
 import { SeededRNG } from './random';
 import { autoPickLineup, ROLES_BY_POSITION } from './tacticsEngine';
 import {
+  buildUefaFourPots,
   checkAndAdvanceUefaKnockoutPhase,
+  generateUefaSwissSchedule,
   recomputeUefaStandings,
+  selectUefaQualifiedClubs,
   UEFA_COMPETITIONS_CONFIG,
 } from './uefaEngine';
 import {
@@ -1272,7 +1279,9 @@ export function advanceWorldOneDay(state: WorldState): {
         if (updatedScoutReports[p.id]) return false;
         const club = updatedClubs[p.clubId];
         if (!club) return false;
-        if (asgn.regionOrLeague !== 'ALL_EUROPE' && club.leagueId !== asgn.regionOrLeague) {
+        if (asgn.regionOrLeague === 'SOUTH_AMERICA') {
+          if (p.nationalityCode !== 'BRA' && p.nationalityCode !== 'ARG') return false;
+        } else if (asgn.regionOrLeague !== 'ALL_EUROPE' && club.leagueId !== asgn.regionOrLeague) {
           return false;
         }
         const age = getAgeAtDate(p.dateOfBirth, nextDate);
@@ -1613,6 +1622,8 @@ export function submitAndEvaluateTransferOffer(
     proposedContractYears: number;
     proposedSquadStatus: Player['squadStatus'];
     signingBonus: number;
+    loanOptionToBuyFee?: number;
+    buyBackClauseFee?: number;
   }
 ): { nextState: WorldState; outcome: 'COMPLETED' | 'COUNTERED' | 'REJECTED'; message: string } {
   const player = state.players[params.playerId];
@@ -1841,6 +1852,8 @@ export function submitAndEvaluateTransferOffer(
     signingBonus: params.signingBonus,
     agentFee,
     status: 'Completed',
+    loanOptionToBuyFee: params.loanOptionToBuyFee,
+    buyBackClauseFee: params.buyBackClauseFee,
   };
 
   const tx: FinanceTransaction = {
@@ -2798,17 +2811,20 @@ export function processEndOfSeasonRollover(
   const nextInbox = [...state.inbox];
   const nextTransactions = [...state.transactions];
 
-  // 1. Award League Prize Money + TV Revenue + Sugar Daddy Owner Injection
+  // 1. Award League Prize Money + TV Revenue + Sugar Daddy Owner Injection + Relegation Penalty (Checkpoint 18)
   for (const league of Object.values(LEAGUES_CONFIG)) {
     const table = state.standings[league.id] || [];
+    const relSpots = league.relegationSpots || 3;
     table.forEach((row, idx) => {
       const club = updatedClubs[row.clubId];
       if (!club) return;
+      const isRelegated = league.tier !== 2 && idx >= table.length - relSpots;
       const positionPrize = Math.max(
         1_500_000,
         (20 - idx) * (league.tier === 2 ? 650_000 : 2_200_000)
       );
       const tvMoney = league.tvRevenuePerClub || 15_000_000;
+      const relegationDropPenalty = isRelegated ? -4_000_000 : 0;
       const sugarDaddyInjection =
         club.sugarDaddyType === 'FRONT_END'
           ? 35_000_000
@@ -2818,15 +2834,18 @@ export function processEndOfSeasonRollover(
               ? Math.abs(club.finances.balance) + 10_000_000
               : 0;
 
-      const totalAdded = positionPrize + tvMoney + sugarDaddyInjection;
+      const totalAdded = positionPrize + tvMoney + sugarDaddyInjection + relegationDropPenalty;
       updatedClubs[club.id] = {
         ...club,
+        reputation: isRelegated ? Math.max(30, club.reputation - 8) : club.reputation,
         finances: {
           ...club.finances,
           balance: club.finances.balance + totalAdded,
-          transferBudget:
+          transferBudget: Math.max(
+            1_000_000,
             club.finances.transferBudget +
-            Math.round(positionPrize * 0.55 + sugarDaddyInjection * 0.8),
+              Math.round(positionPrize * 0.55 + sugarDaddyInjection * 0.8 + relegationDropPenalty * 0.5)
+          ),
         },
       };
 
@@ -2838,8 +2857,8 @@ export function processEndOfSeasonRollover(
           category: 'Prize Money',
           amount: totalAdded,
           description: trText(
-            `End of Season Payout: Finish #${idx + 1} Prize + TV Revenue${sugarDaddyInjection > 0 ? ' + Owner Investment' : ''}`,
-            `เงินรางวัลจบฤดูกาล: อันดับ #${idx + 1} + ค่าลิขสิทธิ์ถ่ายทอดสด${sugarDaddyInjection > 0 ? ' + เงินอัดฉีดเจ้าของสโมสร' : ''}`
+            `End of Season Payout: Finish #${idx + 1} Prize + TV Revenue${sugarDaddyInjection > 0 ? ' + Owner Investment' : ''}${isRelegated ? ' (Relegation Drop Penalty -€4.0M)' : ''}`,
+            `เงินรางวัลจบฤดูกาล: อันดับ #${idx + 1} + ค่าลิขสิทธิ์ถ่ายทอดสด${sugarDaddyInjection > 0 ? ' + เงินอัดฉีดเจ้าของสโมสร' : ''}${isRelegated ? ' (หักรายได้ตกชั้น -€4.0M)' : ''}`
           ),
           balanceAfter: updatedClubs[club.id].finances.balance,
         });
@@ -3128,6 +3147,30 @@ export function processEndOfSeasonRollover(
     }
   }
 
+  // 3b. Seed 3-Tier European Cups (UEFA_UCL, UEFA_UEL, UEFA_UECL) from final standings (Checkpoint 18)
+  const uefaQualified = selectUefaQualifiedClubs(updatedClubs, state.standings);
+  const nextUefaPots: Record<UefaCompetitionId, string[][]> = {
+    UEFA_UCL: buildUefaFourPots(uefaQualified.UEFA_UCL, updatedClubs),
+    UEFA_UEL: buildUefaFourPots(uefaQualified.UEFA_UEL, updatedClubs),
+    UEFA_UECL: buildUefaFourPots(uefaQualified.UEFA_UECL, updatedClubs),
+  };
+  const nextUefaStandings: Record<UefaCompetitionId, LeagueStanding[]> = {
+    UEFA_UCL: [],
+    UEFA_UEL: [],
+    UEFA_UECL: [],
+  };
+  for (const compId of ['UEFA_UCL', 'UEFA_UEL', 'UEFA_UECL'] as UefaCompetitionId[]) {
+    const swissFixtures = generateUefaSwissSchedule(compId, nextUefaPots[compId], nextSeasonStr, rng);
+    nextFixtures = [...nextFixtures, ...swissFixtures];
+    nextUefaStandings[compId] = recomputeUefaStandings(
+      compId,
+      nextSeasonStr,
+      uefaQualified[compId],
+      [],
+      updatedClubs
+    );
+  }
+
   const nextEuroFixtures = generateEuropeanNationsCupFixtures(
     nextSeasonStr,
     nextYear + 1,
@@ -3145,6 +3188,8 @@ export function processEndOfSeasonRollover(
     clubs: updatedClubs,
     players: updatedPlayers,
     standings: nextStandings,
+    uefaStandings: nextUefaStandings,
+    uefaPots: nextUefaPots,
     fixtures: nextFixtures,
     transactions: nextTransactions,
     inbox: nextInbox,
@@ -3239,6 +3284,7 @@ export interface CareerStateMap {
   scenarioChallenge?: ScenarioChallengeId;
   customClubConfig?: CustomClubConfig | null;
   lastMindGameMatchday?: number;
+  socialFeed?: FanSocialPost[];
 }
 
 export interface CareerSaveDocument {
@@ -3483,6 +3529,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     scenarioChallenge: compacted.scenarioChallenge || 'STANDARD',
     customClubConfig: compacted.customClubConfig || null,
     lastMindGameMatchday: compacted.lastMindGameMatchday || 0,
+    socialFeed: (compacted.socialFeed || []).slice(0, 15),
   });
 
   // Safety guard: guarantee JSON payload is under 300KB so Firestore BSON/proto never approaches 1,048,576 bytes
@@ -3640,6 +3687,7 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     scenarioChallenge: cs.scenarioChallenge || baseline.scenarioChallenge || 'STANDARD',
     customClubConfig: cs.customClubConfig || baseline.customClubConfig || null,
     lastMindGameMatchday: cs.lastMindGameMatchday || 0,
+    socialFeed: cs.socialFeed || baseline.socialFeed || [],
   };
 }
 
@@ -5242,6 +5290,1216 @@ export function sendPreMatchMindGame(
   };
 }
 
+/**
+ * Checkpoint 20: In-Game Database Editor, Create-a-Player (Wonderkid Builder) & JSON Career/Roster Import/Export
+ */
+export function createCustomPlayerInWorld(
+  state: WorldState,
+  params: {
+    firstName: string;
+    lastName: string;
+    nationality?: string;
+    nationalityCode?: string;
+    age: number;
+    position: PositionCode;
+    preferredRole?: PlayerRole;
+    currentAbility: number;
+    potentialAbility: number;
+    clubId?: string;
+  }
+): { nextState: WorldState; player: Player; message: string } {
+  const targetClubId = params.clubId || state.controlledClubId;
+  const club = state.clubs[targetClubId] || state.clubs[state.controlledClubId];
+  const curYear = parseInt(state.gameDate.slice(0, 4), 10) || 2026;
+  const age = Math.max(15, Math.min(40, params.age || 18));
+  const ca = Math.max(60, Math.min(200, params.currentAbility || 135));
+  const pa = Math.max(ca, Math.min(200, params.potentialAbility || 185));
+  const pos: PositionCode = params.position || 'ST';
+  const role: PlayerRole = params.preferredRole || ROLES_BY_POSITION[pos]?.[0] || 'Advanced Forward';
+  const baseAttr = Math.max(8, Math.min(20, Math.round(ca / 9.5)));
+  const { marketValue, wagePerWeek } = calculatePlayerValuation(ca, pa, age, club?.reputation || 80);
+  const newId = `plr_custom_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+  const nat = (params.nationality || params.nationalityCode || 'ENG').toUpperCase();
 
+  const newPlayer: Player = {
+    id: newId,
+    firstName: params.firstName.trim() || 'Leo',
+    lastName: params.lastName.trim() || 'Wonderkid',
+    dateOfBirth: `${curYear - age}-05-10`,
+    nationality: nat,
+    nationalityCode: nat,
+    heightCm: 180,
+    weightKg: 74,
+    preferredFoot: 'Right',
+    positions: [pos],
+    preferredRole: role,
+    currentAbility: ca,
+    potentialAbility: pa,
+    potentialRange: [Math.max(60, pa - 6), Math.min(200, pa + 4)],
+    attributes: {
+      technical: {
+        finishing: pos === 'ST' || pos === 'AMR' || pos === 'AML' ? Math.min(20, baseAttr + 2) : baseAttr,
+        firstTouch: Math.min(20, baseAttr + 1),
+        passing: Math.min(20, baseAttr + 1),
+        technique: Math.min(20, baseAttr + 2),
+        dribbling: Math.min(20, baseAttr + 1),
+        crossing: baseAttr,
+        heading: baseAttr,
+        tackling: ['DC', 'DL', 'DR', 'DM', 'CB', 'LB', 'RB'].includes(pos) ? Math.min(20, baseAttr + 2) : Math.max(6, baseAttr - 2),
+        marking: ['DC', 'DL', 'DR', 'DM', 'CB', 'LB', 'RB'].includes(pos) ? Math.min(20, baseAttr + 2) : Math.max(6, baseAttr - 2),
+        longShots: baseAttr,
+        penaltyTaking: baseAttr,
+        freeKickTaking: baseAttr,
+        corners: baseAttr,
+        ballControl: Math.min(20, baseAttr + 2),
+      },
+      mental: {
+        decisions: Math.min(20, baseAttr + 1),
+        vision: Math.min(20, baseAttr + 1),
+        composure: Math.min(20, baseAttr + 1),
+        concentration: baseAttr,
+        positioning: baseAttr,
+        anticipation: Math.min(20, baseAttr + 1),
+        workRate: Math.min(20, baseAttr + 2),
+        teamwork: Math.min(20, baseAttr + 1),
+        leadership: 12,
+        determination: 17,
+        aggression: 12,
+        flair: Math.min(20, baseAttr + 2),
+        offTheBall: Math.min(20, baseAttr + 1),
+        bravery: 13,
+        consistency: Math.min(20, baseAttr + 1),
+      },
+      physical: {
+        acceleration: Math.min(20, baseAttr + 2),
+        pace: Math.min(20, baseAttr + 2),
+        stamina: Math.min(20, baseAttr + 1),
+        strength: baseAttr,
+        agility: Math.min(20, baseAttr + 2),
+        balance: Math.min(20, baseAttr + 1),
+        jumpingReach: baseAttr,
+        naturalFitness: 16,
+      },
+    },
+    fitness: 100,
+    matchSharpness: 92,
+    morale: 95,
+    tacticalFamiliarity: 88,
+    squadStatus: ca >= 150 ? 'Star Player' : age <= 20 ? 'Breakthrough Prospect' : 'Regular Starter',
+    satisfaction: 95,
+    personality: pa >= 175 ? 'Model Citizen' : 'Ambitious',
+    professionalism: 17,
+    clubId: club.id,
+    loanedFromClubId: null,
+    wagePerWeek,
+    contractEndDate: `${curYear + 4}-06-30`,
+    goalBonus: 1500,
+    marketValue,
+    askingPrice: Math.round(marketValue * 1.35),
+    transferListed: false,
+    loanListed: false,
+    injuryStatus: { isInjured: false, daysRemaining: 0 },
+    individualTraining: { attributeFocus: 'Balanced', roleFocus: role, intensity: 'Medium' },
+    stats: {
+      appearances: 0,
+      starts: 0,
+      goals: 0,
+      assists: 0,
+      yellowCards: 0,
+      redCards: 0,
+      cleanSheets: 0,
+      minutesPlayed: 0,
+      averageRating: 7.0,
+      manOfTheMatch: 0,
+    },
+    developmentHistory: [{ date: state.gameDate, ca, keyAttributeChanges: [] }],
+    transferHistory: [],
+    isWonderkid: age <= 21 && pa >= 168,
+    traits: pa >= 170 ? ['Places Shots', 'Tries Killer Balls Often'] : ['Runs With Ball Often'],
+  };
 
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [newId]: newPlayer,
+      },
+      inbox: [
+        {
+          id: `news_editor_plr_${newId}`,
+          gameDate: state.gameDate,
+          category: 'General News',
+          title: trText(
+            `Database Editor: Created ${newPlayer.firstName} ${newPlayer.lastName} (${pos}, CA ${ca}/PA ${pa}) at ${club.name}`,
+            `Database Editor: สร้างนักเตะ ${newPlayer.firstName} ${newPlayer.lastName} (${pos}, CA ${ca}/PA ${pa}) เข้าสู่ ${club.name}`
+          ),
+          body: trText(
+            `Custom player ${newPlayer.firstName} ${newPlayer.lastName} (Age ${age}, ${pos}, CA ${ca} / PA ${pa}) has been registered with ${club.name}.`,
+            `ลงทะเบียนนักเตะสร้างเอง ${newPlayer.firstName} ${newPlayer.lastName} (วัย ${age} ปี, ${pos}, CA ${ca} / PA ${pa}) เข้าสู่สโมสร ${club.name} เรียบร้อยแล้ว`
+          ),
+          isRead: false,
+          relatedClubId: club.id,
+          relatedPlayerId: newId,
+        },
+        ...state.inbox,
+      ],
+    },
+    player: newPlayer,
+    message: trText(
+      `Created ${newPlayer.firstName} ${newPlayer.lastName} (${pos}, CA ${ca}/PA ${pa}) at ${club.name}!`,
+      `สร้างนักเตะ ${newPlayer.firstName} ${newPlayer.lastName} (${pos}, CA ${ca}/PA ${pa}) เข้าสู่ ${club.name} สำเร็จ!`
+    ),
+  };
+}
 
+export function liveEditClubFinancesAndFacilities(
+  state: WorldState,
+  clubIdOrParams:
+    | string
+    | {
+        clubId?: string;
+        balance?: number;
+        balanceM?: number;
+        transferBudget?: number;
+        transferBudgetM?: number;
+        wageBudgetPerWeek?: number;
+        trainingFacilities?: number;
+        youthFacilities?: number;
+        reputation?: number;
+      },
+  maybeUpdates?: {
+    balance?: number;
+    transferBudget?: number;
+    wageBudgetPerWeek?: number;
+    trainingFacilities?: number;
+    youthFacilities?: number;
+    reputation?: number;
+  }
+): { nextState: WorldState; message: string } {
+  const isStringId = typeof clubIdOrParams === 'string';
+  const clubId = isStringId
+    ? clubIdOrParams
+    : clubIdOrParams.clubId || state.controlledClubId;
+  const updates = isStringId ? maybeUpdates || {} : clubIdOrParams;
+
+  const club = state.clubs[clubId];
+  if (!club) {
+    return { nextState: state, message: 'Club not found.' };
+  }
+
+  const nextBalance =
+    updates.balance !== undefined
+      ? updates.balance
+      : 'balanceM' in updates && typeof updates.balanceM === 'number'
+        ? Math.round(updates.balanceM * 1_000_000)
+        : club.finances.balance;
+
+  const nextTransferBudget =
+    updates.transferBudget !== undefined
+      ? Math.max(0, updates.transferBudget)
+      : 'transferBudgetM' in updates && typeof updates.transferBudgetM === 'number'
+        ? Math.max(0, Math.round(updates.transferBudgetM * 1_000_000))
+        : club.finances.transferBudget;
+
+  const updatedClub: Club = {
+    ...club,
+    reputation:
+      updates.reputation !== undefined ? Math.max(10, Math.min(100, updates.reputation)) : club.reputation,
+    trainingFacilities:
+      updates.trainingFacilities !== undefined
+        ? Math.max(1, Math.min(20, updates.trainingFacilities))
+        : club.trainingFacilities,
+    youthFacilities:
+      updates.youthFacilities !== undefined
+        ? Math.max(1, Math.min(20, updates.youthFacilities))
+        : club.youthFacilities,
+    finances: {
+      ...club.finances,
+      balance: nextBalance,
+      transferBudget: nextTransferBudget,
+      wageBudgetPerWeek:
+        updates.wageBudgetPerWeek !== undefined
+          ? Math.max(10_000, updates.wageBudgetPerWeek)
+          : club.finances.wageBudgetPerWeek,
+    },
+  };
+  return {
+    nextState: {
+      ...state,
+      clubs: {
+        ...state.clubs,
+        [clubId]: updatedClub,
+      },
+    },
+    message: trText(
+      `Updated ${updatedClub.name} finances & facilities via In-Game Editor!`,
+      `อัปเดตงบประมาณและศูนย์ฝึกของ ${updatedClub.name} ผ่าน In-Game Editor เรียบร้อย!`
+    ),
+  };
+}
+
+export function exportWorldDatabaseJson(state: WorldState): string {
+  const compacted = compactWorldStateForStorage(state);
+  return JSON.stringify(
+    {
+      schema: 'touchline-db-v1',
+      ...compacted,
+    },
+    null,
+    2
+  );
+}
+
+export function importWorldDatabaseJson(
+  stateOrJson: WorldState | string,
+  maybeJson?: string
+): { nextState: WorldState; success: boolean; message: string } {
+  const fallbackState =
+    typeof stateOrJson === 'object' && stateOrJson !== null
+      ? stateOrJson
+      : createInitialWorldState(20261110);
+  const jsonString = typeof stateOrJson === 'string' ? stateOrJson : maybeJson || '';
+  try {
+    const parsed = JSON.parse(jsonString) as WorldState;
+    if (!parsed || typeof parsed !== 'object' || !parsed.clubs || !parsed.players || !parsed.controlledClubId) {
+      return {
+        nextState: fallbackState,
+        success: false,
+        message: trText(
+          'Invalid database JSON: missing clubs, players, or controlledClubId.',
+          'ไฟล์ JSON ไม่ถูกต้อง: ไม่พบข้อมูล clubs, players หรือ controlledClubId'
+        ),
+      };
+    }
+    return {
+      nextState: parsed,
+      success: true,
+      message: trText(
+        `Successfully imported World Database (${Object.keys(parsed.clubs).length} clubs, ${Object.keys(parsed.players).length} players)!`,
+        `นำเข้าฐานข้อมูลสำเร็จ (${Object.keys(parsed.clubs).length} สโมสร, ${Object.keys(parsed.players).length} นักเตะ)!`
+      ),
+    };
+  } catch {
+    return {
+      nextState: fallbackState,
+      success: false,
+      message: trText('Failed to parse JSON string.', 'รูปแบบข้อมูล JSON ไม่ถูกต้อง'),
+    };
+  }
+}
+
+/**
+ * Checkpoint 21: All-Time Hall of Fame Leaderboard & Exhibition Club Clash (Instant Cross-League Simulator)
+ */
+const LEGENDARY_MANAGERS_HOF: Omit<HallOfFameEntry, 'rank'>[] = [
+  {
+    managerName: 'Sir Alex Ferguson',
+    nationality: 'SCO',
+    clubsSummary: 'Aberdeen, Manchester United',
+    clubName: 'Manchester United',
+    majorTrophies: 49,
+    winRatePct: 60,
+    points: 5480,
+  },
+  {
+    managerName: 'Pep Guardiola',
+    nationality: 'ESP',
+    clubsSummary: 'Barcelona, Bayern Munich, Manchester City',
+    clubName: 'Manchester City',
+    majorTrophies: 39,
+    winRatePct: 73,
+    points: 4620,
+  },
+  {
+    managerName: 'Carlo Ancelotti',
+    nationality: 'ITA',
+    clubsSummary: 'AC Milan, Chelsea, PSG, Bayern, Real Madrid',
+    clubName: 'Real Madrid',
+    majorTrophies: 30,
+    winRatePct: 62,
+    points: 4190,
+  },
+  {
+    managerName: 'José Mourinho',
+    nationality: 'POR',
+    clubsSummary: 'Porto, Chelsea, Inter Milan, Real Madrid, Roma',
+    clubName: 'Inter Milan / Chelsea',
+    majorTrophies: 26,
+    winRatePct: 64,
+    points: 3580,
+  },
+  {
+    managerName: 'Arsène Wenger',
+    nationality: 'FRA',
+    clubsSummary: 'AS Monaco, Arsenal',
+    clubName: 'Arsenal',
+    majorTrophies: 21,
+    winRatePct: 58,
+    points: 2940,
+  },
+  {
+    managerName: 'Jürgen Klopp',
+    nationality: 'GER',
+    clubsSummary: 'Mainz 05, Borussia Dortmund, Liverpool',
+    clubName: 'Liverpool',
+    majorTrophies: 13,
+    winRatePct: 61,
+    points: 2490,
+  },
+  {
+    managerName: 'Zinedine Zidane',
+    nationality: 'FRA',
+    clubsSummary: 'Real Madrid',
+    clubName: 'Real Madrid',
+    majorTrophies: 11,
+    winRatePct: 66,
+    points: 2280,
+  },
+];
+
+export function computeHallOfFameLeaderboard(state: WorldState): HallOfFameEntry[] {
+  const userTrophies = state.manager.careerStats.trophies.length;
+  const userPoints =
+    userTrophies * 180 +
+    state.manager.careerStats.won * 8 +
+    state.manager.careerStats.drawn * 2 +
+    state.manager.reputation * 6;
+  const userClubName = state.clubs[state.controlledClubId]?.name || 'Club';
+  const userWinRate =
+    state.manager.careerStats.matchesManaged > 0
+      ? Math.round(
+          (state.manager.careerStats.won / state.manager.careerStats.matchesManaged) * 100
+        )
+      : 55;
+
+  const combined: Omit<HallOfFameEntry, 'rank'>[] = [
+    ...LEGENDARY_MANAGERS_HOF,
+    {
+      managerName: state.manager.name,
+      nationality: state.manager.nationality || 'ENG',
+      clubsSummary: userClubName,
+      clubName: userClubName,
+      majorTrophies: userTrophies,
+      winRatePct: userWinRate,
+      points: userPoints,
+      isUser: true,
+    },
+  ];
+
+  combined.sort((a, b) => b.points - a.points);
+  return combined.map((entry, idx) => ({
+    ...entry,
+    rank: idx + 1,
+  }));
+}
+
+export function simulateExhibitionClash(
+  state: WorldState,
+  homeClubId: string,
+  awayClubId: string
+): {
+  result: MatchResult & { homeXg: number; awayXg: number };
+  homeClub: Club;
+  awayClub: Club;
+  summary: string;
+} {
+  const homeClub = state.clubs[homeClubId] || state.clubs[state.controlledClubId];
+  const awayClub =
+    state.clubs[awayClubId] ||
+    Object.values(state.clubs).find((c) => c.id !== homeClub.id) ||
+    homeClub;
+
+  const mockFixture: Fixture = {
+    id: `exh_${homeClub.id}_vs_${awayClub.id}_${Date.now()}`,
+    competitionId: homeClub.leagueId,
+    seasonId: state.currentSeason,
+    matchday: 1,
+    kickoffDate: state.gameDate,
+    homeClubId: homeClub.id,
+    awayClubId: awayClub.id,
+    status: 'Completed',
+  };
+
+  const simRes = simulateMatch(
+    mockFixture,
+    homeClub,
+    awayClub,
+    state.players,
+    state.randomSeed + Date.now() % 10000,
+    homeClub.primaryTactic,
+    awayClub.primaryTactic,
+    { isKnockout: true }
+  );
+
+  const result = {
+    ...simRes,
+    homeXg: Number(simRes.homeStats.xG.toFixed(2)),
+    awayXg: Number(simRes.awayStats.xG.toFixed(2)),
+  };
+
+  const psoText = result.penaltyShootout
+    ? ` (Pens: ${result.penaltyShootout.homePenalties}-${result.penaltyShootout.awayPenalties})`
+    : '';
+  const summary = trText(
+    `Exhibition Clash Result: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}${psoText} | xG ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}`,
+    `ผลจำลองแมตช์พิเศษ: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}${psoText} | xG ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}`
+  );
+
+  return { result, homeClub, awayClub, summary };
+}
+
+/**
+ * Checkpoint 23: Saudi / MLS / South American Super Club Bids, South American Wonderkid Scouting & FIFA Club World Cup (GLB_CWC)
+ */
+export function triggerGlobalSuperClubBid(
+  state: WorldState
+): { nextState: WorldState; offer: TransferOffer | null; message: string } {
+  const userClub = state.clubs[state.controlledClubId];
+  const squad = Object.values(state.players).filter((p) => p.clubId === userClub.id);
+  if (squad.length === 0) {
+    return { nextState: state, offer: null, message: 'No players available.' };
+  }
+
+  // Pick a veteran star (age >= 27) or highest CA player
+  const veterans = squad
+    .filter((p) => getAgeAtDate(p.dateOfBirth, state.gameDate) >= 27)
+    .sort((a, b) => b.currentAbility - a.currentAbility);
+  const target = veterans[0] || [...squad].sort((a, b) => b.currentAbility - a.currentAbility)[0];
+
+  // Pick a rich rival buyer club to represent the global super-bidder in the offer ledger
+  const buyerClub =
+    Object.values(state.clubs)
+      .filter((c) => c.id !== userClub.id)
+      .sort((a, b) => b.finances.transferBudget - a.finances.transferBudget)[0] || userClub;
+
+  const superFundNames = ['Al-Hilal SFC (Saudi Pro League)', 'Al-Nassr FC (Saudi Pro League)', 'Inter Miami CF (MLS)', 'Al-Ittihad Club (Saudi Pro League)'];
+  const superBrand = superFundNames[Math.abs(state.randomSeed + target.currentAbility) % superFundNames.length];
+  const superFee = Math.max(15_000_000, Math.round((target.marketValue * 1.38) / 500_000) * 500_000);
+  const offerId = `off_global_super_${Date.now()}_${target.id}`;
+
+  const newOffer: TransferOffer = {
+    id: offerId,
+    date: state.gameDate,
+    playerId: target.id,
+    buyingClubId: buyerClub.id,
+    sellingClubId: userClub.id,
+    offerType: 'Transfer',
+    upfrontFee: superFee,
+    installmentsFee: 0,
+    sellOnPercentage: 10,
+    proposedWagePerWeek: Math.round(target.wagePerWeek * 1.8),
+    proposedContractYears: 3,
+    proposedSquadStatus: 'Star Player',
+    signingBonus: 4_000_000,
+    agentFee: 1_500_000,
+    status: 'PendingClub',
+  };
+
+  return {
+    nextState: {
+      ...state,
+      transferOffers: [newOffer, ...state.transferOffers],
+      inbox: [
+        {
+          id: `news_super_bid_${offerId}`,
+          gameDate: state.gameDate,
+          category: 'Transfer',
+          title: trText(
+            `Global Super-Club Bid (${superBrand}): €${(superFee / 1_000_000).toFixed(1)}M Offer for ${target.firstName} ${target.lastName}!`,
+            `ข้อเสนอมหาเศรษฐีระดับโลก (${superBrand}): ยื่นซื้อ ${target.firstName} ${target.lastName} สูงถึง €${(superFee / 1_000_000).toFixed(1)}M!`
+          ),
+          body: trText(
+            `Global powerhouse ${superBrand} (via partner representative ${buyerClub.name}) has tabled a massive €${(superFee / 1_000_000).toFixed(1)}M cash bid (1.38x market value) for ${target.firstName} ${target.lastName}. Review the offer in the Transfers Center.`,
+            `กลุ่มทุนสโมสรระดับโลก ${superBrand} ยื่นข้อเสนอเงินสด €${(superFee / 1_000_000).toFixed(1)}M (สูงกว่าราคาตลาด 1.38 เท่า) เพื่อขอซื้อตัว ${target.firstName} ${target.lastName} คุณสามารถตอบรับหรือปฏิเสธได้ในหน้าตลาดซื้อขาย`
+          ),
+          isRead: false,
+          isImportant: true,
+          relatedClubId: userClub.id,
+          relatedPlayerId: target.id,
+          actionType: 'GoToTransfer',
+        },
+        ...state.inbox,
+      ],
+    },
+    offer: newOffer,
+    message: trText(
+      `Received €${(superFee / 1_000_000).toFixed(1)}M Global Super-Club offer from ${superBrand} for ${target.firstName} ${target.lastName}!`,
+      `ได้รับข้อเสนอ €${(superFee / 1_000_000).toFixed(1)}M จาก ${superBrand} เพื่อขอซื้อ ${target.firstName} ${target.lastName}!`
+    ),
+  };
+}
+
+export function dispatchSouthAmericaWonderkidScout(
+  state: WorldState
+): {
+  nextState: WorldState;
+  player: Player;
+  wonderkid: Player;
+  report: ScoutReport;
+  message: string;
+} {
+  const rng = new SeededRNG(state.randomSeed + Date.now() % 100000);
+  const nat = rng.chance(0.55) ? 'BRA' : 'ARG';
+  const braFirst = ['Estevão', 'Endrick', 'Vitor', 'Kauã', 'Lorran', 'Luis', 'Gabriel', 'Matheus'];
+  const braLast = ['Messinho', 'Roque', 'Elias', 'Gui', 'Reis', 'Moscardo', 'França', 'Nascimento'];
+  const argFirst = ['Claudio', 'Franco', 'Valentín', 'Gianluca', 'Santiago', 'Tomás', 'Thiago', 'Mateo'];
+  const argLast = ['Echeverri', 'Mastantuono', 'Barco', 'Prestianni', 'Castro', 'Parmo', 'Almada', 'Redondo'];
+
+  const firstName = rng.pick(nat === 'BRA' ? braFirst : argFirst);
+  const lastName = rng.pick(nat === 'BRA' ? braLast : argLast);
+  const pos: PositionCode = rng.pick(['AMC', 'AMR', 'AML', 'ST', 'MC', 'DM']);
+  const ca = rng.int(124, 142);
+  const pa = rng.int(174, 194);
+  const sellerClubs = Object.values(state.clubs).filter((c) => c.id !== state.controlledClubId);
+  const hostClub = rng.pick(sellerClubs);
+
+  const created = createCustomPlayerInWorld(state, {
+    firstName,
+    lastName,
+    nationalityCode: nat,
+    age: rng.int(17, 19),
+    position: pos,
+    currentAbility: ca,
+    potentialAbility: pa,
+    clubId: hostClub.id,
+  });
+
+  const scoutMember = Object.values(state.staff).find((s) => s.clubId === state.controlledClubId);
+  const scoutId = scoutMember?.id || 'scout_sa_1';
+  const report = buildScoutReportForPlayer(created.player, scoutId, state.gameDate, 18);
+
+  const saAssignment: ScoutAssignment = {
+    id: `asgn_sa_${Date.now()}`,
+    scoutId,
+    regionOrLeague: 'SOUTH_AMERICA',
+    positionGroup: 'ANY',
+    maxAge: 21,
+    maxBudget: 60_000_000,
+    startDate: state.gameDate,
+    daysRemaining: 14,
+    reportsGenerated: [created.player.id],
+  };
+
+  const nextState: WorldState = {
+    ...created.nextState,
+    scoutAssignments: [saAssignment, ...created.nextState.scoutAssignments],
+    scoutReports: {
+      ...created.nextState.scoutReports,
+      [created.player.id]: report,
+    },
+    shortlistPlayerIds: created.nextState.shortlistPlayerIds.includes(created.player.id)
+      ? created.nextState.shortlistPlayerIds
+      : [created.player.id, ...created.nextState.shortlistPlayerIds],
+  };
+
+  return {
+    nextState,
+    player: created.player,
+    wonderkid: created.player,
+    report,
+    message: trText(
+      `South America Scouting Report: Discovered ${nat} Wonderkid ${firstName} ${lastName} (${pos}, CA ${ca} / PA ${pa})!`,
+      `แมวมองอเมริกาใต้ค้นพบวันเดอร์คิด (${nat}): ${firstName} ${lastName} (${pos}, CA ${ca} / PA ${pa})!`
+    ),
+  };
+}
+
+export function simulateClubWorldCupNextStage(
+  state: WorldState
+): { nextState: WorldState; message: string } {
+  const seasonId = state.currentSeason;
+  const curYear = parseInt(seasonId.slice(0, 4), 10) + 1;
+  let workingFixtures = [...state.fixtures];
+  let cwcFixtures = workingFixtures.filter(
+    (f) => f.competitionId === 'GLB_CWC' && f.seasonId === seasonId
+  );
+
+  // Initialize 8-club Quarter-Final bracket if none exist yet
+  if (cwcFixtures.length === 0) {
+    const topClubs = Object.values(state.clubs)
+      .filter((c) => c.id !== state.controlledClubId)
+      .sort((a, b) => b.reputation - a.reputation)
+      .slice(0, 7);
+    const participants = [state.clubs[state.controlledClubId], ...topClubs].filter(Boolean);
+    for (let i = 0; i < 4; i++) {
+      const home = participants[i * 2];
+      const away = participants[i * 2 + 1];
+      if (home && away) {
+        workingFixtures.push({
+          id: `fix_glb_cwc_${seasonId.replace('/', '')}_qf_${i + 1}`,
+          competitionId: 'GLB_CWC',
+          seasonId,
+          matchday: 1,
+          kickoffDate: `${curYear}-06-18`,
+          homeClubId: home.id,
+          awayClubId: away.id,
+          status: 'Scheduled',
+        });
+      }
+    }
+    cwcFixtures = workingFixtures.filter(
+      (f) => f.competitionId === 'GLB_CWC' && f.seasonId === seasonId
+    );
+  }
+
+  const pending = cwcFixtures.filter((f) => f.status === 'Scheduled');
+  if (pending.length === 0) {
+    return {
+      nextState: state,
+      message: trText(
+        'FIFA Club World Cup tournament is already complete for this season!',
+        'ศึกชิงแชมป์สโมสรโลก (FIFA Club World Cup) ประจำฤดูกาลนี้แข่งขันเสร็จสิ้นแล้ว!'
+      ),
+    };
+  }
+
+  const targetMd = Math.min(...pending.map((f) => f.matchday));
+  const stageFixtures = pending.filter((f) => f.matchday === targetMd);
+  const winners: string[] = [];
+
+  workingFixtures = workingFixtures.map((f) => {
+    if (f.competitionId === 'GLB_CWC' && f.seasonId === seasonId && f.matchday === targetMd && f.status === 'Scheduled') {
+      const hClub = state.clubs[f.homeClubId];
+      const aClub = state.clubs[f.awayClubId];
+      if (!hClub || !aClub) return f;
+      const res = simulateMatch(
+        f,
+        hClub,
+        aClub,
+        state.players,
+        state.randomSeed + targetMd * 313 + workingFixtures.indexOf(f),
+        hClub.primaryTactic,
+        aClub.primaryTactic,
+        { isKnockout: true }
+      );
+      const updatedFix: Fixture = { ...f, status: 'Completed', result: res };
+      const winId = getDomesticCupFixtureWinnerId(updatedFix) || hClub.id;
+      winners.push(winId);
+      return updatedFix;
+    }
+    return f;
+  });
+
+  const nextClubs = { ...state.clubs };
+  const nextTrophies = [...(state.trophyHistory || [])];
+  const nextInbox = [...state.inbox];
+  const nextTransactions = [...state.transactions];
+
+  if (targetMd === 1 && winners.length >= 4) {
+    // Generate Semi-Finals (MD 2)
+    for (let i = 0; i < 2; i++) {
+      workingFixtures.push({
+        id: `fix_glb_cwc_${seasonId.replace('/', '')}_sf_${i + 1}`,
+        competitionId: 'GLB_CWC',
+        seasonId,
+        matchday: 2,
+        kickoffDate: `${curYear}-06-22`,
+        homeClubId: winners[i * 2],
+        awayClubId: winners[i * 2 + 1],
+        status: 'Scheduled',
+      });
+    }
+  } else if (targetMd === 2 && winners.length >= 2) {
+    // Generate Final (MD 3)
+    workingFixtures.push({
+      id: `fix_glb_cwc_${seasonId.replace('/', '')}_final`,
+      competitionId: 'GLB_CWC',
+      seasonId,
+      matchday: 3,
+      kickoffDate: `${curYear}-06-26`,
+      homeClubId: winners[0],
+      awayClubId: winners[1],
+      status: 'Scheduled',
+    });
+  } else if (targetMd === 3 && winners[0]) {
+    const champId = winners[0];
+    const champClub = nextClubs[champId];
+    if (champClub) {
+      const prize = 35_000_000;
+      nextClubs[champId] = {
+        ...champClub,
+        reputation: Math.min(100, champClub.reputation + 4),
+        finances: {
+          ...champClub.finances,
+          balance: champClub.finances.balance + prize,
+          transferBudget: champClub.finances.transferBudget + Math.round(prize * 0.75),
+        },
+      };
+      nextTrophies.unshift({
+        id: `trp_${seasonId.replace('/', '')}_GLB_CWC`,
+        season: seasonId,
+        competitionId: 'GLB_CWC',
+        competitionName: 'FIFA Club World Cup',
+        winnerClubId: champClub.id,
+        winnerClubName: champClub.name,
+      });
+      nextInbox.unshift({
+        id: `news_cwc_champ_${seasonId.replace('/', '')}`,
+        gameDate: state.gameDate,
+        category: 'Competition',
+        title: trText(
+          `FIFA Club World Cup Champions: ${champClub.name} Crowned World Champions (+€35.0M)!`,
+          `แชมป์สโมสรโลก FIFA Club World Cup: ${champClub.name} ผงาดครองบัลลังก์โลก (+€35.0M)!`
+        ),
+        body: trText(
+          `${champClub.name} have lifted the FIFA Club World Cup trophy and earned €35.0M in champion prize money!`,
+          `${champClub.name} ผงาดคว้าถ้วยแชมป์สโมสรโลก FIFA Club World Cup พร้อมรับเงินรางวัลก้อนโต €35.0M!`
+        ),
+        isRead: false,
+        isImportant: true,
+        relatedClubId: champClub.id,
+      });
+    }
+  }
+
+  const stageLabel =
+    targetMd === 1
+      ? trText('Quarter-Finals', 'รอบ 8 ทีมสุดท้าย')
+      : targetMd === 2
+        ? trText('Semi-Finals', 'รอบรองชนะเลิศ')
+        : trText('Final', 'รอบชิงชนะเลิศ');
+
+  return {
+    nextState: {
+      ...state,
+      clubs: nextClubs,
+      fixtures: workingFixtures,
+      trophyHistory: nextTrophies,
+      inbox: nextInbox,
+      transactions: nextTransactions,
+    },
+    message: trText(
+      `Simulated FIFA Club World Cup ${stageLabel} (${stageFixtures.length} matches)!`,
+      `จำลองการแข่งขัน FIFA Club World Cup ${stageLabel} (${stageFixtures.length} คู่) เรียบร้อยแล้ว!`
+    ),
+  };
+}
+
+/**
+ * Checkpoint 24: FM27 Medical Center, Injury Risk Matrix & Preventative Rest (+12% Fitness)
+ */
+export interface PlayerMedicalRiskAssessment {
+  player: Player;
+  playerId: string;
+  playerName: string;
+  position: string;
+  fitness: number;
+  matchSharpness: number;
+  riskLevel: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
+  injuryProbabilityPct: number;
+  riskProbabilityPct: number;
+  workloadLoad: 'Light' | 'Medium' | 'Heavy';
+  recommendation: string;
+  recommendationEn: string;
+  recommendationTh: string;
+}
+
+export function evaluateSquadMedicalRisk(
+  state: WorldState,
+  clubId?: string
+): PlayerMedicalRiskAssessment[] {
+  const targetClubId = clubId || state.controlledClubId;
+  const squad = Object.values(state.players).filter((p) => p.clubId === targetClubId);
+
+  return squad
+    .map((p): PlayerMedicalRiskAssessment => {
+      const natFit = p.attributes.physical.naturalFitness || 12;
+      const intensityBonus =
+        p.individualTraining.intensity === 'Heavy'
+          ? 18
+          : p.individualTraining.intensity === 'Medium'
+            ? 8
+            : 0;
+      const fatigueFactor = Math.max(0, 100 - p.fitness);
+      const rawProb = Math.min(
+        92,
+        Math.max(4, Math.round(fatigueFactor * 1.35 + intensityBonus + (18 - natFit) * 1.8))
+      );
+
+      const riskLevel: PlayerMedicalRiskAssessment['riskLevel'] =
+        p.injuryStatus.isInjured || p.fitness < 68 || rawProb >= 55
+          ? 'CRITICAL'
+          : p.fitness < 78 || rawProb >= 36
+            ? 'HIGH'
+            : p.fitness < 88 || rawProb >= 22
+              ? 'MODERATE'
+              : 'LOW';
+
+      const recommendationEn =
+        riskLevel === 'CRITICAL'
+          ? 'Immediate Medical Rest & Bench Rotation Required'
+          : riskLevel === 'HIGH'
+            ? 'Prescribe Recovery Session (+12% Fitness) & Light Intensity'
+            : riskLevel === 'MODERATE'
+              ? "Monitor Minutes (Sub around 65')"
+              : 'Cleared for Full 90-Minute Match Load';
+
+      const recommendationTh =
+        riskLevel === 'CRITICAL'
+          ? 'ต้องสั่งพักฟื้นทันทีและโรเตชั่นออกจากตัวจริง'
+          : riskLevel === 'HIGH'
+            ? 'แนะนำเข้าโปรแกรมฟื้นฟู (+12% ความฟิต) และซ้อมเบา'
+            : riskLevel === 'MODERATE'
+              ? "เฝ้าระวังนาทีลงสนาม (ควรเปลี่ยนตัวออกนาที 65')"
+              : 'พร้อมลงสนามเต็ม 90 นาที';
+
+      return {
+        player: p,
+        playerId: p.id,
+        playerName: `${p.firstName} ${p.lastName}`,
+        position: p.positions[0] || 'CM',
+        fitness: p.fitness,
+        matchSharpness: p.matchSharpness,
+        riskLevel,
+        injuryProbabilityPct: rawProb,
+        riskProbabilityPct: rawProb,
+        workloadLoad: p.individualTraining.intensity,
+        recommendation: trText(recommendationEn, recommendationTh),
+        recommendationEn,
+        recommendationTh,
+      };
+    })
+    .sort((a, b) => b.injuryProbabilityPct - a.injuryProbabilityPct);
+}
+
+export function prescribePlayerMedicalRest(
+  state: WorldState,
+  playerId: string
+): { nextState: WorldState; success: boolean; message: string } {
+  const player = state.players[playerId];
+  if (!player) {
+    return { nextState: state, success: false, message: 'Player not found.' };
+  }
+
+  const nextFitness = Math.min(100, player.fitness + 12);
+  const updatedPlayer: Player = {
+    ...player,
+    fitness: nextFitness,
+    individualTraining: {
+      ...player.individualTraining,
+      intensity: 'Light',
+    },
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [playerId]: updatedPlayer,
+      },
+    },
+    success: true,
+    message: trText(
+      `Medical Center: Prescribed preventative rest & cryotherapy for ${player.firstName} ${player.lastName} (Fitness -> ${nextFitness}%, Training -> Light).`,
+      `ศูนย์การแพทย์: สั่งพักฟื้นและกายภาพบำบัดให้ ${player.firstName} ${player.lastName} (ความฟิตเพิ่มเป็น ${nextFitness}%, ปรับซ้อมเบา)`
+    ),
+  };
+}
+
+/**
+ * Checkpoint 25: Dual Board vs Supporter Confidence & Live Fan Social Media Feed
+ */
+export function getClubSupporterConfidence(state: WorldState, clubId?: string): number {
+  const cid = clubId || state.controlledClubId;
+  const club = state.clubs[cid];
+  if (!club) return 75;
+  if (typeof club.supporterConfidence === 'number') {
+    return club.supporterConfidence;
+  }
+
+  const table = state.standings[club.leagueId] || [];
+  const rowIdx = table.findIndex((r) => r.clubId === cid);
+  const row = table[rowIdx];
+  const rank = rowIdx >= 0 ? rowIdx + 1 : club.boardExpectations.targetLeaguePosition;
+  const rankDelta = club.boardExpectations.targetLeaguePosition - rank;
+  const formWins = (row?.form || []).filter((f) => f === 'W').length;
+  const attackingBonus =
+    club.primaryTactic.instructions.mentality === 'Attacking' ||
+    club.primaryTactic.instructions.mentality === 'Very Attacking' ||
+    club.primaryTactic.instructions.mentality === 'Positive'
+      ? 5
+      : 0;
+
+  return Math.max(
+    18,
+    Math.min(
+      99,
+      Math.round(
+        club.boardExpectations.confidence.overall + rankDelta * 2.5 + formWins * 2 + attackingBonus
+      )
+    )
+  );
+}
+
+export function getFanSocialFeed(state: WorldState): FanSocialPost[] {
+  if (state.socialFeed && state.socialFeed.length > 0) {
+    return state.socialFeed;
+  }
+  const club = state.clubs[state.controlledClubId];
+  const squad = Object.values(state.players)
+    .filter((p) => p.clubId === club.id)
+    .sort((a, b) => b.currentAbility - a.currentAbility);
+  const star = squad[0];
+  const wonderkid = squad.find((p) => p.isWonderkid || p.potentialAbility >= 168) || squad[1] || star;
+  const suppConf = getClubSupporterConfidence(state, club.id);
+
+  const completedUserMatches = state.fixtures
+    .filter(
+      (f) =>
+        f.status === 'Completed' &&
+        f.result &&
+        (f.homeClubId === club.id || f.awayClubId === club.id)
+    )
+    .slice(-2)
+    .reverse();
+
+  const posts: FanSocialPost[] = [];
+
+  if (completedUserMatches[0] && completedUserMatches[0].result) {
+    const m = completedUserMatches[0];
+    const isHome = m.homeClubId === club.id;
+    const myGoals = isHome ? m.result!.homeGoals : m.result!.awayGoals;
+    const oppGoals = isHome ? m.result!.awayGoals : m.result!.homeGoals;
+    const oppName = state.clubs[isHome ? m.awayClubId : m.homeClubId]?.shortName || 'Opponent';
+    const won = myGoals > oppGoals;
+    const drew = myGoals === oppGoals;
+
+    const postBody = won
+      ? trText(
+          `What a result against ${oppName} (${myGoals}-${oppGoals})! ${state.manager.name}'s ${club.primaryTactic.formation} tactical setup completely dominated the pitch! 🔥👏`,
+          `ชัยชนะสุดยอดเหนือ ${oppName} (${myGoals}-${oppGoals})! แท็กติก ${club.primaryTactic.formation} ของกุนซือ ${state.manager.name} คุมเกมได้อยู่หมัด! 🔥👏`
+        )
+      : drew
+        ? trText(
+            `A hard-fought ${myGoals}-${oppGoals} draw vs ${oppName}. We created the xG to win it—need more clinical finishing next matchday.`,
+            `แบ่งแต้มสุดเดือด ${myGoals}-${oppGoals} กับ ${oppName} รูปเกมสร้างโอกาส xG ได้เยอะแล้ว เหลือแค่ความคมในจังหวะสุดท้าย`
+          )
+        : trText(
+            `Disappointing ${myGoals}-${oppGoals} defeat to ${oppName}. The fans expect a big tactical response from ${state.manager.name} this weekend! 😤`,
+            `น่าผิดหวังที่พ่าย ${oppName} ${myGoals}-${oppGoals} แฟนบอลหวังว่าจะได้เห็นการแก้เกมที่ดุดันขึ้นในนัดต่อไป! 😤`
+          );
+
+    posts.push({
+      id: `soc_match_${m.id}`,
+      handle: `@${club.shortName.replace(/\s+/g, '')}UltrasTV`,
+      author: `${club.shortName} Supporters Trust`,
+      sentiment: won ? 'POSITIVE' : drew ? 'NEUTRAL' : 'CRITICAL',
+      date: m.kickoffDate,
+      text: postBody,
+      body: postBody,
+      likes: 2450,
+    });
+  }
+
+  const starText = trText(
+    `Supporter confidence at ${club.name} stands at ${suppConf}%. Watching ${star?.firstName} ${star?.lastName} and young talent ${wonderkid?.firstName} ${wonderkid?.lastName} link up in ${club.primaryTactic.formation} is pure box-office football.`,
+    `ความเชื่อมั่นของกลุ่มแฟนบอล ${club.name} อยู่ที่ ${suppConf}% การประสานงานระหว่าง ${star?.firstName} ${star?.lastName} และดาวรุ่ง ${wonderkid?.firstName} ${wonderkid?.lastName} ในระบบ ${club.primaryTactic.formation} น่าจับตามองมาก!`
+  );
+
+  posts.push({
+    id: `soc_star_${club.id}`,
+    handle: '@TouchlineTacticsPod',
+    author: 'European Football Punditry',
+    sentiment: suppConf >= 65 ? 'POSITIVE' : 'NEUTRAL',
+    date: state.gameDate,
+    text: starText,
+    body: starText,
+    likes: 1820,
+  });
+
+  const boardText = trText(
+    `With €${(club.finances.transferBudget / 1_000_000).toFixed(1)}M remaining in the transfer warchest, supporters are urging the board to back ${state.manager.name} in the scouting market.`,
+    `ด้วยงบเสริมทัพที่เหลืออีก €${(club.finances.transferBudget / 1_000_000).toFixed(1)}M แฟนบอลต่างเรียกร้องให้บอร์ดบริหารหนุนหลัง ${state.manager.name} ลุยตลาดนักเตะเต็มตัว`
+  );
+
+  posts.push({
+    id: `soc_board_${club.id}`,
+    handle: `@Inside${club.shortName.replace(/\s+/g, '')}`,
+    author: `${club.name} Insider`,
+    sentiment: club.finances.transferBudget >= 15_000_000 ? 'POSITIVE' : 'NEUTRAL',
+    date: state.gameDate,
+    text: boardText,
+    body: boardText,
+    likes: 1340,
+  });
+
+  return posts;
+}
+
+/**
+ * Checkpoint 26: Affiliate / Feeder Clubs (Send on Loan) & Advanced Transfer Clauses
+ */
+export function requestAffiliateFeederClub(
+  state: WorldState
+): { nextState: WorldState; affiliateClub: Club | null; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const existingIds = myClub.affiliateClubIds || [];
+  if (existingIds.length >= 3) {
+    return {
+      nextState: state,
+      affiliateClub: null,
+      message: trText(
+        'Your club already has the maximum of 3 active Affiliate / Feeder Club partnerships.',
+        'สโมสรของคุณมีพันธมิตรสโมสรลูก (Affiliate Clubs) ครบโควตาสูงสุด 3 สโมสรแล้ว'
+      ),
+    };
+  }
+
+  const candidates = Object.values(state.clubs).filter(
+    (c) =>
+      c.id !== myClub.id &&
+      !existingIds.includes(c.id) &&
+      c.reputation < myClub.reputation - 4 &&
+      (LEAGUES_CONFIG[c.leagueId]?.tier === 2 || ['POR_LP', 'NED_ED', 'BEL_PL', 'SCO_PR', 'TUR_SL'].includes(c.leagueId))
+  );
+
+  const chosen =
+    candidates[Math.abs(state.randomSeed + existingIds.length * 19) % Math.max(1, candidates.length)] ||
+    Object.values(state.clubs).find((c) => c.id !== myClub.id && !existingIds.includes(c.id));
+
+  if (!chosen) {
+    return { nextState: state, affiliateClub: null, message: 'No eligible feeder club found.' };
+  }
+
+  const updatedMyClub: Club = {
+    ...myClub,
+    affiliateClubIds: [...existingIds, chosen.id],
+  };
+
+  return {
+    nextState: {
+      ...state,
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedMyClub,
+      },
+      inbox: [
+        {
+          id: `news_aff_${chosen.id}_${Date.now()}`,
+          gameDate: state.gameDate,
+          category: 'Board',
+          title: trText(
+            `Board Approves New Feeder Club Partnership: ${chosen.name} (${LEAGUES_CONFIG[chosen.leagueId]?.name})`,
+            `บอร์ดบริหารอนุมัติพันธมิตรสโมสรลูกแห่งใหม่: ${chosen.name} (${LEAGUES_CONFIG[chosen.leagueId]?.name})`
+          ),
+          body: trText(
+            `${myClub.name} have signed an official Affiliate Club partnership with ${chosen.name}. You can now send U21 prospects and fringe players to ${chosen.name} on instant developmental loans.`,
+            `${myClub.name} ลงนามความร่วมมือเป็นพันธมิตรสโมสรแม่-ลูกกับ ${chosen.name} อย่างเป็นทางการ คุณสามารถส่งดาวรุ่งไปเก็บเกี่ยวประสบการณ์แบบยืมตัวได้ทันที`
+          ),
+          isRead: false,
+          relatedClubId: chosen.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    affiliateClub: chosen,
+    message: trText(
+      `Established Affiliate / Feeder Club partnership with ${chosen.name}!`,
+      `จับมือพันธมิตรสโมสรลูกกับ ${chosen.name} สำเร็จ!`
+    ),
+  };
+}
+
+export function sendPlayerToAffiliateLoan(
+  state: WorldState,
+  playerId: string,
+  affiliateClubId?: string
+): { nextState: WorldState; success: boolean; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const player = state.players[playerId];
+  if (!player || player.clubId !== myClub.id) {
+    return {
+      nextState: state,
+      success: false,
+      message: trText('Player must belong to your club.', 'นักเตะต้องอยู่ในสังกัดสโมสรของคุณ'),
+    };
+  }
+
+  let workingState = state;
+  let targetAffiliateId = affiliateClubId || myClub.affiliateClubIds?.[0];
+  if (!targetAffiliateId) {
+    const req = requestAffiliateFeederClub(workingState);
+    workingState = req.nextState;
+    targetAffiliateId = req.affiliateClub?.id;
+  }
+
+  const affiliateClub = targetAffiliateId ? workingState.clubs[targetAffiliateId] : undefined;
+  if (!affiliateClub) {
+    return {
+      nextState: workingState,
+      success: false,
+      message: trText('No affiliate club available.', 'ไม่พบสโมสรพันธมิตร'),
+    };
+  }
+
+  const updatedPlayer: Player = {
+    ...player,
+    clubId: affiliateClub.id,
+    loanedFromClubId: myClub.id,
+    morale: Math.min(100, player.morale + 7),
+    matchSharpness: Math.min(100, player.matchSharpness + 6),
+    transferHistory: [
+      {
+        date: workingState.gameDate,
+        fromClubId: myClub.id,
+        toClubId: affiliateClub.id,
+        fee: 0,
+        type: 'Loan',
+      },
+      ...player.transferHistory,
+    ],
+  };
+
+  const updatedMyClub: Club = {
+    ...workingState.clubs[myClub.id],
+    primaryTactic: {
+      ...workingState.clubs[myClub.id].primaryTactic,
+      lineup: workingState.clubs[myClub.id].primaryTactic.lineup.map((s) =>
+        s.playerId === player.id ? { ...s, playerId: null } : s
+      ),
+      benchPlayerIds: workingState.clubs[myClub.id].primaryTactic.benchPlayerIds.filter(
+        (id) => id !== player.id
+      ),
+    },
+  };
+
+  return {
+    nextState: {
+      ...workingState,
+      players: {
+        ...workingState.players,
+        [player.id]: updatedPlayer,
+      },
+      clubs: {
+        ...workingState.clubs,
+        [myClub.id]: updatedMyClub,
+      },
+      inbox: [
+        {
+          id: `news_aff_loan_${player.id}_${Date.now()}`,
+          gameDate: workingState.gameDate,
+          category: 'Transfer',
+          title: trText(
+            `Developmental Loan: ${player.firstName} ${player.lastName} Joins Affiliate ${affiliateClub.name}`,
+            `ส่งยืมตัวสโมสรลูก: ${player.firstName} ${player.lastName} ย้ายไปเก็บเลเวลกับ ${affiliateClub.name}`
+          ),
+          body: trText(
+            `${player.firstName} ${player.lastName} has joined affiliate club ${affiliateClub.name} on a season-long developmental loan to gain regular first-team minutes.`,
+            `${player.firstName} ${player.lastName} เดินทางไปร่วมทีมพันธมิตร ${affiliateClub.name} ด้วยสัญญายืมตัวจนจบฤดูกาลเพื่อโอกาสลงสนามอย่างต่อเนื่อง`
+          ),
+          isRead: false,
+          relatedClubId: affiliateClub.id,
+          relatedPlayerId: player.id,
+        },
+        ...workingState.inbox,
+      ],
+    },
+    success: true,
+    message: trText(
+      `Sent ${player.firstName} ${player.lastName} on loan to affiliate club ${affiliateClub.name}!`,
+      `ส่ง ${player.firstName} ${player.lastName} ไปยืมตัวกับสโมสรพันธมิตร ${affiliateClub.name} เรียบร้อยแล้ว!`
+    ),
+  };
+}

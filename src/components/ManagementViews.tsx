@@ -21,14 +21,20 @@ import {
   UEFA_COUNTRY_QUOTAS,
 } from '../engine/uefaEngine';
 import {
+  computeHallOfFameLeaderboard,
   evaluateClubFFPStatus,
+  evaluateSquadMedicalRisk,
+  exportWorldDatabaseJson,
   getAgeAtDate,
   getClubStaffBonuses,
+  getClubSupporterConfidence,
   getDeadlineDayBargains,
+  getFanSocialFeed,
   isTransferDeadlineWindow,
   NATION_YOUTH_RATINGS,
   NATIONAL_TEAMS_CATALOG,
   SaveSlotMeta,
+  simulateExhibitionClash,
 } from '../engine/worldSimulationService';
 import {
   derivePlayerTraitsFromAttributes,
@@ -160,10 +166,15 @@ export const DashboardView: React.FC<{
 
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
           <div className="text-xs text-slate-400">
-            {tr('Board Confidence', 'ความเชื่อมั่นบอร์ดบริหาร (Board Confidence)')}
+            {tr('Board vs Supporter Confidence', 'ความเชื่อมั่นบอร์ด & แฟนบอล')}
           </div>
-          <div className="text-2xl font-display font-bold text-sky-400 mt-1 font-mono tabular-nums">
-            {club.boardExpectations.confidence.overall}%
+          <div className="flex items-baseline gap-3 mt-1 font-mono tabular-nums">
+            <span className="text-2xl font-display font-bold text-sky-400">
+              {club.boardExpectations.confidence.overall}%
+            </span>
+            <span className="text-sm font-bold text-amber-400">
+              {tr('Fans:', 'แฟนบอล:')} {getClubSupporterConfidence(world, club.id)}%
+            </span>
           </div>
           <div className="text-xs text-slate-400 mt-1">
             {tr(
@@ -441,6 +452,55 @@ export const DashboardView: React.FC<{
           </div>
         </div>
       </div>
+
+      {/* Checkpoint 25: Live Fan Social Media & Pundit Feed */}
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-2.5"
+        data-testid="fan-social-feed-card"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-display font-bold text-sky-400">
+              {tr(
+                '💬 Live Supporter & Football Pundit Social Feed (#TouchlineLive)',
+                '💬 กระแสโซเชียลมีเดียจากแฟนบอลและกูรูฟุตบอล (#TouchlineLive)'
+              )}
+            </span>
+            <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono text-amber-300">
+              {tr('Supporter Confidence:', 'ความเชื่อมั่นแฟนบอล:')}{' '}
+              {getClubSupporterConfidence(world, club.id)}%
+            </span>
+          </div>
+          <span className="text-[11px] font-mono text-slate-500">{world.gameDate}</span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+          {getFanSocialFeed(world)
+            .slice(0, 3)
+            .map((post) => (
+              <div
+                key={post.id}
+                className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1 text-xs"
+              >
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-mono font-bold text-emerald-400">{post.handle}</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                      post.sentiment === 'POSITIVE'
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : post.sentiment === 'CRITICAL'
+                          ? 'bg-red-500/15 text-red-300'
+                          : 'bg-sky-500/15 text-sky-300'
+                    }`}
+                  >
+                    {post.sentiment}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-[11px] leading-relaxed">{trDynamic(post.body)}</p>
+                <div className="text-[10px] font-mono text-slate-500">♥ {post.likes.toLocaleString()}</div>
+              </div>
+            ))}
+        </div>
+      </div>
     </div>
   );
 };
@@ -689,16 +749,19 @@ export const TrainingView: React.FC<{
   onSelectPlayer: (playerId: string) => void;
   onSaveMentoringGroup?: (mentorId: string, menteeIds: string[]) => void;
   onRemoveMentoringGroup?: (groupId: string) => void;
+  onPrescribeMedicalRest?: (playerId: string) => void;
 }> = ({
   world,
   onUpdateClubTraining,
   onSelectPlayer,
   onSaveMentoringGroup,
   onRemoveMentoringGroup,
+  onPrescribeMedicalRest,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
+  const medicalRiskList = evaluateSquadMedicalRisk(world, club.id);
 
   const veteranMentors = clubPlayers
     .filter((p) => getAgeAtDate(p.dateOfBirth, world.gameDate) >= 24)
@@ -1075,6 +1138,88 @@ export const TrainingView: React.FC<{
           </table>
         </div>
       </div>
+
+      {/* Checkpoint 24: FM27 Medical Center, Injury Risk Matrix & Preventative Rest */}
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+        data-testid="medical-center-panel"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div>
+            <h3 className="text-base font-display font-bold text-rose-400">
+              {tr(
+                '🏥 FM27 Sports Science & Medical Center (Injury Risk Matrix)',
+                '🏥 ศูนย์วิทยาศาสตร์การกีฬาและการแพทย์ FM27 (ตารางประเมินความเสี่ยงบาดเจ็บ)'
+              )}
+            </h3>
+            <p className="text-xs text-slate-400">
+              {tr(
+                'Combines Fitness fatigue, hidden Injury Proneness, and training workload. Prescribe 1-click Rest & Recovery (+12% Fitness & Light Load).',
+                'วิเคราะห์ความเหนื่อยล้า ค่าซ่อนความเปราะบาง และภาระการซ้อม สั่งพักฟื้นร่างกายได้ในคลิกเดียว (+12% ความฟิต & ปรับซ้อมเบา)'
+              )}
+            </p>
+          </div>
+          <span className="px-2.5 py-1 rounded bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-mono">
+            {tr('High/Critical Risk:', 'ความเสี่ยงสูง/วิกฤต:')}{' '}
+            {
+              medicalRiskList.filter(
+                (r) => r.riskLevel === 'CRITICAL' || r.riskLevel === 'HIGH'
+              ).length
+            }{' '}
+            {tr('Players', 'คน')}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[320px] overflow-y-auto pr-1">
+          {medicalRiskList.slice(0, 12).map((item) => {
+            const p = world.players[item.playerId];
+            if (!p) return null;
+            return (
+              <div
+                key={item.playerId}
+                className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between gap-2 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-white truncate">
+                    {item.playerName}{' '}
+                    <span className="font-mono text-slate-400">({item.position})</span>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                      item.riskLevel === 'CRITICAL'
+                        ? 'bg-red-500/20 text-red-300 border border-red-500/40'
+                        : item.riskLevel === 'HIGH'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : item.riskLevel === 'MODERATE'
+                            ? 'bg-sky-500/20 text-sky-300'
+                            : 'bg-emerald-500/15 text-emerald-300'
+                    }`}
+                  >
+                    {item.riskLevel} · {item.riskProbabilityPct}%
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono">
+                  Fitness {item.fitness}% · Sharpness {item.matchSharpness}% ·{' '}
+                  {tr(item.recommendationEn, item.recommendationTh)}
+                </div>
+                {onPrescribeMedicalRest && (
+                  <button
+                    type="button"
+                    data-testid="prescribe-rest-btn"
+                    onClick={() => onPrescribeMedicalRest(item.playerId)}
+                    className="w-full py-1.5 px-2.5 rounded bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 font-semibold text-[11px] cursor-pointer transition-colors"
+                  >
+                    {tr(
+                      '💊 Prescribe Rest & Recovery (+12% Fitness)',
+                      '💊 สั่งพักฟื้นร่างกาย (+12% ความฟิต & ซ้อมเบา)'
+                    )}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 };
@@ -1086,15 +1231,22 @@ export const ScoutingView: React.FC<{
   world: WorldState;
   onSelectPlayer: (playerId: string) => void;
   onCreateAssignment: (
-    region: LeagueId | 'ALL_EUROPE',
+    region: LeagueId | 'ALL_EUROPE' | 'SOUTH_AMERICA',
     posGroup: PositionGroup | 'ANY',
     maxAge: number,
     maxBudget: number
   ) => void;
   onGenerateScoutReport: (playerId: string) => void;
-}> = ({ world, onSelectPlayer, onCreateAssignment, onGenerateScoutReport }) => {
+  onDispatchSouthAmericaScout?: () => void;
+}> = ({
+  world,
+  onSelectPlayer,
+  onCreateAssignment,
+  onGenerateScoutReport,
+  onDispatchSouthAmericaScout,
+}) => {
   const { tr } = useLanguage();
-  const [leagueFilter, setLeagueFilter] = useState<'ALL_EUROPE' | LeagueId>('ALL_EUROPE');
+  const [leagueFilter, setLeagueFilter] = useState<'ALL_EUROPE' | 'SOUTH_AMERICA' | LeagueId>('ALL_EUROPE');
   const [posFilter, setPosFilter] = useState<'ANY' | PositionGroup>('ANY');
   const [maxAge, setMaxAge] = useState(26);
   const [maxValueM, setMaxValueM] = useState(60);
@@ -1107,7 +1259,11 @@ export const ScoutingView: React.FC<{
     if (p.clubId === world.controlledClubId) return false;
     const c = world.clubs[p.clubId];
     if (!c) return false;
-    if (leagueFilter !== 'ALL_EUROPE' && c.leagueId !== leagueFilter) return false;
+    if (leagueFilter === 'SOUTH_AMERICA') {
+      if (p.nationality !== 'BRA' && p.nationality !== 'ARG') return false;
+    } else if (leagueFilter !== 'ALL_EUROPE' && c.leagueId !== leagueFilter) {
+      return false;
+    }
     if (posFilter !== 'ANY' && getPositionGroup(p.positions[0]) !== posFilter) return false;
     const age = getAgeAtDate(p.dateOfBirth, world.gameDate);
     if (age > maxAge) return false;
@@ -1137,16 +1293,26 @@ export const ScoutingView: React.FC<{
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h3 className="text-base font-display font-bold text-white">
-              {tr('European Scouting Network', 'เครือข่ายแมวมองยุโรป (European Scouting Network)')}
+              {tr('European & South American Scouting Network', 'เครือข่ายแมวมองยุโรป & อเมริกาใต้ (Global Scouting Network)')}
             </h3>
             <p className="text-xs text-slate-400">
               {tr(
-                'Search players across all 280 clubs in 15 European leagues or assign scouts to specific regions.',
-                'ค้นหานักเตะจากทั้ง 280 สโมสรใน 15 ลีกยุโรป หรือส่งแมวมองลงพื้นที่ค้นหาดาวรุ่ง'
+                'Search players across all 280 clubs in 15 European leagues or dispatch South American Wonderkid scouts (Brazil & Argentina).',
+                'ค้นหานักเตะจากทั้ง 280 สโมสรใน 15 ลีกยุโรป หรือส่งแมวมองเฟ้นหาวันเดอร์คิดอเมริกาใต้ (บราซิล & อาร์เจนตินา)'
               )}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {onDispatchSouthAmericaScout && (
+              <button
+                type="button"
+                data-testid="scout-south-america-btn"
+                onClick={onDispatchSouthAmericaScout}
+                className="px-3.5 py-2 text-xs font-semibold rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 cursor-pointer"
+              >
+                {tr('🌎 Scout South America Wonderkid (BRA/ARG)', '🌎 ส่งแมวมองค้นหาวันเดอร์คิดอเมริกาใต้ (BRA/ARG)')}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setExpiringOnly((v) => !v)}
@@ -1178,10 +1344,11 @@ export const ScoutingView: React.FC<{
             <select
               id="sct-league"
               value={leagueFilter}
-              onChange={(e) => setLeagueFilter(e.target.value as 'ALL_EUROPE' | LeagueId)}
+              onChange={(e) => setLeagueFilter(e.target.value as 'ALL_EUROPE' | 'SOUTH_AMERICA' | LeagueId)}
               className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
             >
               <option value="ALL_EUROPE">{tr('All 15 European Leagues', 'ยุโรปทั้ง 15 ลีก (All 15 Leagues)')}</option>
+              <option value="SOUTH_AMERICA">{tr('🌎 South America (Brazil & Argentina)', '🌎 อเมริกาใต้ (บราซิล & อาร์เจนตินา)')}</option>
               {(Object.keys(LEAGUES_CONFIG) as LeagueId[]).map((lId) => (
                 <option key={lId} value={lId}>
                   {LEAGUES_CONFIG[lId].name}
@@ -1372,7 +1539,14 @@ export const TransfersView: React.FC<{
   onSelectPlayer: (playerId: string) => void;
   onRespondToIncomingOffer?: (offerId: string, action: 'ACCEPT' | 'COUNTER' | 'REJECT') => void;
   onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
-}> = ({ world, onSelectPlayer, onRespondToIncomingOffer, onActivateReleaseClause }) => {
+  onTriggerGlobalSuperBid?: () => void;
+}> = ({
+  world,
+  onSelectPlayer,
+  onRespondToIncomingOffer,
+  onActivateReleaseClause,
+  onTriggerGlobalSuperBid,
+}) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const [tab, setTab] = useState<'market' | 'deadline' | 'bosman' | 'incoming' | 'shortlist' | 'history'>('market');
@@ -1408,7 +1582,7 @@ export const TransfersView: React.FC<{
 
   return (
     <div className="space-y-4">
-      {/* Transfer Deadline Day Live Hub Banner (Checkpoint 12) */}
+      {/* Transfer Deadline Day Live Hub Banner (Checkpoint 12) + Global Super-Club Bid (Checkpoint 23) */}
       <div
         className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-3 ${
           isDeadlineWindow
@@ -1440,14 +1614,32 @@ export const TransfersView: React.FC<{
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => setTab('deadline')}
-          data-testid="deadline-hub-tab-btn"
-          className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
-        >
-          {tr('Open Deadline & Release Clause Hub →', 'เปิดศูนย์ดีลด่วน & ค่าฉีกสัญญา →')}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {onTriggerGlobalSuperBid && (
+            <button
+              type="button"
+              data-testid="trigger-super-club-bid-btn"
+              onClick={() => {
+                onTriggerGlobalSuperBid();
+                setTab('incoming');
+              }}
+              className="px-3.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs rounded-lg cursor-pointer"
+            >
+              {tr(
+                '💰 Simulate Saudi / MLS Super-Club Bid (1.38x)',
+                '💰 จำลองข้อเสนอทุ่มซื้อจากสโมสรซาอุฯ / MLS (1.38x)'
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setTab('deadline')}
+            data-testid="deadline-hub-tab-btn"
+            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+          >
+            {tr('Open Deadline & Release Clause Hub →', 'เปิดศูนย์ดีลด่วน & ค่าฉีกสัญญา →')}
+          </button>
+        </div>
       </div>
 
       {club.transferEmbargoUntil && club.transferEmbargoUntil >= world.gameDate && (
@@ -3323,6 +3515,28 @@ export const ClubStaffYouthWorldView: React.FC<{
   onSimulateEuroCupRound?: () => void;
   onTriggerFifaBreak?: () => void;
   onTriggerAICarousel?: () => void;
+  onRequestAffiliateClub?: () => void;
+  onSendToAffiliateLoan?: (playerId: string, affiliateClubId?: string) => void;
+  onSimulateCWCStage?: () => void;
+  onCreateCustomPlayer?: (params: {
+    firstName: string;
+    lastName: string;
+    nationality: string;
+    position: Player['positions'][0];
+    age: number;
+    currentAbility: number;
+    potentialAbility: number;
+    clubId?: string;
+  }) => void;
+  onLiveEditClub?: (params: {
+    clubId?: string;
+    transferBudgetM?: number;
+    balanceM?: number;
+    trainingFacilities?: number;
+    youthFacilities?: number;
+    reputation?: number;
+  }) => void;
+  onImportDatabaseJson?: (rawJson: string) => void;
 }> = ({
   mode,
   world,
@@ -3350,6 +3564,12 @@ export const ClubStaffYouthWorldView: React.FC<{
   onSimulateEuroCupRound,
   onTriggerFifaBreak,
   onTriggerAICarousel,
+  onRequestAffiliateClub,
+  onSendToAffiliateLoan,
+  onSimulateCWCStage,
+  onCreateCustomPlayer,
+  onLiveEditClub,
+  onImportDatabaseJson,
 }) => {
   const { lang, setLang, tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -3357,6 +3577,28 @@ export const ClubStaffYouthWorldView: React.FC<{
   const [inspectedClubId, setInspectedClubId] = useState<string>(club.id);
   const [budgetSliderPct, setBudgetSliderPct] = useState<number>(65);
   const [youthTab, setYouthTab] = useState<'academy' | 'wonderkids' | 'mentoring'>('academy');
+
+  // Checkpoint 21: Exhibition Club Clash state
+  const allClubList = Object.values(world.clubs);
+  const [exhibitionHomeId, setExhibitionHomeId] = useState<string>(club.id);
+  const [exhibitionAwayId, setExhibitionAwayId] = useState<string>(
+    allClubList.find((c) => c.id !== club.id)?.id || club.id
+  );
+  const [exhibitionSummary, setExhibitionSummary] = useState<string | null>(null);
+
+  // Checkpoint 20: In-Game Database Editor & Wonderkid Builder state
+  const [wkFirstName, setWkFirstName] = useState<string>('Lamine');
+  const [wkLastName, setWkLastName] = useState<string>('Estrella');
+  const [wkNat, setWkNat] = useState<string>('ESP');
+  const [wkPos, setWkPos] = useState<Player['positions'][0]>('AMR');
+  const [wkAge, setWkAge] = useState<number>(17);
+  const [wkCA, setWkCA] = useState<number>(152);
+  const [wkPA, setWkPA] = useState<number>(194);
+  const [editBudgetM, setEditBudgetM] = useState<number>(
+    Math.round(club.finances.transferBudget / 1_000_000)
+  );
+  const [editTrainLvl, setEditTrainLvl] = useState<number>(club.trainingFacilities);
+  const [jsonBuffer, setJsonBuffer] = useState<string>('');
 
   if (mode === 'club') {
     const ffpStatus = evaluateClubFFPStatus(world, club.id);
@@ -3597,6 +3839,58 @@ export const ClubStaffYouthWorldView: React.FC<{
                   </div>
                 </div>
               )}
+
+              {/* Checkpoint 26: Affiliate / Feeder Clubs Network */}
+              <div
+                className="mt-3 p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+                data-testid="affiliate-clubs-card"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-sky-400">
+                    {tr(
+                      '🤝 Affiliate & Feeder Club Network (Development Loan Partnerships)',
+                      '🤝 เครือข่ายสโมสรพันธมิตร / Feeder Clubs (ส่งดาวรุ่งยืมตัวพัฒนาฝีเท้า)'
+                    )}
+                  </span>
+                  {onRequestAffiliateClub && (
+                    <button
+                      type="button"
+                      data-testid="request-affiliate-btn"
+                      onClick={onRequestAffiliateClub}
+                      className="px-2.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 text-[11px] font-semibold cursor-pointer"
+                    >
+                      {tr('+ Request New Feeder Club', '+ ขอสโมสรพันธมิตรใหม่')}
+                    </button>
+                  )}
+                </div>
+                {(club.affiliateClubIds || []).length === 0 ? (
+                  <div className="text-[11px] text-slate-400">
+                    {tr(
+                      'No active Feeder Clubs yet. Request a Board partnership above to send U21 prospects on guaranteed development loans.',
+                      'ยังไม่มีสโมสรพันธมิตร กดปุ่มขอสโมสรพันธมิตรด้านบนเพื่อส่งดาวรุ่งไปยืมตัวพัฒนาฝีเท้า'
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(club.affiliateClubIds || []).map((affId) => {
+                      const affClub = world.clubs[affId];
+                      if (!affClub) return null;
+                      return (
+                        <div
+                          key={affId}
+                          className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs flex items-center gap-2"
+                        >
+                          <ClubBadge club={affClub} size="xs" />
+                          <span className="text-white font-semibold">{affClub.name}</span>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            ({affClub.countryId} · Rep {affClub.reputation})
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -4448,6 +4742,16 @@ export const ClubStaffYouthWorldView: React.FC<{
                   {tr('🏆 Simulate Next Euro Nations Cup Round', '🏆 แข่งรอบถัดไปศึก Euro Nations Cup')}
                 </button>
               )}
+              {onSimulateCWCStage && (
+                <button
+                  type="button"
+                  data-testid="simulate-cwc-btn"
+                  onClick={onSimulateCWCStage}
+                  className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-semibold rounded-lg cursor-pointer"
+                >
+                  {tr('🌎 Simulate FIFA Club World Cup Stage (GLB_CWC)', '🌎 แข่งศึกสโมสรโลก FIFA Club World Cup')}
+                </button>
+              )}
               {onTriggerAICarousel && (
                 <button
                   type="button"
@@ -4668,11 +4972,145 @@ export const ClubStaffYouthWorldView: React.FC<{
             </div>
           </div>
         </div>
+
+        {/* Checkpoint 21: All-Time Hall of Fame Leaderboard & Exhibition Club Clash Simulator */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+          <div
+            className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+            data-testid="hall-of-fame-panel"
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-display font-bold text-amber-400">
+                {tr(
+                  '🏛️ All-Time Managerial Hall of Fame Leaderboard',
+                  '🏛️ หอเกียรติยศกุนซือระดับตำนานตลอดกาล (All-Time Hall of Fame)'
+                )}
+              </h3>
+              <span className="text-[11px] font-mono text-slate-400">
+                {tr('Ranked by Legacy Points', 'จัดอันดับตามคะแนนเกียรติยศ')}
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[11px] text-slate-400">
+                    <th className="py-1.5 px-2">#</th>
+                    <th className="py-1.5 px-2">{tr('Manager', 'ผู้จัดการทีม')}</th>
+                    <th className="py-1.5 px-2">{tr('Club / Era', 'สโมสร')}</th>
+                    <th className="py-1.5 px-2 text-right">{tr('Majors', 'ถ้วยใหญ่')}</th>
+                    <th className="py-1.5 px-2 text-right">{tr('Win %', 'ชนะ %')}</th>
+                    <th className="py-1.5 px-2 text-right">{tr('Pts', 'คะแนน')}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono">
+                  {computeHallOfFameLeaderboard(world).map((entry) => (
+                    <tr
+                      key={`${entry.rank}_${entry.managerName}`}
+                      className={
+                        entry.isUser
+                          ? 'bg-emerald-950/40 text-emerald-300 font-bold'
+                          : 'text-slate-300'
+                      }
+                    >
+                      <td className="py-1.5 px-2">#{entry.rank}</td>
+                      <td className="py-1.5 px-2 font-sans">
+                        {entry.managerName} {entry.isUser ? '★ (YOU)' : ''}
+                      </td>
+                      <td className="py-1.5 px-2 font-sans text-slate-400 truncate max-w-[140px]">
+                        {entry.clubName}
+                      </td>
+                      <td className="py-1.5 px-2 text-right">{entry.majorTrophies}</td>
+                      <td className="py-1.5 px-2 text-right">{entry.winRatePct}%</td>
+                      <td className="py-1.5 px-2 text-right text-amber-400 font-bold">
+                        {entry.points}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div
+            className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+            data-testid="exhibition-clash-panel"
+          >
+            <div>
+              <h3 className="text-sm font-display font-bold text-emerald-400">
+                {tr(
+                  '⚔️ Instant Exhibition Club Clash (Any 2 of 280 Clubs)',
+                  '⚔️ จำลองแมตช์พิเศษ Exhibition Clash (เลือกดวลได้ทุกสโมสรจาก 280 ทีม)'
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {tr(
+                  'Pit any two European clubs against each other using the full Match Engine without affecting league standings.',
+                  'จำลองการดวลกันระหว่าง 2 สโมสรใดก็ได้ด้วย Match Engine เต็มรูปแบบโดยไม่กระทบตารางคะแนนลีก'
+                )}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              <div>
+                <label className="block text-[11px] text-slate-400 mb-1">
+                  {tr('Home Club', 'สโมสรเจ้าบ้าน')}
+                </label>
+                <select
+                  value={exhibitionHomeId}
+                  onChange={(e) => setExhibitionHomeId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs"
+                >
+                  {allClubList.slice(0, 80).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.countryId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[11px] text-slate-400 mb-1">
+                  {tr('Away Club', 'สโมสรทีมเยือน')}
+                </label>
+                <select
+                  value={exhibitionAwayId}
+                  onChange={(e) => setExhibitionAwayId(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs"
+                >
+                  {allClubList.slice(0, 80).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.countryId})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="run-exhibition-clash-btn"
+              onClick={() => {
+                const sim = simulateExhibitionClash(world, exhibitionHomeId, exhibitionAwayId);
+                setExhibitionSummary(
+                  `${sim.summary} · xG ${sim.result.homeXg} - ${sim.result.awayXg} · Weather: ${sim.result.weather || 'Clear'}`
+                );
+              }}
+              className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+            >
+              {tr('⚡ Simulate Exhibition Match Now', '⚡ จำลองผลการแข่งขันทันที')}
+            </button>
+            {exhibitionSummary && (
+              <div
+                className="p-3 rounded-lg bg-slate-950 border border-emerald-500/40 text-xs font-mono text-emerald-300"
+                data-testid="exhibition-clash-result"
+              >
+                {exhibitionSummary}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     );
   }
 
-  // Manager Profile, Language Settings & Save/Load Slots
+  // Manager Profile, Language Settings, Cloud Saves & In-Game Database Editor
   const mgr = world.manager;
   const winRate =
     mgr.careerStats.matchesManaged > 0
@@ -4680,205 +5118,405 @@ export const ClubStaffYouthWorldView: React.FC<{
       : 0;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div className="space-y-4">
-        {/* Language & Display Preferences Card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-display font-bold text-white">
-                {tr('Language & Interface Settings', 'ตั้งค่าภาษาและการแสดงผล (Language Settings)')}
-              </h3>
-              <p className="text-xs text-slate-400">
-                {tr(
-                  'Choose your preferred display language. English is the default.',
-                  'เลือกภาษาที่ต้องการแสดงผลในเกม (ค่าเริ่มต้น: English)'
-                )}
-              </p>
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-4">
+          {/* Language & Display Preferences Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-display font-bold text-white">
+                  {tr('Language & Interface Settings', 'ตั้งค่าภาษาและการแสดงผล (Language Settings)')}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    'Choose your preferred display language. English is the default.',
+                    'เลือกภาษาที่ต้องการแสดงผลในเกม (ค่าเริ่มต้น: English)'
+                  )}
+                </p>
+              </div>
+              <LanguageSwitcher />
             </div>
-            <LanguageSwitcher />
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <button
+                type="button"
+                onClick={() => setLang('en')}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  lang === 'en'
+                    ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="text-xs font-bold text-emerald-400">English (Default)</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  Standard international football management terminology
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLang('th')}
+                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                  lang === 'th'
+                    ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
+                    : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                }`}
+              >
+                <div className="text-xs font-bold text-emerald-400">ภาษาไทย (Thai)</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  แสดงผลเมนู ตารางคะแนน และคำอธิบายภาษาไทยเต็มรูปแบบ
+                </div>
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <button
-              type="button"
-              onClick={() => setLang('en')}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                lang === 'en'
-                  ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-              }`}
-            >
-              <div className="text-xs font-bold text-emerald-400">English (Default)</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
-                Standard international football management terminology
+          {/* Manager Career Profile Card */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <h3 className="text-base font-display font-bold text-white">
+              {tr('Manager Career Profile', 'โปรไฟล์ผู้จัดการทีม (Manager Career Profile)')}
+            </h3>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between py-1.5 border-b border-slate-800">
+                <span className="text-slate-400">{tr('Full Name:', 'ชื่อ-นามสกุล:')}</span>
+                <span className="text-white font-semibold">{mgr.name}</span>
               </div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setLang('th')}
-              className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                lang === 'th'
-                  ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
-                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-              }`}
-            >
-              <div className="text-xs font-bold text-emerald-400">ภาษาไทย (Thai)</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
-                แสดงผลเมนู ตารางคะแนน และคำอธิบายภาษาไทยเต็มรูปแบบ
+              <div className="flex justify-between py-1.5 border-b border-slate-800">
+                <span className="text-slate-400">{tr('Nationality / Age:', 'สัญชาติ / อายุ:')}</span>
+                <span className="text-slate-200">
+                  {mgr.nationality} · {mgr.age} {tr('yrs', 'ปี')}
+                </span>
               </div>
-            </button>
+              <div className="flex justify-between py-1.5 border-b border-slate-800">
+                <span className="text-slate-400">{tr('Management Style:', 'สไตล์การทำทีม:')}</span>
+                <span className="text-emerald-400">{mgr.coachingStyle} · {mgr.tacticalStyle}</span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-800">
+                <span className="text-slate-400">{tr('Career Record:', 'สถิติการคุมทีมทั้งหมด:')}</span>
+                <span className="font-mono tabular-nums text-white">
+                  {tr(
+                    `${mgr.careerStats.matchesManaged} matches (W ${mgr.careerStats.won} · D ${mgr.careerStats.drawn} · L ${mgr.careerStats.lost})`,
+                    `${mgr.careerStats.matchesManaged} นัด (ชนะ ${mgr.careerStats.won} · เสมอ ${mgr.careerStats.drawn} · แพ้ ${mgr.careerStats.lost})`
+                  )}
+                </span>
+              </div>
+              <div className="flex justify-between py-1.5 border-b border-slate-800">
+                <span className="text-slate-400">{tr('Win Percentage:', 'อัตราชนะ (Win Percentage):')}</span>
+                <span className="font-mono tabular-nums text-emerald-400 font-bold">{winRate}%</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Manager Career Profile Card */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-          <h3 className="text-base font-display font-bold text-white">
-            {tr('Manager Career Profile', 'โปรไฟล์ผู้จัดการทีม (Manager Career Profile)')}
-          </h3>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-slate-800">
-              <span className="text-slate-400">{tr('Full Name:', 'ชื่อ-นามสกุล:')}</span>
-              <span className="text-white font-semibold">{mgr.name}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-800">
-              <span className="text-slate-400">{tr('Nationality / Age:', 'สัญชาติ / อายุ:')}</span>
-              <span className="text-slate-200">
-                {mgr.nationality} · {mgr.age} {tr('yrs', 'ปี')}
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-800">
-              <span className="text-slate-400">{tr('Management Style:', 'สไตล์การทำทีม:')}</span>
-              <span className="text-emerald-400">{mgr.coachingStyle} · {mgr.tacticalStyle}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-800">
-              <span className="text-slate-400">{tr('Career Record:', 'สถิติการคุมทีมทั้งหมด:')}</span>
-              <span className="font-mono tabular-nums text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-display font-bold text-white">
+                {tr('Google / Gmail Cloud Saves', 'จัดการเซฟเกมบนคลาวด์ (Google / Gmail Cloud Saves)')}
+              </h3>
+              <p className="text-[11px] text-slate-400">
                 {tr(
-                  `${mgr.careerStats.matchesManaged} matches (W ${mgr.careerStats.won} · D ${mgr.careerStats.drawn} · L ${mgr.careerStats.lost})`,
-                  `${mgr.careerStats.matchesManaged} นัด (ชนะ ${mgr.careerStats.won} · เสมอ ${mgr.careerStats.drawn} · แพ้ ${mgr.careerStats.lost})`
+                  'Save and sync your career progress via Cloud Firestore.',
+                  'บันทึกและซิงก์ข้อมูลเซฟเกมผ่าน Cloud Firestore โดยไม่ใช้ localStorage'
                 )}
-              </span>
+              </p>
             </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-800">
-              <span className="text-slate-400">{tr('Win Percentage:', 'อัตราชนะ (Win Percentage):')}</span>
-              <span className="font-mono tabular-nums text-emerald-400 font-bold">{winRate}%</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => onSaveToSlot(`slot_${Date.now()}`)}
+              className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+            >
+              {tr('+ Save New Slot', '+ บันทึกเซฟเกมใหม่ (Save Career)')}
+            </button>
+          </div>
+
+          {/* Google / Gmail Account Panel */}
+          <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs">
+            {authUser ? (
+              <>
+                <div>
+                  <div className="text-emerald-400 font-semibold">
+                    {tr(
+                      'Google / Gmail Connected (Cloud Firestore Active)',
+                      'เชื่อมต่อบัญชี Google / Gmail แล้ว (Cloud Firestore Active)'
+                    )}
+                  </div>
+                  <div className="text-slate-300 font-mono mt-0.5">
+                    {authUser.email || authUser.displayName}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onGoogleSignOut}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  {tr('Sign Out', 'ออกจากระบบ (Sign Out)')}
+                </button>
+              </>
+            ) : (
+              <>
+                <div>
+                  <div className="text-amber-300 font-semibold">
+                    {tr('Not Signed in with Google / Gmail', 'ยังไม่ได้เข้าสู่ระบบด้วย Google / Gmail')}
+                  </div>
+                  <div className="text-slate-400 mt-0.5">
+                    {tr(
+                      'Sign in with Gmail to save and load your careers across devices on Cloud Firestore.',
+                      'เข้าสู่ระบบด้วย Gmail เพื่อบันทึกและโหลดเซฟเกมของคุณข้ามอุปกรณ์บน Cloud Firestore'
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={onGoogleSignIn}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  {tr('Sign in with Google / Gmail', 'เข้าสู่ระบบด้วย Google / Gmail')}
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            {['slot_autosave', 'slot_1', 'slot_2'].map((slotKey) => {
+              const existing = saveSlots.find((s) => s.slotId === slotKey);
+              return (
+                <div
+                  key={slotKey}
+                  className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+                >
+                  <div>
+                    <div className="font-semibold text-white">
+                      {slotKey === 'slot_autosave'
+                        ? 'Auto-Save Slot (Cloud)'
+                        : `Save Slot ${slotKey.replace('slot_', '#')} (Cloud)`}
+                    </div>
+                    <div className="text-slate-400 font-mono tabular-nums">
+                      {existing
+                        ? `${existing.clubName} · ${existing.gameDate}`
+                        : tr('Empty Slot', 'ช่องว่าง (Empty Slot)')}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onSaveToSlot(slotKey)}
+                      className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded cursor-pointer"
+                    >
+                      {tr('Overwrite', 'บันทึกทับ')}
+                    </button>
+                    {existing && (
+                      <button
+                        type="button"
+                        onClick={() => onLoadSlot(slotKey)}
+                        className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 rounded cursor-pointer"
+                      >
+                        {tr('Load', 'โหลด')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-        <div className="flex items-center justify-between">
+      {/* Checkpoint 20: In-Game Database Editor, Create-a-Player (Wonderkid Builder) & JSON Import/Export */}
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
+        data-testid="ingame-editor-panel"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
           <div>
-            <h3 className="text-base font-display font-bold text-white">
-              {tr('Google / Gmail Cloud Saves', 'จัดการเซฟเกมบนคลาวด์ (Google / Gmail Cloud Saves)')}
-            </h3>
-            <p className="text-[11px] text-slate-400">
+            <h3 className="text-base font-display font-bold text-amber-400">
               {tr(
-                'Save and sync your career progress via Cloud Firestore.',
-                'บันทึกและซิงก์ข้อมูลเซฟเกมผ่าน Cloud Firestore โดยไม่ใช้ localStorage'
+                '🛠️ In-Game Database Editor, Wonderkid Builder & JSON Import/Export',
+                '🛠️ เครื่องมือแก้ไขฐานข้อมูล (In-Game Editor), สร้างนักเตะวันเดอร์คิด & นำเข้า/ส่งออก JSON'
+              )}
+            </h3>
+            <p className="text-xs text-slate-400">
+              {tr(
+                'Create custom players, live-edit club budgets/facilities, or export/import your entire Career World JSON.',
+                'สร้างนักเตะใหม่เข้าสู่สโมสร แก้ไขงบประมาณ/ศูนย์ฝึกแบบเรียลไทม์ หรือส่งออก/นำเข้าไฟล์ฐานข้อมูลเซฟเกม JSON'
               )}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => onSaveToSlot(`slot_${Date.now()}`)}
-            className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
-          >
-            {tr('+ Save New Slot', '+ บันทึกเซฟเกมใหม่ (Save Career)')}
-          </button>
         </div>
 
-        {/* Google / Gmail Account Panel */}
-        <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs">
-          {authUser ? (
-            <>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 text-xs">
+          {/* Create-a-Player (Wonderkid Builder) */}
+          <div className="lg:col-span-5 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="font-semibold text-emerald-400">
+              {tr('✨ Create-a-Player (Wonderkid Builder)', '✨ สร้างนักเตะใหม่เข้าสู่สโมสร (Wonderkid Builder)')}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                type="text"
+                value={wkFirstName}
+                onChange={(e) => setWkFirstName(e.target.value)}
+                placeholder="First Name"
+                className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-white"
+              />
+              <input
+                type="text"
+                value={wkLastName}
+                onChange={(e) => setWkLastName(e.target.value)}
+                placeholder="Last Name"
+                className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-white"
+              />
+              <select
+                value={wkPos}
+                onChange={(e) => setWkPos(e.target.value as Player['positions'][0])}
+                className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-white font-mono"
+              >
+                {(['GK', 'CB', 'LB', 'RB', 'DM', 'CM', 'AM', 'AML', 'AMR', 'ST'] as const).map(
+                  (pos) => (
+                    <option key={pos} value={pos}>
+                      Pos: {pos}
+                    </option>
+                  )
+                )}
+              </select>
+              <input
+                type="text"
+                value={wkNat}
+                onChange={(e) => setWkNat(e.target.value.toUpperCase())}
+                placeholder="Nat (e.g. BRA)"
+                className="px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-white font-mono"
+              />
               <div>
-                <div className="text-emerald-400 font-semibold">
-                  {tr(
-                    'Google / Gmail Connected (Cloud Firestore Active)',
-                    'เชื่อมต่อบัญชี Google / Gmail แล้ว (Cloud Firestore Active)'
-                  )}
-                </div>
-                <div className="text-slate-300 font-mono mt-0.5">
-                  {authUser.email || authUser.displayName}
-                </div>
+                <label className="block text-[10px] text-slate-400">CA (60-198): {wkCA}</label>
+                <input
+                  type="range"
+                  min={80}
+                  max={195}
+                  value={wkCA}
+                  onChange={(e) => setWkCA(Number(e.target.value))}
+                  className="w-full accent-emerald-500"
+                />
               </div>
+              <div>
+                <label className="block text-[10px] text-slate-400">PA (90-200): {wkPA}</label>
+                <input
+                  type="range"
+                  min={110}
+                  max={200}
+                  value={wkPA}
+                  onChange={(e) => setWkPA(Number(e.target.value))}
+                  className="w-full accent-amber-500"
+                />
+              </div>
+            </div>
+            {onCreateCustomPlayer && (
               <button
                 type="button"
-                onClick={onGoogleSignOut}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-pointer whitespace-nowrap"
+                data-testid="create-wonderkid-btn"
+                onClick={() =>
+                  onCreateCustomPlayer({
+                    firstName: wkFirstName,
+                    lastName: wkLastName,
+                    nationality: wkNat,
+                    position: wkPos,
+                    age: wkAge,
+                    currentAbility: wkCA,
+                    potentialAbility: Math.max(wkCA, wkPA),
+                    clubId: club.id,
+                  })
+                }
+                className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer"
               >
-                {tr('Sign Out', 'ออกจากระบบ (Sign Out)')}
+                {tr('+ Inject Custom Player into Squad', '+ สร้างนักเตะเข้าสู่ขุมกำลังสโมสร')}
               </button>
-            </>
-          ) : (
-            <>
-              <div>
-                <div className="text-amber-300 font-semibold">
-                  {tr('Not Signed in with Google / Gmail', 'ยังไม่ได้เข้าสู่ระบบด้วย Google / Gmail')}
-                </div>
-                <div className="text-slate-400 mt-0.5">
-                  {tr(
-                    'Sign in with Gmail to save and load your careers across devices on Cloud Firestore.',
-                    'เข้าสู่ระบบด้วย Gmail เพื่อบันทึกและโหลดเซฟเกมของคุณข้ามอุปกรณ์บน Cloud Firestore'
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onGoogleSignIn}
-                className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer whitespace-nowrap"
-              >
-                {tr('Sign in with Google / Gmail', 'เข้าสู่ระบบด้วย Google / Gmail')}
-              </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
 
-        <div className="space-y-2">
-          {['slot_autosave', 'slot_1', 'slot_2'].map((slotKey) => {
-            const existing = saveSlots.find((s) => s.slotId === slotKey);
-            return (
-              <div
-                key={slotKey}
-                className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+          {/* Live Club Editor */}
+          <div className="lg:col-span-3 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="font-semibold text-sky-400">
+              {tr(`🏦 Live Edit Club (${club.shortName})`, `🏦 แก้ไขงบและศูนย์ฝึก (${club.shortName})`)}
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-400 mb-1">
+                {tr(`Transfer Budget (€M): €${editBudgetM}M`, `งบซื้อขาย (€M): €${editBudgetM}M`)}
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={500}
+                value={editBudgetM}
+                onChange={(e) => setEditBudgetM(Number(e.target.value))}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-white font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-400 mb-1">
+                {tr(`Training Facilities (1-20): ${editTrainLvl}`, `ระดับศูนย์ฝึกซ้อม (1-20): ${editTrainLvl}`)}
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={editTrainLvl}
+                onChange={(e) => setEditTrainLvl(Number(e.target.value))}
+                className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-white font-mono"
+              />
+            </div>
+            {onLiveEditClub && (
+              <button
+                type="button"
+                data-testid="live-edit-club-btn"
+                onClick={() =>
+                  onLiveEditClub({
+                    clubId: club.id,
+                    transferBudgetM: editBudgetM,
+                    trainingFacilities: editTrainLvl,
+                  })
+                }
+                className="w-full py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold rounded-lg cursor-pointer"
               >
-                <div>
-                  <div className="font-semibold text-white">
-                    {slotKey === 'slot_autosave'
-                      ? 'Auto-Save Slot (Cloud)'
-                      : `Save Slot ${slotKey.replace('slot_', '#')} (Cloud)`}
-                  </div>
-                  <div className="text-slate-400 font-mono tabular-nums">
-                    {existing
-                      ? `${existing.clubName} · ${existing.gameDate}`
-                      : tr('Empty Slot', 'ช่องว่าง (Empty Slot)')}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onSaveToSlot(slotKey)}
-                    className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded cursor-pointer"
-                  >
-                    {tr('Overwrite', 'บันทึกทับ')}
-                  </button>
-                  {existing && (
-                    <button
-                      type="button"
-                      onClick={() => onLoadSlot(slotKey)}
-                      className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 rounded cursor-pointer"
-                    >
-                      {tr('Load', 'โหลด')}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                {tr('Apply Club Edits', 'บันทึกการแก้ไขสโมสร')}
+              </button>
+            )}
+          </div>
+
+          {/* JSON Export / Import */}
+          <div className="lg:col-span-4 p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-amber-400">
+                {tr('📦 Career Database JSON Export / Import', '📦 ส่งออก / นำเข้า JSON ฐานข้อมูล')}
+              </span>
+              <button
+                type="button"
+                data-testid="export-json-btn"
+                onClick={() => setJsonBuffer(exportWorldDatabaseJson(world))}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] cursor-pointer"
+              >
+                {tr('Generate Export JSON', 'สร้าง JSON สำหรับส่งออก')}
+              </button>
+            </div>
+            <textarea
+              rows={3}
+              value={jsonBuffer}
+              onChange={(e) => setJsonBuffer(e.target.value)}
+              placeholder={tr(
+                'Click "Generate Export JSON" or paste a custom Career JSON payload here...',
+                'กดปุ่มสร้าง JSON หรือวางโค้ด JSON ของเซฟเกมที่นี่...'
+              )}
+              className="w-full p-2 bg-slate-900 border border-slate-800 rounded text-[10px] font-mono text-slate-300"
+            />
+            {onImportDatabaseJson && (
+              <button
+                type="button"
+                data-testid="import-json-btn"
+                disabled={!jsonBuffer.trim()}
+                onClick={() => onImportDatabaseJson(jsonBuffer)}
+                className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 font-semibold rounded-lg cursor-pointer"
+              >
+                {tr('Import JSON into Active World', 'นำเข้าข้อมูล JSON สู่เกมปัจจุบัน')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
