@@ -1047,6 +1047,21 @@ function TouchlineShell() {
         } as React.CSSProperties
       }
     >
+      {/* SVG Alpha-Key Filter for official game logo */}
+      <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden="true">
+        <defs>
+          <filter id="touchline-app-logo-key" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="1 0 0 0 0
+                      0 1 0 0 0
+                      0 0 1 0 0
+                      6 9 9 0 -0.45"
+            />
+          </filter>
+        </defs>
+      </svg>
+
       {/* Left Vertical Rail Navigation (Hidden in Full-Screen Live Match Broadcast Mode) */}
       {!isFullScreenMatch && (
       <aside
@@ -1056,15 +1071,24 @@ function TouchlineShell() {
         <div>
           {/* Brand Lockup */}
           <div
-            className="px-4 py-3.5 border-b border-slate-800 flex items-center justify-between"
+            className="px-3.5 py-2.5 border-b border-slate-800 flex items-center justify-between gap-2 bg-slate-950/60"
             style={{
               borderTop: `3px solid ${useClubAccent ? controlledClub.primaryColor : '#10b981'}`,
             }}
           >
-            <span className="font-display font-bold text-xl tracking-wider text-white">
-              TOUCHLINE
-            </span>
-            <span className="text-xs font-mono text-emerald-400">
+            <div className="flex items-center gap-2 min-w-0">
+              <img
+                src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+                alt="TOUCHLINE"
+                width={128}
+                height={52}
+                decoding="async"
+                data-testid="sidebar-brand-logo"
+                style={{ filter: 'url(#touchline-app-logo-key)' }}
+                className="w-32 h-12 -my-1.5 -ml-1 object-contain object-left select-none pointer-events-none"
+              />
+            </div>
+            <span className="text-xs font-mono text-emerald-400 shrink-0">
               {world.currentSeason}
             </span>
           </div>
@@ -2149,9 +2173,18 @@ function TouchlineShell() {
           aria-labelledby="pause-modal-title"
         >
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-5 shadow-2xl">
-            <div className="text-center">
-              <h2 id="pause-modal-title" className="text-2xl font-display font-bold text-white">
-                TOUCHLINE — GAME PAUSED
+            <div className="text-center flex flex-col items-center">
+              <img
+                src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+                alt="TOUCHLINE"
+                width={220}
+                height={140}
+                decoding="async"
+                style={{ filter: 'url(#touchline-app-logo-key)' }}
+                className="w-52 h-32 -my-3 object-contain object-center select-none pointer-events-none"
+              />
+              <h2 id="pause-modal-title" className="text-xl font-display font-bold text-white">
+                GAME PAUSED
               </h2>
               <p className="text-xs text-slate-400 mt-1">
                 {controlledClub.name} · {tr('Game Date:', 'วันที่ในเกม:')} {world.gameDate}

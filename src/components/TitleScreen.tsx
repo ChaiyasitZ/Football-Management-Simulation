@@ -592,9 +592,32 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Left readability gradient while keeping right-hand floating footballs vivid */}
       <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent pointer-events-none" />
 
+      {/* SVG Alpha-Key Filter: converts pure black JPEG background to true transparency while keeping dark navy shield interior opaque */}
+      <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden="true">
+        <defs>
+          <filter id="touchline-logo-key" colorInterpolationFilters="sRGB">
+            <feColorMatrix
+              type="matrix"
+              values="1 0 0 0 0
+                      0 1 0 0 0
+                      0 0 1 0 0
+                      6 9 9 0 -0.45"
+            />
+          </filter>
+        </defs>
+      </svg>
+
       {/* TOP BAR: Broadcast Status Pill + Cloud Save + Settings Button */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
         <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/85 border border-slate-800 backdrop-blur-md text-xs font-mono text-slate-300">
+          <img
+            src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+            alt="TOUCHLINE"
+            width={28}
+            height={28}
+            style={{ filter: 'url(#touchline-logo-key)' }}
+            className="w-7 h-7 object-contain"
+          />
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-semibold text-white">TOUCHLINE 26</span>
           <span className="text-slate-600">·</span>
@@ -646,8 +669,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
       {/* MAIN HERO SECTION: Left Command Lockup + Interactive Career Launcher */}
       <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center my-auto">
-        <div className="lg:col-span-7 space-y-6">
-          {/* Bespoke SVG Crest & Typography Lockup */}
+        <div className="lg:col-span-7 space-y-5">
+          {/* Official TOUCHLINE Game Logo & Tagline Lockup */}
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
               <Trophy className="w-3.5 h-3.5" />
@@ -659,64 +682,27 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </span>
             </div>
 
-            <svg
-              viewBox="0 0 560 116"
-              className="w-full max-w-[520px] h-auto drop-shadow-2xl"
-              role="img"
-              aria-label="TOUCHLINE — The World Is Your Pitch"
-            >
-              <defs>
-                <linearGradient id="tlShieldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#0f172a" stopOpacity="0.95" />
-                </linearGradient>
-              </defs>
-              {/* Tactical Shield Crest */}
-              <g transform="translate(4, 6)">
-                <path
-                  d="M46 4 L88 18 L88 56 C88 82 68 98 46 106 C24 98 4 82 4 56 L4 18 Z"
-                  fill="url(#tlShieldGrad)"
-                  stroke="#10b981"
-                  strokeWidth="3"
-                />
-                <rect
-                  x="26"
-                  y="28"
-                  width="40"
-                  height="50"
-                  rx="2"
-                  fill="none"
-                  stroke="#34d399"
-                  strokeWidth="1.8"
-                />
-                <line x1="26" y1="53" x2="66" y2="53" stroke="#34d399" strokeWidth="1.8" />
-                <circle cx="46" cy="53" r="8" fill="none" stroke="#34d399" strokeWidth="1.8" />
-                <circle cx="46" cy="38" r="3.5" fill="#facc15" />
-              </g>
+            <div className="relative w-full max-w-[440px] -my-6 -ml-4 flex items-center justify-start pointer-events-none">
+              <img
+                src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+                alt="TOUCHLINE — The World Is Your Pitch"
+                width={440}
+                height={290}
+                fetchPriority="high"
+                decoding="async"
+                data-testid="title-hero-logo"
+                style={{
+                  filter:
+                    'url(#touchline-logo-key) drop-shadow(0 10px 28px rgba(16, 185, 129, 0.32))',
+                }}
+                className="w-full h-60 sm:h-68 object-contain object-left select-none"
+              />
+            </div>
 
-              <text
-                x="110"
-                y="70"
-                fill="#f8fafc"
-                fontFamily="Barlow Condensed, Prompt, sans-serif"
-                fontWeight="700"
-                fontSize="68"
-                letterSpacing="4"
-              >
-                TOUCHLINE
-              </text>
-              <text
-                x="113"
-                y="99"
-                fill="#34d399"
-                fontFamily="JetBrains Mono, monospace"
-                fontWeight="600"
-                fontSize="13.5"
-                letterSpacing="5.5"
-              >
-                THE WORLD IS YOUR PITCH
-              </text>
-            </svg>
+            <div className="flex items-center gap-2.5 text-xs font-mono font-semibold tracking-[0.28em] text-emerald-400 uppercase">
+              <span className="w-6 h-0.5 bg-emerald-500/70 rounded-full" />
+              <span>THE WORLD IS YOUR PITCH</span>
+            </div>
 
             <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-xl">
               {tr(
