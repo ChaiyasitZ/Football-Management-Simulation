@@ -721,11 +721,35 @@ test('FM Youth System, Global Wonderkids, Verified Portraits, Domestic Cups & Se
   assert.ok(wonderkidNames.has('Warren Zaire-Emery'));
   assert.ok(wonderkidNames.has('Ethan Nwaneri'));
 
-  for (const wk of wonderkids.slice(0, 40)) {
-    const faceUrl = getPlayerFaceUrl(wk);
+  for (const namedWk of [
+    'Lamine Yamal',
+    'Pau Cubarsi',
+    'Endrick Felipe',
+    'Warren Zaire-Emery',
+    'Ethan Nwaneri',
+    'Kobbie Mainoo',
+    'Leny Yoro',
+    'Myles Lewis-Skelly',
+    'Jude Bellingham',
+    'Jamal Musiala',
+    'Gavi Paez',
+    'Raphinha Belloli',
+    'Rodrygo Goes',
+    'Vitinha Ferreira',
+    'Savinho Moreira',
+    'Kenan Yildiz',
+  ]) {
+    const [firstName, ...rest] = namedWk.split(' ');
+    const lastName = rest.join(' ');
+    const faceUrl = getPlayerFaceUrl({
+      id: `test_${firstName}`,
+      clubId: 'club_eng_pl_1',
+      firstName,
+      lastName,
+    });
     assert.ok(
       faceUrl && faceUrl.startsWith('https://'),
-      `Wonderkid ${wk.firstName} ${wk.lastName} must resolve a verified portrait URL`
+      `Named real player/wonderkid ${namedWk} must resolve an exact 1:1 verified portrait URL`
     );
   }
 
@@ -740,9 +764,13 @@ test('FM Youth System, Global Wonderkids, Verified Portraits, Domestic Cups & Se
   );
   assert.ok(myYouth.length >= 5, 'Annual Youth Intake must add new U18 prospects');
 
-  for (const yp of myYouth) {
+  for (const yp of intakeRes.newProspects) {
     const faceUrl = getPlayerFaceUrl(yp);
-    assert.ok(faceUrl && faceUrl.startsWith('https://'), 'Every generated youth player must have a face URL');
+    assert.equal(
+      faceUrl,
+      undefined,
+      'Procedurally generated youth prospect must not borrow a random real player photo (renders procedural regen SVG instead)'
+    );
   }
 
   const seniorMentor = Object.values(intakeRes.nextState.players).find(

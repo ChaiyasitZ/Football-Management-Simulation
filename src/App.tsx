@@ -913,6 +913,9 @@ function TouchlineShell() {
     }
   };
 
+  const isFullScreenMatch =
+    activeCategory === 'match' && activeSubTab === 'center' && !activePlayerProfile;
+
   return (
     <div
       className="w-screen h-screen bg-slate-950 text-slate-100 flex overflow-hidden select-none"
@@ -920,10 +923,13 @@ function TouchlineShell() {
       style={
         {
           '--club-accent': useClubAccent ? controlledClub.primaryColor : '#10b981',
+          '--club-primary': useClubAccent ? controlledClub.primaryColor : '#10b981',
+          '--club-secondary': useClubAccent ? controlledClub.secondaryColor : '#0f172a',
         } as React.CSSProperties
       }
     >
-      {/* Left Vertical Rail Navigation (6 Core Categories + 1 Bottom System Category) */}
+      {/* Left Vertical Rail Navigation (Hidden in Full-Screen Live Match Broadcast Mode) */}
+      {!isFullScreenMatch && (
       <aside
         className="w-56 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0"
         data-testid="left-nav-rail"
@@ -1058,7 +1064,7 @@ function TouchlineShell() {
                   <Settings className="w-4 h-4" />
                   <span>{tr(sysCat.labelEn, sysCat.labelTh)}</span>
                 </div>
-                <span className="text-xs font-mono opacity-75">EN/TH</span>
+                <span className="text-xs font-mono opacity-75">{tr('EN', 'TH')}</span>
               </button>
             );
           })()}
@@ -1093,10 +1099,12 @@ function TouchlineShell() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        {/* Top Header Bar: History Back/Forward, Breadcrumb, Bookmarks, Search Ctrl+K, Bell & Continue */}
+        {/* Top Header Bar (Hidden in Full-Screen Live Match Broadcast Mode) */}
+        {!isFullScreenMatch && (
         <header className="h-14 bg-slate-900 border-b border-slate-800 px-5 flex items-center justify-between gap-4 shrink-0">
           {/* Left: Back/Forward + Breadcrumb + Bookmark Pin + Bookmarks Strip */}
           <div className="flex items-center gap-2.5 min-w-0">
@@ -1233,9 +1241,10 @@ function TouchlineShell() {
             </button>
           </div>
         </header>
+        )}
 
-        {/* Contextual Sub-Tab Bar inside Category Page Header (Hidden when viewing Full Player Profile) */}
-        {!activePlayerProfile && (
+        {/* Contextual Sub-Tab Bar inside Category Page Header (Hidden when viewing Full Player Profile or Full-Screen Match) */}
+        {!activePlayerProfile && !isFullScreenMatch && (
           <SubTabBar
             tabs={subTabsWithBadges}
             activeSubTab={activeSubTab}
@@ -1247,7 +1256,7 @@ function TouchlineShell() {
         )}
 
         {/* Scrollable Workspace Viewport */}
-        <main className="flex-1 overflow-y-auto p-5">
+        <main className={isFullScreenMatch ? 'flex-1 overflow-hidden p-0' : 'flex-1 overflow-y-auto p-5'}>
           {/* FULL-PAGE PLAYER PROFILE VIEW (#/player/:id) */}
           {activePlayerProfile ? (
             <PlayerProfilePage
@@ -1540,6 +1549,8 @@ function TouchlineShell() {
                   onCompleteMatch={handleCompleteMatch}
                   onUpdateClubTactic={(tactic) => handleUpdateTactic(tactic, false)}
                   onSelectPlayer={openFullPlayerProfile}
+                  onExitMatchCenter={() => navigateToRoute('#/home/portal')}
+                  onOpenTactics={() => navigateToRoute('#/team/tactics')}
                 />
               )}
 

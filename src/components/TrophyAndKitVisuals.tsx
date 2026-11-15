@@ -338,6 +338,11 @@ export const CompetitionBadge: React.FC<{
           : 'w-9 h-9';
 
   const gradId = `comp-grad-${competitionId.replace(/[^a-zA-Z0-9]/g, '')}-${size}`;
+  const isCircular =
+    meta.motif === 'starball' || meta.motif === 'bundesliga' || competitionId === 'NED_ED';
+  const isHexagonal =
+    meta.motif === 'ligue_1' || meta.motif === 'laliga' || meta.motif === 'uecl_spire';
+  const isDiamond = meta.motif === 'serie_a';
 
   return (
     <div
@@ -353,20 +358,76 @@ export const CompetitionBadge: React.FC<{
           </linearGradient>
         </defs>
 
-        {/* Outer Crest / Hexagonal Shield */}
-        <path
-          d="M32 3 L57 13 V33 C57 48 45 57 32 61 C19 57 7 48 7 33 V13 Z"
-          fill={`url(#${gradId})`}
-          stroke={meta.accent}
-          strokeWidth="2.5"
-        />
-        <path
-          d="M32 7 L53 15.5 V32.5 C53 45 43 53 32 56.5 C21 53 11 45 11 32.5 V15.5 Z"
-          fill="none"
-          stroke="#ffffff"
-          strokeOpacity="0.22"
-          strokeWidth="1.2"
-        />
+        {/* Distinct Outer Silhouette per Competition Family */}
+        {isCircular ? (
+          <>
+            <circle
+              cx="32"
+              cy="31"
+              r="27"
+              fill={`url(#${gradId})`}
+              stroke={meta.accent}
+              strokeWidth="2.5"
+            />
+            <circle
+              cx="32"
+              cy="31"
+              r="23"
+              fill="none"
+              stroke="#ffffff"
+              strokeOpacity="0.22"
+              strokeWidth="1.2"
+            />
+          </>
+        ) : isHexagonal ? (
+          <>
+            <polygon
+              points="32,4 56,17 56,45 32,59 8,45 8,17"
+              fill={`url(#${gradId})`}
+              stroke={meta.accent}
+              strokeWidth="2.5"
+            />
+            <polygon
+              points="32,8 52,19 52,43 32,54 12,43 12,19"
+              fill="none"
+              stroke="#ffffff"
+              strokeOpacity="0.22"
+              strokeWidth="1.2"
+            />
+          </>
+        ) : isDiamond ? (
+          <>
+            <polygon
+              points="32,3 58,29 32,60 6,29"
+              fill={`url(#${gradId})`}
+              stroke={meta.accent}
+              strokeWidth="2.5"
+            />
+            <polygon
+              points="32,8 53,29 32,54 11,29"
+              fill="none"
+              stroke="#ffffff"
+              strokeOpacity="0.22"
+              strokeWidth="1.2"
+            />
+          </>
+        ) : (
+          <>
+            <path
+              d="M32 3 L57 13 V33 C57 48 45 57 32 61 C19 57 7 48 7 33 V13 Z"
+              fill={`url(#${gradId})`}
+              stroke={meta.accent}
+              strokeWidth="2.5"
+            />
+            <path
+              d="M32 7 L53 15.5 V32.5 C53 45 43 53 32 56.5 C21 53 11 45 11 32.5 V15.5 Z"
+              fill="none"
+              stroke="#ffffff"
+              strokeOpacity="0.22"
+              strokeWidth="1.2"
+            />
+          </>
+        )}
 
         {/* Authentic Competition Center Motif */}
         {meta.motif === 'starball' && (
@@ -390,12 +451,10 @@ export const CompetitionBadge: React.FC<{
 
         {meta.motif === 'crown_lion' && (
           <g>
-            {/* Crown on top */}
             <path
               d="M22 22 L25 15 L32 20 L39 15 L42 22 Z"
               fill={meta.accent}
             />
-            {/* Lion / Mane shield silhouette */}
             <circle cx="32" cy="29" r="7.5" fill={meta.accent} fillOpacity="0.2" stroke={meta.accent} strokeWidth="1.8" />
             <path d="M28 28 L32 24 L36 28 L32 34 Z" fill={meta.accent} />
           </g>
@@ -427,10 +486,8 @@ export const CompetitionBadge: React.FC<{
 
         {meta.motif === 'serie_a' && (
           <g>
-            {/* Scudetto & A */}
             <polygon points="32,14 43,26 32,38 21,26" fill="#ffffff" fillOpacity="0.15" stroke={meta.accent} strokeWidth="1.8" />
             <path d="M27 33 L32 19 L37 33 M28.5 29 H35.5" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
-            {/* Tricolore bar */}
             <rect x="23" y="36" width="6" height="2.2" fill="#16a34a" />
             <rect x="29" y="36" width="6" height="2.2" fill="#ffffff" />
             <rect x="35" y="36" width="6" height="2.2" fill="#dc2626" />
@@ -492,7 +549,7 @@ export const CompetitionBadge: React.FC<{
         )}
 
         {/* Bottom Competition Ribbon Text */}
-        <rect x="13" y="42" width="38" height="11" rx="3" fill="#020617" fillOpacity="0.82" stroke={meta.accent} strokeWidth="0.9" />
+        <rect x="13" y="42" width="38" height="11" rx="3" fill="#020617" fillOpacity="0.86" stroke={meta.accent} strokeWidth="0.9" />
         <text
           x="32"
           y="49.8"
@@ -511,7 +568,7 @@ export const CompetitionBadge: React.FC<{
 };
 
 /* ============================================================================
-   2. REAL COMPETITION TROPHIES (UCL Big Ears, Premier League Crown, World Cup, etc.)
+   2. REAL COMPETITION TROPHIES (Distinct Authentic Geometries for Every League & Cup)
 ============================================================================ */
 
 export type TrophyType =
@@ -523,6 +580,12 @@ export type TrophyType =
   | 'GER_BL'
   | 'ITA_SA'
   | 'FRA_L1'
+  | 'POR_LP'
+  | 'NED_ED'
+  | 'BEL_PL'
+  | 'TUR_SL'
+  | 'SCO_PR'
+  | 'SECOND_TIER'
   | 'WORLD_CUP'
   | 'EURO_NATIONS'
   | 'FIFA_CWC'
@@ -535,20 +598,38 @@ export function resolveTrophyType(competitionIdOrName: string): TrophyType {
   if (id.includes('UCL') || id.includes('CHAMPIONS LEAGUE')) return 'UEFA_UCL';
   if (id.includes('UEL') || id.includes('EUROPA LEAGUE')) return 'UEFA_UEL';
   if (id.includes('UECL') || id.includes('CONFERENCE LEAGUE')) return 'UEFA_UECL';
+  if (id.includes('ENG_CH') || id.includes('ESP_SD') || id.includes('GER_2B') || id.includes('ITA_SB') || id.includes('FRA_L2') || id.includes('CHAMPIONSHIP') || id.includes('HYPERMOTION') || id.includes('2. BUNDESLIGA') || id.includes('SERIE B') || id.includes('LIGUE 2')) {
+    return 'SECOND_TIER';
+  }
   if (id.includes('ENG_PL') || id.includes('PREMIER LEAGUE')) return 'ENG_PL';
   if (id.includes('ESP_LL') || id.includes('LALIGA')) return 'ESP_LL';
-  if (id.includes('GER_BL') || id.includes('BUNDESLIGA') || id.includes('GER_2B')) return 'GER_BL';
-  if (id.includes('ITA_SA') || id.includes('SERIE A') || id.includes('ITA_SB')) return 'ITA_SA';
-  if (id.includes('FRA_L1') || id.includes('LIGUE 1') || id.includes('FRA_L2')) return 'FRA_L1';
+  if (id.includes('GER_BL') || id.includes('BUNDESLIGA')) return 'GER_BL';
+  if (id.includes('ITA_SA') || id.includes('SERIE A')) return 'ITA_SA';
+  if (id.includes('FRA_L1') || id.includes('LIGUE 1')) return 'FRA_L1';
+  if (id.includes('POR_LP') || id.includes('LIGA PORTUGAL')) return 'POR_LP';
+  if (id.includes('NED_ED') || id.includes('EREDIVISIE')) return 'NED_ED';
+  if (id.includes('BEL_PL') || id.includes('JUPILER') || id.includes('PRO LEAGUE')) return 'BEL_PL';
+  if (id.includes('TUR_SL') || id.includes('SUPER LIG') || id.includes('SÜPER LİG')) return 'TUR_SL';
+  if (id.includes('SCO_PR') || id.includes('SCOTTISH PREMIERSHIP')) return 'SCO_PR';
   if (id.includes('WORLD CUP') && !id.includes('CLUB')) return 'WORLD_CUP';
   if (id.includes('CWC') || id.includes('CLUB WORLD CUP')) return 'FIFA_CWC';
   if (id.includes('EURO') || id.includes('NATIONS')) return 'EURO_NATIONS';
   if (id.includes('BALLON')) return 'BALLON_DOR';
   if (id.includes('BOOT') || id.includes('SCORER')) return 'GOLDEN_BOOT';
-  if (id.includes('CUP') || id.includes('POKAL') || id.includes('COPA') || id.includes('COPPA') || id.includes('COUPE') || id.includes('TAÇA') || id.includes('BEKER')) {
+  if (
+    id.includes('CUP') ||
+    id.includes('POKAL') ||
+    id.includes('COPA') ||
+    id.includes('COPPA') ||
+    id.includes('COUPE') ||
+    id.includes('TAÇA') ||
+    id.includes('TACA') ||
+    id.includes('BEKER') ||
+    id.includes('KUPASI')
+  ) {
     return 'DOMESTIC_CUP';
   }
-  return 'ENG_PL';
+  return 'DOMESTIC_CUP';
 }
 
 export const TrophyArtwork: React.FC<{
@@ -588,245 +669,354 @@ export const TrophyArtwork: React.FC<{
     >
       <div className={dims}>
         <svg viewBox="0 0 80 80" className="w-full h-full drop-shadow-md">
-        <defs>
-          <linearGradient id={`${uid}-silver`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#f8fafc" />
-            <stop offset="35%" stopColor="#cbd5e1" />
-            <stop offset="70%" stopColor="#94a3b8" />
-            <stop offset="100%" stopColor="#e2e8f0" />
-          </linearGradient>
-          <linearGradient id={`${uid}-gold`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#fef08a" />
-            <stop offset="40%" stopColor="#facc15" />
-            <stop offset="75%" stopColor="#ca8a04" />
-            <stop offset="100%" stopColor="#fde047" />
-          </linearGradient>
-        </defs>
+          <defs>
+            <linearGradient id={`${uid}-silver`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#f8fafc" />
+              <stop offset="35%" stopColor="#cbd5e1" />
+              <stop offset="70%" stopColor="#94a3b8" />
+              <stop offset="100%" stopColor="#e2e8f0" />
+            </linearGradient>
+            <linearGradient id={`${uid}-gold`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#fef08a" />
+              <stop offset="40%" stopColor="#facc15" />
+              <stop offset="75%" stopColor="#ca8a04" />
+              <stop offset="100%" stopColor="#fde047" />
+            </linearGradient>
+          </defs>
 
-        {/* 1. UEFA CHAMPIONS LEAGUE ("BIG EARS") */}
-        {resolved === 'UEFA_UCL' && (
-          <g>
-            {/* Glowing aura */}
-            <circle cx="40" cy="40" r="32" fill="#1d4ed8" fillOpacity="0.14" />
-            {/* Iconic Twin "Big Ears" Handles curving high above the rim */}
-            <path
-              d="M26 24 C10 10, 8 42, 27 44"
-              fill="none"
-              stroke={`url(#${uid}-silver)`}
-              strokeWidth="4.2"
-              strokeLinecap="round"
-            />
-            <path
-              d="M54 24 C70 10, 72 42, 53 44"
-              fill="none"
-              stroke={`url(#${uid}-silver)`}
-              strokeWidth="4.2"
-              strokeLinecap="round"
-            />
-            {/* Cup Body & Flared Rim */}
-            <ellipse cx="40" cy="18" rx="14" ry="3.5" fill="#94a3b8" stroke="#f8fafc" strokeWidth="1.2" />
-            <path
-              d="M26 18 L28 45 C29 53, 51 53, 52 45 L54 18 Z"
-              fill={`url(#${uid}-silver)`}
-              stroke="#e2e8f0"
-              strokeWidth="1.2"
-            />
-            {/* Golden inner rim reflection */}
-            <ellipse cx="40" cy="18" rx="11" ry="2" fill={`url(#${uid}-gold)`} fillOpacity="0.7" />
-            {/* Stem & Base */}
-            <path d="M35 51 L33 63 H47 L45 51 Z" fill={`url(#${uid}-silver)`} />
-            <rect x="27" y="63" width="26" height="6" rx="2.5" fill="#64748b" stroke="#cbd5e1" strokeWidth="1" />
-            {/* Starball Etching */}
-            <circle cx="40" cy="34" r="5.5" fill="none" stroke="#475569" strokeWidth="1" />
-            <text x="40" y="27" textAnchor="middle" fill="#334155" fontSize="3.6" fontWeight="bold" fontFamily="monospace">
-              CHAMPIONS
-            </text>
-          </g>
-        )}
+          {/* 1. UEFA CHAMPIONS LEAGUE ("BIG EARS") */}
+          {resolved === 'UEFA_UCL' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#1d4ed8" fillOpacity="0.14" />
+              <path
+                d="M26 24 C10 10, 8 42, 27 44"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="4.2"
+                strokeLinecap="round"
+              />
+              <path
+                d="M54 24 C70 10, 72 42, 53 44"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="4.2"
+                strokeLinecap="round"
+              />
+              <ellipse cx="40" cy="18" rx="14" ry="3.5" fill="#94a3b8" stroke="#f8fafc" strokeWidth="1.2" />
+              <path
+                d="M26 18 L28 45 C29 53, 51 53, 52 45 L54 18 Z"
+                fill={`url(#${uid}-silver)`}
+                stroke="#e2e8f0"
+                strokeWidth="1.2"
+              />
+              <ellipse cx="40" cy="18" rx="11" ry="2" fill={`url(#${uid}-gold)`} fillOpacity="0.7" />
+              <path d="M35 51 L33 63 H47 L45 51 Z" fill={`url(#${uid}-silver)`} />
+              <rect x="27" y="63" width="26" height="6" rx="2.5" fill="#64748b" stroke="#cbd5e1" strokeWidth="1" />
+              <circle cx="40" cy="34" r="5.5" fill="none" stroke="#475569" strokeWidth="1" />
+              <text x="40" y="27" textAnchor="middle" fill="#334155" fontSize="3.6" fontWeight="bold" fontFamily="monospace">
+                CHAMPIONS
+              </text>
+            </g>
+          )}
 
-        {/* 2. PREMIER LEAGUE TROPHY (SILVER CUP WITH GOLDEN CROWN & MALACHITE BASE) */}
-        {resolved === 'ENG_PL' && (
-          <g>
-            <circle cx="40" cy="40" r="32" fill="#9333ea" fillOpacity="0.14" />
-            {/* Purple & Sky Ribbons */}
-            <path d="M24 24 L15 42 L20 44 L26 28 Z" fill="#581c87" />
-            <path d="M56 24 L65 42 L60 44 L54 28 Z" fill="#38bdf8" />
-            {/* Twin Handles */}
-            <path
-              d="M27 23 C17 23, 18 41, 29 43"
-              fill="none"
-              stroke={`url(#${uid}-silver)`}
-              strokeWidth="3.5"
-            />
-            <path
-              d="M53 23 C63 23, 62 41, 51 43"
-              fill="none"
-              stroke={`url(#${uid}-silver)`}
-              strokeWidth="3.5"
-            />
-            {/* Golden Crown on Top! */}
-            <path
-              d="M28 19 L30 11 L35 16 L40 10 L45 16 L50 11 L52 19 Z"
-              fill={`url(#${uid}-gold)`}
-              stroke="#ca8a04"
-              strokeWidth="1"
-            />
-            {/* Silver Body */}
-            <path
-              d="M27 19 H53 L49 46 C48 52, 32 52, 31 46 Z"
-              fill={`url(#${uid}-silver)`}
-              stroke="#f8fafc"
-              strokeWidth="1.2"
-            />
-            {/* Stem */}
-            <path d="M36 50 L34 59 H46 L44 50 Z" fill={`url(#${uid}-silver)`} />
-            {/* Malachite Green Band + Pedestal */}
-            <rect x="26" y="59" width="28" height="4.5" rx="1" fill="#059669" stroke={`url(#${uid}-gold)`} strokeWidth="1" />
-            <rect x="24" y="63.5" width="32" height="5.5" rx="1.5" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
-          </g>
-        )}
+          {/* 2. UEFA EUROPA LEAGUE (OCTAGONAL FLARED HANDLELESS COUPE UEFA + YELLOW MARBLE BASE) */}
+          {resolved === 'UEFA_UEL' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#ea580c" fillOpacity="0.16" />
+              {/* Octagonal flared rim */}
+              <polygon
+                points="23,15 57,15 50,46 30,46"
+                fill={`url(#${uid}-silver)`}
+                stroke="#f8fafc"
+                strokeWidth="1.2"
+              />
+              {/* Faceted vertical ridges */}
+              <path d="M31 15 L34 46 M40 15 V46 M49 15 L46 46" stroke="#64748b" strokeWidth="1" />
+              {/* Sculpted player relief band */}
+              <path d="M29 38 H51 L49 46 H31 Z" fill="#94a3b8" stroke="#e2e8f0" strokeWidth="0.8" />
+              {/* Warm amber-gold marble octagonal base */}
+              <polygon
+                points="31,46 49,46 53,65 27,65"
+                fill={`url(#${uid}-gold)`}
+                stroke="#ea580c"
+                strokeWidth="1.2"
+              />
+              <path d="M30 53 L50 56 M29 60 L51 58" stroke="#b45309" strokeWidth="1.1" />
+            </g>
+          )}
 
-        {/* 3. FIFA WORLD CUP / CLUB WORLD CUP TROPHY (18K GOLD TWIN FIGURES + GLOBE + MALACHITE BANDS) */}
-        {(resolved === 'WORLD_CUP' || resolved === 'FIFA_CWC') && (
-          <g>
-            <circle cx="40" cy="40" r="32" fill="#eab308" fillOpacity="0.16" />
-            {/* Golden Earth Globe at the Top */}
-            <circle cx="40" cy="22" r="11" fill={`url(#${uid}-gold)`} stroke="#a16207" strokeWidth="1.2" />
-            <path d="M32 19 C36 16, 44 20, 48 18 M31 25 C37 27, 43 23, 49 26" fill="none" stroke="#a16207" strokeWidth="1" />
-            {/* Spiraling Twin Figures Holding the Globe */}
-            <path
-              d="M29 24 C31 36, 35 44, 34 55 H46 C45 44, 49 36, 51 24 L45 31 L40 28 L35 31 Z"
-              fill={`url(#${uid}-gold)`}
-              stroke="#ca8a04"
-              strokeWidth="1.1"
-            />
-            {/* Double Malachite Green Rings on the Base */}
-            <rect x="30" y="55" width="20" height="3" rx="1" fill="#10b981" />
-            <rect x="29" y="58" width="22" height="2.5" rx="1" fill={`url(#${uid}-gold)`} />
-            <rect x="30" y="60.5" width="20" height="3" rx="1" fill="#10b981" />
-            <rect x="27" y="63.5" width="26" height="5" rx="2" fill={`url(#${uid}-gold)`} stroke="#a16207" strokeWidth="1" />
-          </g>
-        )}
+          {/* 3. UEFA CONFERENCE LEAGUE (TWISTED SILVER PILLARS & EMERALD CORE) */}
+          {resolved === 'UEFA_UECL' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#16a34a" fillOpacity="0.16" />
+              <ellipse cx="40" cy="15" rx="16" ry="3.5" fill={`url(#${uid}-silver)`} stroke="#4ade80" strokeWidth="1.2" />
+              <path
+                d="M25 16 C31 28, 33 38, 30 51 H50 C47 38, 49 28, 55 16 Z"
+                fill="#064e3b"
+                fillOpacity="0.6"
+              />
+              {/* Spiraling silver ribs */}
+              <path
+                d="M25 16 C32 30, 34 40, 31 52 M31 16 C37 30, 39 40, 36 52 M40 16 V52 M49 16 C43 30, 41 40, 44 52 M55 16 C48 30, 46 40, 49 52"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="2.4"
+                strokeLinecap="round"
+              />
+              <rect x="29" y="52" width="22" height="5" rx="1.5" fill="#16a34a" stroke="#f8fafc" strokeWidth="1" />
+              <rect x="26" y="57" width="28" height="8" rx="2" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
+            </g>
+          )}
 
-        {/* 4. BUNDESLIGA MEISTERSCHALE (ICONIC SILVER & GOLD SHIELD PLATTER) */}
-        {resolved === 'GER_BL' && (
-          <g>
-            <circle cx="40" cy="40" r="27" fill={`url(#${uid}-silver)`} stroke="#f8fafc" strokeWidth="2" />
-            <circle cx="40" cy="40" r="22" fill="none" stroke="#64748b" strokeWidth="1.2" strokeDasharray="4 2" />
-            <circle cx="40" cy="40" r="15" fill="none" stroke={`url(#${uid}-gold)`} strokeWidth="2" />
-            <circle cx="40" cy="40" r="8" fill={`url(#${uid}-gold)`} fillOpacity="0.35" stroke="#ca8a04" strokeWidth="1.5" />
-            {[0, 60, 120, 180, 240, 300].map((deg) => {
-              const rad = (deg * Math.PI) / 180;
-              const cx = 40 + Math.cos(rad) * 15;
-              const cy = 40 + Math.sin(rad) * 15;
-              return <circle key={deg} cx={cx} cy={cy} r="2.4" fill="#b45309" stroke="#fef08a" strokeWidth="0.8" />;
-            })}
-            <text x="40" y="42.5" textAnchor="middle" fill="#1e293b" fontSize="5.5" fontWeight="900" fontFamily="monospace">
-              DFB
-            </text>
-          </g>
-        )}
+          {/* 4. PREMIER LEAGUE TROPHY (SILVER CUP WITH GOLDEN CROWN & MALACHITE BASE) */}
+          {resolved === 'ENG_PL' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#9333ea" fillOpacity="0.14" />
+              <path d="M24 24 L15 42 L20 44 L26 28 Z" fill="#581c87" />
+              <path d="M56 24 L65 42 L60 44 L54 28 Z" fill="#38bdf8" />
+              <path
+                d="M27 23 C17 23, 18 41, 29 43"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="3.5"
+              />
+              <path
+                d="M53 23 C63 23, 62 41, 51 43"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="3.5"
+              />
+              <path
+                d="M28 19 L30 11 L35 16 L40 10 L45 16 L50 11 L52 19 Z"
+                fill={`url(#${uid}-gold)`}
+                stroke="#ca8a04"
+                strokeWidth="1"
+              />
+              <path
+                d="M27 19 H53 L49 46 C48 52, 32 52, 31 46 Z"
+                fill={`url(#${uid}-silver)`}
+                stroke="#f8fafc"
+                strokeWidth="1.2"
+              />
+              <path d="M36 50 L34 59 H46 L44 50 Z" fill={`url(#${uid}-silver)`} />
+              <rect x="26" y="59" width="28" height="4.5" rx="1" fill="#059669" stroke={`url(#${uid}-gold)`} strokeWidth="1" />
+              <rect x="24" y="63.5" width="32" height="5.5" rx="1.5" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
+            </g>
+          )}
 
-        {/* 5. SERIE A SCUDETTO TROPHY (GOLDEN SPIRAL CONE + SODALITE BLUE RING) */}
-        {resolved === 'ITA_SA' && (
-          <g>
-            <circle cx="40" cy="40" r="32" fill="#0284c7" fillOpacity="0.14" />
-            {/* Flared Golden Cone */}
-            <ellipse cx="40" cy="16" rx="15" ry="4" fill={`url(#${uid}-gold)`} stroke="#fef08a" strokeWidth="1.2" />
-            <path
-              d="M25 16 L35 52 H45 L55 16 Z"
-              fill={`url(#${uid}-gold)`}
-              stroke="#ca8a04"
-              strokeWidth="1.2"
-            />
-            {/* Spiral Ribbing */}
-            <path d="M28 24 L51 28 M31 34 L48 37 M34 43 L46 45" stroke="#a16207" strokeWidth="1.3" />
-            {/* Sodalite Blue Ring */}
-            <rect x="32" y="52" width="16" height="5" rx="1.5" fill="#1d4ed8" stroke={`url(#${uid}-silver)`} strokeWidth="1" />
-            {/* Tricolore Scudetto */}
-            <polygon points="40,51 43,54.5 40,58 37,54.5" fill="#ffffff" stroke="#ca8a04" strokeWidth="0.6" />
-            {/* Marble Base */}
-            <path d="M29 57 L26 67 H54 L51 57 Z" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
-          </g>
-        )}
+          {/* 5. LALIGA TROPHY (WIDE SILVER CYLINDRICAL CUP WITH CURVED HANDLES & CORAL ACCENT) */}
+          {resolved === 'ESP_LL' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#e11d48" fillOpacity="0.14" />
+              <path
+                d="M24 20 C14 22, 15 38, 26 40 M56 20 C66 22, 65 38, 54 40"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="3.8"
+                strokeLinecap="round"
+              />
+              <ellipse cx="40" cy="16" rx="16" ry="3.5" fill="#94a3b8" stroke="#f8fafc" strokeWidth="1.2" />
+              <path
+                d="M24 16 L27 48 C28 53, 52 53, 53 48 L56 16 Z"
+                fill={`url(#${uid}-silver)`}
+                stroke="#f8fafc"
+                strokeWidth="1.2"
+              />
+              <rect x="31" y="51" width="18" height="7" rx="1.5" fill="#64748b" />
+              <rect x="25" y="58" width="30" height="7" rx="2" fill="#0f172a" stroke="#ff4b44" strokeWidth="1.3" />
+            </g>
+          )}
 
-        {/* 6. UEFA EUROPA LEAGUE / CONFERENCE LEAGUE / LALIGA / LIGUE 1 / EURO / DOMESTIC CUPS */}
-        {(resolved === 'UEFA_UEL' ||
-          resolved === 'UEFA_UECL' ||
-          resolved === 'ESP_LL' ||
-          resolved === 'FRA_L1' ||
-          resolved === 'EURO_NATIONS' ||
-          resolved === 'DOMESTIC_CUP') && (
-          <g>
-            <circle
-              cx="40"
-              cy="40"
-              r="32"
-              fill={
-                resolved === 'UEFA_UEL'
-                  ? '#ea580c'
-                  : resolved === 'UEFA_UECL'
-                    ? '#16a34a'
-                    : resolved === 'FRA_L1'
+          {/* 6. BUNDESLIGA MEISTERSCHALE (ICONIC SILVER & GOLD SHIELD PLATTER) */}
+          {resolved === 'GER_BL' && (
+            <g>
+              <circle cx="40" cy="40" r="27" fill={`url(#${uid}-silver)`} stroke="#f8fafc" strokeWidth="2" />
+              <circle cx="40" cy="40" r="22" fill="none" stroke="#64748b" strokeWidth="1.2" strokeDasharray="4 2" />
+              <circle cx="40" cy="40" r="15" fill="none" stroke={`url(#${uid}-gold)`} strokeWidth="2" />
+              <circle cx="40" cy="40" r="8" fill={`url(#${uid}-gold)`} fillOpacity="0.35" stroke="#ca8a04" strokeWidth="1.5" />
+              {[0, 60, 120, 180, 240, 300].map((deg) => {
+                const rad = (deg * Math.PI) / 180;
+                const cx = 40 + Math.cos(rad) * 15;
+                const cy = 40 + Math.sin(rad) * 15;
+                return <circle key={deg} cx={cx} cy={cy} r="2.4" fill="#b45309" stroke="#fef08a" strokeWidth="0.8" />;
+              })}
+              <text x="40" y="42.5" textAnchor="middle" fill="#1e293b" fontSize="5.5" fontWeight="900" fontFamily="monospace">
+                DFB
+              </text>
+            </g>
+          )}
+
+          {/* 7. SERIE A SCUDETTO TROPHY (GOLDEN SPIRAL CONE + SODALITE BLUE RING) */}
+          {resolved === 'ITA_SA' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#0284c7" fillOpacity="0.14" />
+              <ellipse cx="40" cy="16" rx="15" ry="4" fill={`url(#${uid}-gold)`} stroke="#fef08a" strokeWidth="1.2" />
+              <path
+                d="M25 16 L35 52 H45 L55 16 Z"
+                fill={`url(#${uid}-gold)`}
+                stroke="#ca8a04"
+                strokeWidth="1.2"
+              />
+              <path d="M28 24 L51 28 M31 34 L48 37 M34 43 L46 45" stroke="#a16207" strokeWidth="1.3" />
+              <rect x="32" y="52" width="16" height="5" rx="1.5" fill="#1d4ed8" stroke={`url(#${uid}-silver)`} strokeWidth="1" />
+              <polygon points="40,51 43,54.5 40,58 37,54.5" fill="#ffffff" stroke="#ca8a04" strokeWidth="0.6" />
+              <path d="M29 57 L26 67 H54 L51 57 Z" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
+            </g>
+          )}
+
+          {/* 8. LIGUE 1 HEXAGOAL (GEOMETRIC GOLDEN HEXAGON CREST ON PEDESTAL) */}
+          {resolved === 'FRA_L1' && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#eab308" fillOpacity="0.15" />
+              {/* Golden Hexagon Shield */}
+              <polygon
+                points="40,11 58,21 58,41 40,51 22,41 22,21"
+                fill={`url(#${uid}-gold)`}
+                stroke="#fef08a"
+                strokeWidth="1.5"
+              />
+              <polygon
+                points="40,17 52,24 52,38 40,45 28,38 28,24"
+                fill="#0f172a"
+                fillOpacity="0.22"
+                stroke="#a16207"
+                strokeWidth="1.2"
+              />
+              <circle cx="40" cy="31" r="4.5" fill="#fef08a" />
+              {/* Tapered Golden-Silver Stem & Base */}
+              <polygon points="34,50 46,50 49,61 31,61" fill={`url(#${uid}-silver)`} stroke="#cbd5e1" strokeWidth="1" />
+              <rect x="25" y="61" width="30" height="6" rx="2" fill="#1e293b" stroke={`url(#${uid}-gold)`} strokeWidth="1.2" />
+            </g>
+          )}
+
+          {/* 9. EREDIVISIE SCHAAL (DUTCH SILVER CHAMPIONSHIP PLATTER ON STAND) */}
+          {resolved === 'NED_ED' && (
+            <g>
+              <circle cx="40" cy="36" r="24" fill={`url(#${uid}-silver)`} stroke="#f8fafc" strokeWidth="2" />
+              <circle cx="40" cy="36" r="18" fill="none" stroke="#ea580c" strokeWidth="1.5" />
+              <circle cx="40" cy="36" r="11" fill="#1e1b4b" fillOpacity="0.15" stroke="#64748b" strokeWidth="1.2" />
+              {/* Crowned Lion Motif */}
+              <path d="M34 31 L36 26 L40 29 L44 26 L46 31 Z" fill="#ea580c" />
+              <circle cx="40" cy="38" r="4" fill="#ea580c" />
+              {/* Stand Pedestal */}
+              <polygon points="31,57 49,57 53,66 27,66" fill="#1e293b" stroke="#94a3b8" strokeWidth="1.2" />
+            </g>
+          )}
+
+          {/* 10. LIGA PORTUGAL / BELGIAN PRO LEAGUE / SÜPER LİG / SCOTTISH PREMIERSHIP / SECOND TIER */}
+          {(resolved === 'POR_LP' ||
+            resolved === 'BEL_PL' ||
+            resolved === 'TUR_SL' ||
+            resolved === 'SCO_PR' ||
+            resolved === 'SECOND_TIER') && (
+            <g>
+              <circle
+                cx="40"
+                cy="40"
+                r="32"
+                fill={
+                  resolved === 'POR_LP'
+                    ? '#dc2626'
+                    : resolved === 'BEL_PL'
                       ? '#eab308'
-                      : '#38bdf8'
-              }
-              fillOpacity="0.14"
-            />
-            {/* Handles for Cups / LaLiga / Euro */}
-            {resolved !== 'UEFA_UEL' && (
-              <>
-                <path
-                  d="M26 22 C15 20, 16 39, 29 42"
-                  fill="none"
-                  stroke={resolved === 'FRA_L1' ? `url(#${uid}-gold)` : `url(#${uid}-silver)`}
-                  strokeWidth="3.5"
-                />
-                <path
-                  d="M54 22 C65 20, 64 39, 51 42"
-                  fill="none"
-                  stroke={resolved === 'FRA_L1' ? `url(#${uid}-gold)` : `url(#${uid}-silver)`}
-                  strokeWidth="3.5"
-                />
-              </>
-            )}
-            {/* Cup Chalice */}
-            <path
-              d="M24 16 H56 L49 46 C47 52, 33 52, 31 46 Z"
-              fill={resolved === 'FRA_L1' ? `url(#${uid}-gold)` : `url(#${uid}-silver)`}
-              stroke="#f8fafc"
-              strokeWidth="1.2"
-            />
-            {/* Accent Stripe */}
-            <path d="M29 24 H51" stroke={resolved === 'UEFA_UEL' ? '#ea580c' : resolved === 'UEFA_UECL' ? '#16a34a' : '#eab308'} strokeWidth="2.2" />
-            {/* Pedestal */}
-            <path
-              d="M35 49 L32 60 H48 L45 49 Z"
-              fill={resolved === 'UEFA_UEL' ? `url(#${uid}-gold)` : `url(#${uid}-silver)`}
-            />
-            <rect x="26" y="60" width="28" height="7" rx="2" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
-          </g>
-        )}
+                      : resolved === 'TUR_SL'
+                        ? '#ef4444'
+                        : resolved === 'SCO_PR'
+                          ? '#2563eb'
+                          : '#38bdf8'
+                }
+                fillOpacity="0.15"
+              />
+              {/* National Ribbons */}
+              <path
+                d="M26 22 L17 38 L22 40 L28 26 Z"
+                fill={resolved === 'POR_LP' ? '#16a34a' : resolved === 'SCO_PR' ? '#1d4ed8' : '#dc2626'}
+              />
+              <path
+                d="M54 22 L63 38 L58 40 L52 26 Z"
+                fill={resolved === 'POR_LP' ? '#dc2626' : resolved === 'SCO_PR' ? '#ffffff' : '#facc15'}
+              />
+              {/* Sculpted Spiral Cup Body */}
+              <path
+                d="M27 16 H53 L47 48 C45 54, 35 54, 33 48 Z"
+                fill={resolved === 'TUR_SL' ? `url(#${uid}-gold)` : `url(#${uid}-silver)`}
+                stroke="#f8fafc"
+                strokeWidth="1.2"
+              />
+              <path
+                d="M31 22 L48 27 M32 32 L47 37"
+                stroke={resolved === 'POR_LP' || resolved === 'BEL_PL' ? '#ca8a04' : '#64748b'}
+                strokeWidth="1.6"
+              />
+              <rect x="33" y="51" width="14" height="8" rx="1.5" fill={`url(#${uid}-silver)`} />
+              <rect x="25" y="59" width="30" height="7" rx="2" fill="#1e293b" stroke="#cbd5e1" strokeWidth="1" />
+            </g>
+          )}
 
-        {/* 7. BALLON D'OR & GOLDEN BOOT */}
-        {(resolved === 'BALLON_DOR' || resolved === 'GOLDEN_BOOT') && (
-          <g>
-            <circle cx="40" cy="40" r="32" fill="#facc15" fillOpacity="0.18" />
-            {/* Crystalline Pyrite Pedestal */}
-            <polygon
-              points="24,66 28,48 36,45 44,45 52,48 56,66"
-              fill="#1e293b"
-              stroke="#64748b"
-              strokeWidth="1.2"
-            />
-            <polygon points="28,66 34,49 46,49 52,66" fill="#0f172a" />
-            {/* 24K Golden Ball */}
-            <circle cx="40" cy="30" r="16" fill={`url(#${uid}-gold)`} stroke="#fef08a" strokeWidth="1.5" />
-            <polygon points="40,22 46,26 44,33 36,33 34,26" fill="#a16207" fillOpacity="0.45" stroke="#fef08a" strokeWidth="0.9" />
-            <path d="M40 14 V22 M46 26 L54 23 M44 33 L50 41 M36 33 L30 41 M34 26 L26 23" stroke="#a16207" strokeWidth="1" />
-          </g>
-        )}
-      </svg>
+          {/* 11. FIFA WORLD CUP / CLUB WORLD CUP TROPHY */}
+          {(resolved === 'WORLD_CUP' || resolved === 'FIFA_CWC') && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#eab308" fillOpacity="0.16" />
+              <circle cx="40" cy="22" r="11" fill={`url(#${uid}-gold)`} stroke="#a16207" strokeWidth="1.2" />
+              <path d="M32 19 C36 16, 44 20, 48 18 M31 25 C37 27, 43 23, 49 26" fill="none" stroke="#a16207" strokeWidth="1" />
+              <path
+                d="M29 24 C31 36, 35 44, 34 55 H46 C45 44, 49 36, 51 24 L45 31 L40 28 L35 31 Z"
+                fill={`url(#${uid}-gold)`}
+                stroke="#ca8a04"
+                strokeWidth="1.1"
+              />
+              <rect x="30" y="55" width="20" height="3" rx="1" fill="#10b981" />
+              <rect x="29" y="58" width="22" height="2.5" rx="1" fill={`url(#${uid}-gold)`} />
+              <rect x="30" y="60.5" width="20" height="3" rx="1" fill="#10b981" />
+              <rect x="27" y="63.5" width="26" height="5" rx="2" fill={`url(#${uid}-gold)`} stroke="#a16207" strokeWidth="1" />
+            </g>
+          )}
+
+          {/* 12. EURO NATIONS (HENRI DELAUNAY SILVER AMPHORA) & DOMESTIC KNOCKOUT CUPS */}
+          {(resolved === 'EURO_NATIONS' || resolved === 'DOMESTIC_CUP') && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#38bdf8" fillOpacity="0.14" />
+              {/* Twin Handles */}
+              <path
+                d="M26 22 C15 20, 16 39, 29 42 M54 22 C65 20, 64 39, 51 42"
+                fill="none"
+                stroke={`url(#${uid}-silver)`}
+                strokeWidth="3.5"
+                strokeLinecap="round"
+              />
+              {/* Cup Lid & Finial */}
+              <path d="M26 18 Q40 11 54 18 Z" fill={`url(#${uid}-silver)`} stroke="#e2e8f0" strokeWidth="1" />
+              <circle cx="40" cy="12" r="2.3" fill={`url(#${uid}-gold)`} />
+              {/* Classic Knockout Chalice */}
+              <path
+                d="M26 18 H54 L49 46 C47 52, 33 52, 31 46 Z"
+                fill={`url(#${uid}-silver)`}
+                stroke="#f8fafc"
+                strokeWidth="1.2"
+              />
+              <path d="M29 25 H51" stroke="#eab308" strokeWidth="2" />
+              <path d="M35 49 L32 60 H48 L45 49 Z" fill={`url(#${uid}-silver)`} />
+              <rect x="26" y="60" width="28" height="7" rx="2" fill="#1e293b" stroke="#94a3b8" strokeWidth="1" />
+            </g>
+          )}
+
+          {/* 13. BALLON D'OR & GOLDEN BOOT */}
+          {(resolved === 'BALLON_DOR' || resolved === 'GOLDEN_BOOT') && (
+            <g>
+              <circle cx="40" cy="40" r="32" fill="#facc15" fillOpacity="0.18" />
+              <polygon
+                points="24,66 28,48 36,45 44,45 52,48 56,66"
+                fill="#1e293b"
+                stroke="#64748b"
+                strokeWidth="1.2"
+              />
+              <polygon points="28,66 34,49 46,49 52,66" fill="#0f172a" />
+              <circle cx="40" cy="30" r="16" fill={`url(#${uid}-gold)`} stroke="#fef08a" strokeWidth="1.5" />
+              <polygon points="40,22 46,26 44,33 36,33 34,26" fill="#a16207" fillOpacity="0.45" stroke="#fef08a" strokeWidth="0.9" />
+              <path d="M40 14 V22 M46 26 L54 23 M44 33 L50 41 M36 33 L30 41 M34 26 L26 23" stroke="#a16207" strokeWidth="1" />
+            </g>
+          )}
+        </svg>
       </div>
       {showLabel && (
         <span className="mt-1 text-[10px] font-mono text-amber-300 font-semibold truncate max-w-[96px]">

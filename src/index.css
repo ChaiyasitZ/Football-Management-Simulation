@@ -7,6 +7,11 @@
     --font-sans: 'Plus Jakarta Sans', 'IBM Plex Sans Thai', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
     --club-accent: #10b981;
+    --club-primary: #10b981;
+    --club-secondary: #0f172a;
+    --row-h: 34px;
+    --cell-py: 4px;
+    --font-table: 12px;
   }
 
   body {
@@ -36,16 +41,30 @@
 }
 
 /* Data Density Modes: Compact (FM Classic) vs Comfortable (FM26) */
+[data-density="compact"] {
+  --row-h: 34px;
+  --cell-py: 4px;
+  --font-table: 12px;
+}
+
+[data-density="comfortable"] {
+  --row-h: 46px;
+  --cell-py: 10px;
+  --font-table: 13.5px;
+}
+
 [data-density="compact"] table th,
 [data-density="compact"] table td {
   padding-top: 0.35rem !important;
   padding-bottom: 0.35rem !important;
+  font-size: var(--font-table);
 }
 
 [data-density="comfortable"] table th,
 [data-density="comfortable"] table td {
   padding-top: 0.65rem !important;
   padding-bottom: 0.65rem !important;
+  font-size: var(--font-table);
 }
 
 /* FM Attribute Tier Colors (1-20 scale) */
