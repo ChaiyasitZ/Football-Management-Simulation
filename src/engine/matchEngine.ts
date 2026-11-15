@@ -796,6 +796,110 @@ export function simulateMatch(
         }
       }
 
+      // Dynamic AI In-Match Tactical Adaptation (Minutes 62 & 76)
+      if (minute === 62 || minute === 76) {
+        const evalAiTeam = (
+          aiClub: Club,
+          aiTactic: TacticalSystem,
+          aiStr: TeamMatchStrength,
+          myGoals: number,
+          oppGoals: number
+        ) => {
+          // Skip if user already scheduled manual substitutions for this team
+          const hasManualSub = (options?.substitutions || []).some((s) => s.teamId === aiClub.id);
+          if (hasManualSub) return;
+
+          const diff = myGoals - oppGoals;
+          const mgrName = aiClub.aiManager?.name || `${aiClub.shortName} Manager`;
+          const mgrStyle = aiClub.aiManager?.style || 'Pragmatic Manager';
+
+          if (minute === 62 && diff < 0) {
+            aiStr.attack *= 1.11;
+            aiStr.pressModifier *= 1.07;
+            aiStr.defense *= 0.94;
+            events.push({
+              id: `${fixture.id}_ev_62_aitac_${aiClub.id}`,
+              fixtureId: fixture.id,
+              minute: 62,
+              eventType: 'TacticalChange',
+              teamId: aiClub.id,
+              text: trText(
+                `Min 62': Tactical Shift (${aiClub.shortName}) — ${mgrName} (${mgrStyle}) switches to an Attacking mentality with a high press to chase the game!`,
+                `นาที 62': ปรับหมากแก้เกม (${aiClub.shortName}) — ${mgrName} สั่งลูกทีมเปิดเกมรุกเต็มสูบและบีบพื้นที่สูงเพื่อทวงประตูคืน!`
+              ),
+              pitchX: 50,
+              pitchY: 50,
+              isHighlight: true,
+            });
+          } else if (minute === 76 && diff === 1) {
+            aiStr.defense *= 1.12;
+            aiStr.attack *= 0.92;
+            events.push({
+              id: `${fixture.id}_ev_76_aitac_${aiClub.id}`,
+              fixtureId: fixture.id,
+              minute: 76,
+              eventType: 'TacticalChange',
+              teamId: aiClub.id,
+              text: trText(
+                `Min 76': Tactical Shift (${aiClub.shortName}) — ${mgrName} drops into a compact Defensive block to protect the narrow lead.`,
+                `นาที 76': ปรับหมากแก้เกม (${aiClub.shortName}) — ${mgrName} สั่งลูกทีมถอยลงมาแพ็กเกมรับรัดกุมเพื่อรักษาสกอร์นำ`
+              ),
+              pitchX: 50,
+              pitchY: 50,
+              isHighlight: true,
+            });
+          }
+
+          // AI Fresh-Legs Substitution from bench
+          const usedIds = new Set([
+            ...aiStr.activePlayers.map((p) => p.id),
+            ...recordedSubstitutions.map((s) => s.playerInId),
+            ...recordedSubstitutions.map((s) => s.playerOutId),
+          ]);
+          const benchCandidates = (aiTactic.benchPlayerIds || [])
+            .map((id) => playersById[id])
+            .filter((p): p is Player => Boolean(p && !usedIds.has(p.id) && p.positions[0] !== 'GK'));
+          const outfieldActive = aiStr.activePlayers.filter(
+            (p) => p.positions[0] !== 'GK' && !sentOffIds.has(p.id)
+          );
+          if (benchCandidates.length > 0 && outfieldActive.length > 0 && rng.chance(0.65)) {
+            const pOut = outfieldActive[outfieldActive.length - 1];
+            const pIn = benchCandidates[0];
+            recordedSubstitutions.push({
+              minute,
+              teamId: aiClub.id,
+              playerOutId: pOut.id,
+              playerInId: pIn.id,
+            });
+            aiStr.activePlayers = aiStr.activePlayers.map((p) => (p.id === pOut.id ? pIn : p));
+            aiStr.attackers = aiStr.attackers.map((p) => (p.id === pOut.id ? pIn : p));
+            aiStr.midfielders = aiStr.midfielders.map((p) => (p.id === pOut.id ? pIn : p));
+            aiStr.defenders = aiStr.defenders.map((p) => (p.id === pOut.id ? pIn : p));
+            ratings[pIn.id] = 6.7;
+            aiStr.attack *= 1.03;
+            events.push({
+              id: `${fixture.id}_ev_${minute}_aisub_${pIn.id}`,
+              fixtureId: fixture.id,
+              minute,
+              eventType: 'Substitution',
+              teamId: aiClub.id,
+              playerId: pIn.id,
+              playerName: `${pIn.firstName} ${pIn.lastName}`,
+              secondaryPlayerId: pOut.id,
+              secondaryPlayerName: `${pOut.firstName} ${pOut.lastName}`,
+              text: trText(
+                `Min ${minute}': AI Substitution (${aiClub.shortName}) — ${pIn.firstName} ${pIn.lastName} comes on for ${pOut.firstName} ${pOut.lastName}.`,
+                `นาที ${minute}': แก้เกมเปลี่ยนตัว (${aiClub.shortName}) — ส่ง ${pIn.firstName} ${pIn.lastName} ลงสนามแทน ${pOut.firstName} ${pOut.lastName}`
+              ),
+              pitchX: 50,
+              pitchY: 95,
+            });
+          }
+        };
+
+        evalAiTeam(awayClub, awayTactic, awayStrength, awayStats.goals, homeStats.goals);
+      }
+
       const homeShoutMod = getShoutModifiersForTeam(homeClub.id, minute, homeStats.goals > awayStats.goals);
       const awayShoutMod = getShoutModifiersForTeam(awayClub.id, minute, awayStats.goals > homeStats.goals);
 
@@ -1279,9 +1383,27 @@ export function simulateMatch(
           ratings[creator.id] = Math.min(10, (ratings[creator.id] || 6.7) + 0.65);
         }
 
+        const assistTraitTag =
+          hasAssist && creator.traits?.includes('Tries Killer Balls Often')
+            ? trText(' [Killer Through-Ball]', ' [จ่ายทะลุช่องคมกริบ]')
+            : hasAssist && creator.traits?.includes('Dictates Tempo')
+              ? trText(' [Dictates Tempo]', ' [คุมจังหวะเกม]')
+              : '';
         const assistText = hasAssist
-          ? trText(` (Assist by ${creator.lastName})`, ` (แอสซิสต์โดย ${creator.lastName})`)
+          ? trText(
+              ` (Assist by ${creator.lastName}${assistTraitTag})`,
+              ` (แอสซิสต์โดย ${creator.lastName}${assistTraitTag})`
+            )
           : '';
+        const finishTraitTag = attacker.traits?.includes('Places Shots')
+          ? trText(' [Places Shots]', ' [แปเน้นทิศทาง]')
+          : attacker.traits?.includes('Curls Ball')
+            ? trText(' [Curls Ball]', ' [ปั่นโค้งเสียบเสา]')
+            : attacker.traits?.includes('Beats Offside Trap')
+              ? trText(' [Beats Offside Trap]', ' [เช็กไลน์ล้ำหน้า]')
+              : attacker.traits?.includes('Runs With Ball Often')
+                ? trText(' [Solo Run]', ' [ลากเลื้อยเดี่ยว]')
+                : '';
         events.push({
           id: `${fixture.id}_ev_${minute}_goal_${atkStats.goals}_${atkClub.id}`,
           fixtureId: fixture.id,
@@ -1289,16 +1411,18 @@ export function simulateMatch(
           eventType: 'Goal',
           teamId: atkClub.id,
           playerId: attacker.id,
-          playerName: `${attacker.firstName} ${attacker.lastName}`,
+          playerName: `${attacker.firstName} ${attacker.lastName}${finishTraitTag}`,
           secondaryPlayerId: hasAssist ? creator.id : undefined,
-          secondaryPlayerName: hasAssist ? `${creator.firstName} ${creator.lastName}` : undefined,
+          secondaryPlayerName: hasAssist
+            ? `${creator.firstName} ${creator.lastName}${assistTraitTag}`
+            : undefined,
           xGDelta: shotXg,
           shotXg,
           shotX: attackZoneX,
           shotY: attackZoneY,
           text: trText(
-            `GOAL! Min ${minute}': ${attacker.firstName} ${attacker.lastName} scores for ${atkClub.name}!${assistText}`,
-            `GOAL! นาที ${minute}': ${attacker.firstName} ${attacker.lastName} ทำประตูให้ ${atkClub.name}!${assistText}`
+            `GOAL! Min ${minute}': ${attacker.firstName} ${attacker.lastName}${finishTraitTag} scores for ${atkClub.name}!${assistText}`,
+            `GOAL! นาที ${minute}': ${attacker.firstName} ${attacker.lastName}${finishTraitTag} ทำประตูให้ ${atkClub.name}!${assistText}`
           ),
           pitchX: isHomeAttacking ? 95 : 5,
           pitchY: 50 + rng.int(-8, 8),
@@ -1313,6 +1437,11 @@ export function simulateMatch(
         if (rng.chance(0.45)) {
           atkStats.corners += 1;
         }
+        const shotTraitNote = attacker.traits?.includes('Curls Ball')
+          ? trText('curling effort', 'ลูกปั่นโค้ง')
+          : attacker.traits?.includes('Places Shots')
+            ? trText('placed low shot', 'ลูกแปเสียบเสา')
+            : trText('effort', 'ลูกยิง');
         events.push({
           id: `${fixture.id}_ev_${minute}_save`,
           fixtureId: fixture.id,
@@ -1328,8 +1457,8 @@ export function simulateMatch(
           shotX: attackZoneX,
           shotY: attackZoneY,
           text: trText(
-            `Min ${minute}': Crucial save! ${gk.lastName} (${defClub.shortName}) dives to parry ${attacker.lastName}'s effort wide.`,
-            `นาที ${minute}': เซฟสำคัญ! ${gk.lastName} (${defClub.shortName}) พุ่งปัดลูกยิงของ ${attacker.lastName} ออกหลังไปได้`
+            `Min ${minute}': Crucial save! ${gk.lastName} (${defClub.shortName}) dives to parry ${attacker.lastName}'s ${shotTraitNote} wide.`,
+            `นาที ${minute}': เซฟสำคัญ! ${gk.lastName} (${defClub.shortName}) พุ่งปัด${shotTraitNote}ของ ${attacker.lastName} ออกหลังไปได้`
           ),
           pitchX: isHomeAttacking ? 92 : 8,
           pitchY: attackZoneY,

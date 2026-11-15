@@ -4,7 +4,13 @@
  */
 class SoundService {
   private ctx: AudioContext | null = null;
-  private muted = false;
+  private muted: boolean = (() => {
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem('touchline_audio_muted') === '1';
+    } catch {
+      return false;
+    }
+  })();
 
   private getContext(): AudioContext | null {
     if (this.muted || typeof window === 'undefined') return null;
@@ -20,17 +26,35 @@ class SoundService {
     return this.ctx;
   }
 
+  public getMuted(): boolean {
+    return this.muted;
+  }
+
   public isMuted(): boolean {
     return this.muted;
   }
 
   public toggleMute(): boolean {
     this.muted = !this.muted;
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('touchline_audio_muted', this.muted ? '1' : '0');
+      }
+    } catch {
+      // Ignore storage quota / privacy errors
+    }
     return this.muted;
   }
 
   public setMuted(val: boolean): void {
     this.muted = val;
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('touchline_audio_muted', this.muted ? '1' : '0');
+      }
+    } catch {
+      // Ignore storage quota / privacy errors
+    }
   }
 
   public playClick(): void {

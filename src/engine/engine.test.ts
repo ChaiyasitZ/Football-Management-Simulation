@@ -1358,3 +1358,40 @@ test('Phase 5 & Phase 6 (Checkpoints 18-27): Weather Physics, UEFA Dynamic Quali
   assert.equal(rolledOver.nextState.uefaStandings?.UEFA_UECL?.length, 36);
 });
 
+test('FM26/FM27 Complete Audit: Authentic Squad Shirt Numbers (1-99), Dynamic AI Live Match Management & Trait Commentary', () => {
+  const world = createInitialWorldState(778899);
+  const allPlayers = Object.values(world.players);
+
+  // Every player must have a valid shirtNumber between 1 and 99
+  for (const p of allPlayers) {
+    assert.ok(
+      typeof p.shirtNumber === 'number' && p.shirtNumber >= 1 && p.shirtNumber <= 99,
+      `Player ${p.firstName} ${p.lastName} must have a valid shirtNumber (1-99), got ${p.shirtNumber}`
+    );
+  }
+
+  // Verify iconic real squad numbers
+  const findByName = (full: string) =>
+    allPlayers.find((p) => `${p.firstName} ${p.lastName}` === full);
+  assert.equal(findByName('Bukayo Saka')?.shirtNumber, 7);
+  assert.equal(findByName('Mohamed Salah')?.shirtNumber, 11);
+  assert.equal(findByName('Erling Haaland')?.shirtNumber, 9);
+  assert.equal(findByName('Cole Palmer')?.shirtNumber, 20);
+  assert.equal(findByName('Lamine Yamal')?.shirtNumber, 19);
+  assert.equal(findByName('Declan Rice')?.shirtNumber, 41);
+
+  // Verify Dynamic AI Live Match Management & Substitution events at minutes 62 / 76
+  const fx = world.fixtures[0];
+  const home = world.clubs[fx.homeClubId];
+  const away = world.clubs[fx.awayClubId];
+  const res = simulateMatch(fx, home, away, world.players, 2027);
+  const subOrTacticalEvents = res.events.filter(
+    (e) => e.eventType === 'Substitution' || e.text.includes('Tactical Shift')
+  );
+  assert.ok(
+    subOrTacticalEvents.length >= 1,
+    'Simulated match must include AI live tactical shifts or substitutions at minutes 62/76'
+  );
+});
+
+

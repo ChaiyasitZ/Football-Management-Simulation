@@ -97,26 +97,40 @@ import {
 } from './firebase';
 import { soundService } from './engine/soundService';
 import { TitleScreen } from './components/TitleScreen';
-import {
-  ClubStaffYouthWorldView,
-  CompetitionsAndScheduleView,
-  DashboardView,
-  InboxView,
-  NavTab,
-  ScoutingView,
-  TrainingView,
-  TransfersView,
-} from './components/ManagementViews';
+import type { NavTab } from './components/ManagementViews';
 import {
   NotificationLogItem,
   PlayerPeekDrawer,
-  PortalView,
   SubTabBar,
   SubTabItem,
   ToastHistoryDrawer,
 } from './ui/UIComponents';
 import { LanguageProvider, LanguageSwitcher, useLanguage } from './i18n/LanguageContext';
 
+const PortalView = React.lazy(() =>
+  import('./ui/UIComponents').then((m) => ({ default: m.PortalView }))
+);
+const ClubStaffYouthWorldView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.ClubStaffYouthWorldView }))
+);
+const CompetitionsAndScheduleView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.CompetitionsAndScheduleView }))
+);
+const DashboardView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.DashboardView }))
+);
+const InboxView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.InboxView }))
+);
+const ScoutingView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.ScoutingView }))
+);
+const TrainingView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.TrainingView }))
+);
+const TransfersView = React.lazy(() =>
+  import('./components/ManagementViews').then((m) => ({ default: m.TransfersView }))
+);
 const MatchCenterView = React.lazy(() =>
   import('./components/MatchCenterView').then((m) => ({ default: m.MatchCenterView }))
 );
@@ -326,23 +340,74 @@ function TouchlineShell() {
   const [quickPeekPlayerId, setQuickPeekPlayerId] = useState<string | null>(null);
   const [externalInspectedClubId, setExternalInspectedClubId] = useState<string | null>(null);
 
-  // User Settings Preferences (Answers #2, #3, #4)
-  const [densityMode, setDensityMode] = useState<'compact' | 'comfortable'>('compact');
-  const [useClubAccent, setUseClubAccent] = useState<boolean>(true);
+  // User Settings Preferences (Answers #2, #3, #4) — persisted in localStorage
+  const [densityMode, setDensityMode] = useState<'compact' | 'comfortable'>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('touchline_ui_prefs_v1') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.densityMode === 'comfortable' || parsed.densityMode === 'compact') {
+          return parsed.densityMode;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 'compact';
+  });
+  const [useClubAccent, setUseClubAccent] = useState<boolean>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('touchline_ui_prefs_v1') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed.useClubAccent === 'boolean') return parsed.useClubAccent;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return true;
+  });
   const [developerMode, setDeveloperMode] = useState<boolean>(false);
 
   // Bookmarks & Notification Center
-  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>([
-    { route: '#/team/squad', labelEn: 'Squad', labelTh: 'ขุมกำลัง' },
-    { route: '#/team/tactics', labelEn: 'Tactics', labelTh: 'แท็กติก' },
-    { route: '#/recruitment/transfers', labelEn: 'Transfers', labelTh: 'การซื้อขาย' },
-  ]);
+  const [bookmarks, setBookmarks] = useState<BookmarkEntry[]>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.localStorage.getItem('touchline_ui_prefs_v1') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed.bookmarks) && parsed.bookmarks.length > 0) {
+          return parsed.bookmarks;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return [
+      { route: '#/team/squad', labelEn: 'Squad', labelTh: 'ขุมกำลัง' },
+      { route: '#/team/tactics', labelEn: 'Tactics', labelTh: 'แท็กติก' },
+      { route: '#/recruitment/transfers', labelEn: 'Transfers', labelTh: 'การซื้อขาย' },
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(
+          'touchline_ui_prefs_v1',
+          JSON.stringify({ densityMode, useClubAccent, bookmarks })
+        );
+      }
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [densityMode, useClubAccent, bookmarks]);
+
   const [notificationLog, setNotificationLog] = useState<NotificationLogItem[]>([]);
   const [notifDrawerOpen, setNotifDrawerOpen] = useState<boolean>(false);
 
   const [saveSlots, setSaveSlots] = useState<SaveSlotMeta[]>(() => getSavedSlotsList());
   const [authUser, setAuthUser] = useState<User | null>(null);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(() => soundService.getMuted());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
   const [commandQuery, setCommandQuery] = useState<string>('');
@@ -507,7 +572,8 @@ function TouchlineShell() {
 
   const handleQuickStart = () => {
     soundService.playClick();
-    ensureWorld();
+    const w = ensureWorld();
+    setSaveSlots(saveWorldStateToSlot('slot_autosave', w));
     setShellState('playing');
   };
 
@@ -526,7 +592,7 @@ function TouchlineShell() {
       customClubConfig
     );
     setWorld(freshWorld);
-    scheduleIdleAutosave(freshWorld);
+    setSaveSlots(saveWorldStateToSlot('slot_autosave', freshWorld));
     navigateToRoute('#/home/portal');
     setShellState('playing');
     showToast(
@@ -1047,21 +1113,6 @@ function TouchlineShell() {
         } as React.CSSProperties
       }
     >
-      {/* SVG Alpha-Key Filter for official game logo */}
-      <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden="true">
-        <defs>
-          <filter id="touchline-app-logo-key" colorInterpolationFilters="sRGB">
-            <feColorMatrix
-              type="matrix"
-              values="1 0 0 0 0
-                      0 1 0 0 0
-                      0 0 1 0 0
-                      6 9 9 0 -0.45"
-            />
-          </filter>
-        </defs>
-      </svg>
-
       {/* Left Vertical Rail Navigation (Hidden in Full-Screen Live Match Broadcast Mode) */}
       {!isFullScreenMatch && (
       <aside
@@ -1078,13 +1129,12 @@ function TouchlineShell() {
           >
             <div className="flex items-center gap-2 min-w-0">
               <img
-                src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+                src="/assets/aistudio/touchline_logo.webp"
                 alt="TOUCHLINE"
                 width={128}
                 height={52}
                 decoding="async"
                 data-testid="sidebar-brand-logo"
-                style={{ filter: 'url(#touchline-app-logo-key)' }}
                 className="w-32 h-12 -my-1.5 -ml-1 object-contain object-left select-none pointer-events-none"
               />
             </div>
@@ -1128,6 +1178,14 @@ function TouchlineShell() {
                       soundService.playClick();
                       navigateToRoute(`#/${cat.id}/${cat.defaultSubTab}`);
                     }}
+                    style={
+                      active && useClubAccent
+                        ? {
+                            backgroundColor: controlledClub.primaryColor,
+                            color: '#ffffff',
+                          }
+                        : undefined
+                    }
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                       active
                         ? 'bg-emerald-500 text-slate-950 shadow-sm'
@@ -1376,6 +1434,14 @@ function TouchlineShell() {
               type="button"
               disabled={isSimulatingDay}
               onClick={handleAdvanceDay}
+              style={
+                !pendingUrgentInboxItem && useClubAccent
+                  ? {
+                      backgroundColor: controlledClub.primaryColor,
+                      color: '#ffffff',
+                    }
+                  : undefined
+              }
               className={`px-4 py-1.5 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 pendingUrgentInboxItem
                   ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
@@ -1647,6 +1713,35 @@ function TouchlineShell() {
                       });
                       setWorld(res.nextState);
                       showToast(res.message);
+                    }}
+                    onChangeShirtNumber={(playerId, shirtNumber) => {
+                      const p = world.players[playerId];
+                      if (!p) return;
+                      const updatedPlayers = { ...world.players };
+                      // If another player on the same club already wears this number, swap their number
+                      const existingHolder = Object.values(updatedPlayers).find(
+                        (other) =>
+                          other.clubId === p.clubId &&
+                          other.id !== playerId &&
+                          other.shirtNumber === shirtNumber
+                      );
+                      if (existingHolder) {
+                        updatedPlayers[existingHolder.id] = {
+                          ...existingHolder,
+                          shirtNumber: p.shirtNumber,
+                        };
+                      }
+                      updatedPlayers[playerId] = {
+                        ...p,
+                        shirtNumber,
+                      };
+                      setWorld({ ...world, players: updatedPlayers });
+                      showToast(
+                        tr(
+                          `Assigned squad number #${shirtNumber} to ${p.firstName} ${p.lastName}`,
+                          `กำหนดเบอร์เสื้อ #${shirtNumber} ให้กับ ${p.firstName} ${p.lastName} เรียบร้อยแล้ว`
+                        )
+                      );
                     }}
                   />
                 )}
@@ -2175,12 +2270,11 @@ function TouchlineShell() {
           <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-md p-6 space-y-5 shadow-2xl">
             <div className="text-center flex flex-col items-center">
               <img
-                src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+                src="/assets/aistudio/touchline_logo.webp"
                 alt="TOUCHLINE"
                 width={220}
                 height={140}
                 decoding="async"
-                style={{ filter: 'url(#touchline-app-logo-key)' }}
                 className="w-52 h-32 -my-3 object-contain object-center select-none pointer-events-none"
               />
               <h2 id="pause-modal-title" className="text-xl font-display font-bold text-white">

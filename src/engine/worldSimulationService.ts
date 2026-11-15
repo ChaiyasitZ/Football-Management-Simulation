@@ -3825,12 +3825,68 @@ export async function loadWorldStateFromFirestoreSlot(
   }
 }
 
+const LOCAL_SAVE_METAS_KEY = 'touchline_save_metas_v1';
+const LOCAL_SAVE_DOC_PREFIX = 'touchline_save_doc_v1_';
+
+function readLocalSaveMetas(): SaveSlotMeta[] {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
+    const raw = window.localStorage.getItem(LOCAL_SAVE_METAS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeLocalSaveMetas(metas: SaveSlotMeta[]): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.setItem(LOCAL_SAVE_METAS_KEY, JSON.stringify(metas));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function writeLocalCareerDoc(slotId: string, docData: CareerSaveDocument): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.setItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`, JSON.stringify(docData));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function readLocalCareerDoc(slotId: string): CareerSaveDocument | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null;
+    const raw = window.localStorage.getItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`);
+    if (!raw) return null;
+    return JSON.parse(raw) as CareerSaveDocument;
+  } catch {
+    return null;
+  }
+}
+
+function removeLocalCareerDoc(slotId: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    window.localStorage.removeItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`);
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 export async function deleteSaveSlotFromFirestore(
   rawSlotId: string
 ): Promise<SaveSlotMeta[]> {
   const slotId = sanitizeSlotId(rawSlotId);
   delete inMemorySaveSlots[slotId];
-  inMemorySlotMetas = inMemorySlotMetas.filter((m) => m.slotId !== slotId);
+  removeLocalCareerDoc(slotId);
+  const baseMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
+  inMemorySlotMetas = baseMetas.filter((m) => m.slotId !== slotId);
+  writeLocalSaveMetas(inMemorySlotMetas);
 
   const currentUser = auth.currentUser;
   if (!currentUser) {
@@ -3853,27 +3909,48 @@ export function saveWorldStateToSlot(
   triggerCloudSync = true
 ): SaveSlotMeta[] {
   const slotId = sanitizeSlotId(rawSlotId);
+  const lastSavedAtIso = new Date().toISOString();
   const stamped: WorldState = compactWorldStateForStorage({
     ...state,
     saveId: slotId,
-    lastSavedAt: new Date().toISOString(),
+    lastSavedAt: lastSavedAtIso,
   });
 
   inMemorySaveSlots[slotId] = stamped;
 
-  const existingMetas = inMemorySlotMetas.filter((m) => m.slotId !== slotId);
   const club = state.clubs[state.controlledClubId];
   const newMeta: SaveSlotMeta = {
     slotId,
-    saveName: state.saveName,
+    saveName: state.saveName || 'TOUCHLINE Career',
     clubName: club?.name || 'Club',
     managerName: state.manager.name,
     gameDate: state.gameDate,
     season: state.currentSeason,
-    lastSavedAt: stamped.lastSavedAt,
+    lastSavedAt: lastSavedAtIso,
   };
+
+  const currentMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
+  const existingMetas = currentMetas.filter((m) => m.slotId !== slotId);
   const updatedMetas = [newMeta, ...existingMetas].slice(0, 5);
   inMemorySlotMetas = updatedMetas;
+  writeLocalSaveMetas(updatedMetas);
+
+  // Persist compact delta CareerSaveDocument in localStorage so page reloads (F5) never lose saves
+  const careerState = dehydrateWorldStateToCareerMap(stamped);
+  const localDoc: CareerSaveDocument = {
+    ownerId: auth.currentUser?.uid || 'local_user',
+    slotId,
+    saveName: newMeta.saveName.slice(0, 120),
+    clubName: newMeta.clubName.slice(0, 100),
+    managerName: newMeta.managerName.slice(0, 80),
+    gameDate: newMeta.gameDate.slice(0, 10),
+    season: newMeta.season.slice(0, 16),
+    lastSavedAtIso,
+    randomSeed: stamped.randomSeed,
+    controlledClubId: stamped.controlledClubId.slice(0, 64),
+    careerState,
+  };
+  writeLocalCareerDoc(slotId, localDoc);
 
   if (triggerCloudSync && auth.currentUser) {
     void saveWorldStateToFirestoreSlot(slotId, stamped);
@@ -3884,17 +3961,32 @@ export function saveWorldStateToSlot(
 
 export function loadWorldStateFromSlot(rawSlotId: string): WorldState | null {
   const slotId = sanitizeSlotId(rawSlotId);
-  return inMemorySaveSlots[slotId] || null;
+  if (inMemorySaveSlots[slotId]) {
+    return inMemorySaveSlots[slotId];
+  }
+  const localDoc = readLocalCareerDoc(slotId);
+  if (localDoc && localDoc.careerState) {
+    const rehydrated = rehydrateWorldStateFromCareerDoc(localDoc);
+    inMemorySaveSlots[slotId] = rehydrated;
+    return rehydrated;
+  }
+  return null;
 }
 
 export function getSavedSlotsList(): SaveSlotMeta[] {
+  if (inMemorySlotMetas.length === 0) {
+    inMemorySlotMetas = readLocalSaveMetas();
+  }
   return inMemorySlotMetas;
 }
 
 export function deleteSavedSlot(rawSlotId: string): SaveSlotMeta[] {
   const slotId = sanitizeSlotId(rawSlotId);
   delete inMemorySaveSlots[slotId];
-  inMemorySlotMetas = inMemorySlotMetas.filter((m) => m.slotId !== slotId);
+  removeLocalCareerDoc(slotId);
+  const currentMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
+  inMemorySlotMetas = currentMetas.filter((m) => m.slotId !== slotId);
+  writeLocalSaveMetas(inMemorySlotMetas);
   if (auth.currentUser) {
     void deleteSaveSlotFromFirestore(slotId);
   }

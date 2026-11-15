@@ -299,6 +299,7 @@ export interface Player {
   mentorId?: string | null;
   isWonderkid?: boolean;
   traits?: PlayerTrait[];
+  shirtNumber?: number;
 }
 
 export interface TacticalSlot {

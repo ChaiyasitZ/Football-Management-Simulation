@@ -130,6 +130,14 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   const [buyBackClauseFee, setBuyBackClauseFee] = useState<number>(
     Math.round(player.marketValue * 1.6)
   );
+  const [negotiationPatience, setNegotiationPatience] = useState<number>(100);
+  const [counterOfferState, setCounterOfferState] = useState<{
+    demandedUpfrontFee: number;
+    demandedWage: number;
+    demandedBonus: number;
+    messageEn: string;
+    messageTh: string;
+  } | null>(null);
 
   // Sync stepper defaults when switching player
   React.useEffect(() => {
@@ -138,6 +146,8 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
     setProposedWage(Math.round(player.wagePerWeek * 1.15));
     setSigningBonus(Math.round(player.wagePerWeek * 3));
     setProposedStatus(player.squadStatus);
+    setNegotiationPatience(100);
+    setCounterOfferState(null);
   }, [player.id]);
 
   const scoutReport = world.scoutReports[player.id];
@@ -302,13 +312,18 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                   club={playerClub}
                   variant={player.positions.includes('GK') ? 'gk' : 'home'}
                   size="sm"
-                  number={currentIdx >= 0 && currentIdx < 99 ? currentIdx + 1 : 10}
+                  number={player.shirtNumber || (currentIdx >= 0 && currentIdx < 99 ? currentIdx + 1 : 10)}
                   playerName={player.lastName}
                 />
               </div>
             )}
             <div className="space-y-1">
               <div className="flex items-center gap-2.5 flex-wrap">
+                {player.shirtNumber && (
+                  <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-emerald-400 font-mono font-bold text-sm">
+                    #{player.shirtNumber}
+                  </span>
+                )}
                 <h1 className="text-2xl font-display font-bold text-white">
                   {player.firstName} {player.lastName}
                 </h1>
@@ -1112,6 +1127,43 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               </div>
             </div>
 
+            {/* Agent / Selling Club Patience Indicator */}
+            <div
+              className="px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-800 space-y-1.5"
+              data-testid="negotiation-patience-bar"
+            >
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400 font-semibold">
+                  {isMyPlayer
+                    ? tr('Agent Negotiation Patience', 'ความอดทนของเอเย่นต์นักเตะ')
+                    : tr('Selling Club & Agent Patience', 'ความอดทนของสโมสรและเอเย่นต์')}
+                </span>
+                <span
+                  className={`font-mono font-bold ${
+                    negotiationPatience >= 65
+                      ? 'text-emerald-400'
+                      : negotiationPatience >= 35
+                        ? 'text-amber-400'
+                        : 'text-rose-400'
+                  }`}
+                >
+                  {negotiationPatience}%
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  className={`h-full transition-all ${
+                    negotiationPatience >= 65
+                      ? 'bg-emerald-500'
+                      : negotiationPatience >= 35
+                        ? 'bg-amber-500'
+                        : 'bg-rose-500'
+                  }`}
+                  style={{ width: `${negotiationPatience}%` }}
+                />
+              </div>
+            </div>
+
             {/* Step 1: Deal Type & Club Fee */}
             {stepperStep === 1 && (
               <div className="space-y-3">
@@ -1349,6 +1401,92 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     </span>
                   </div>
                 </div>
+
+                {/* Interactive Counter-Offer Round Card */}
+                {counterOfferState && (
+                  <div
+                    className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2.5"
+                    data-testid="negotiation-counter-offer-card"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-display font-bold text-amber-300 text-xs">
+                        ⚡ {tr('Counter-Offer Received', 'ข้อเสนอสวนกลับจากอีกฝ่าย')}
+                      </span>
+                      <span className="text-[11px] font-mono text-amber-200">
+                        {tr('Round Response', 'เจรจาต่อรอง')}
+                      </span>
+                    </div>
+                    <p className="text-slate-200 leading-relaxed text-[11px]">
+                      {tr(counterOfferState.messageEn, counterOfferState.messageTh)}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        data-testid="accept-counter-offer-btn"
+                        onClick={() => {
+                          setUpfrontFee(counterOfferState.demandedUpfrontFee);
+                          setProposedWage(counterOfferState.demandedWage);
+                          setSigningBonus(counterOfferState.demandedBonus);
+                          if (isMyPlayer) {
+                            onRenewContract(
+                              player.id,
+                              counterOfferState.demandedWage,
+                              proposedYears,
+                              counterOfferState.demandedBonus
+                            );
+                          } else {
+                            onMakeTransferOffer({
+                              playerId: player.id,
+                              offerType,
+                              upfrontFee: counterOfferState.demandedUpfrontFee,
+                              installmentsFee,
+                              sellOnPercentage: sellOnPct,
+                              proposedWagePerWeek: counterOfferState.demandedWage,
+                              proposedContractYears: proposedYears,
+                              proposedSquadStatus: proposedStatus,
+                              signingBonus: counterOfferState.demandedBonus,
+                              loanOptionToBuyFee,
+                              buyBackClauseFee,
+                            });
+                          }
+                          setCounterOfferState(null);
+                          setStepperOpen(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+                      >
+                        {tr('✓ Accept Counter-Offer & Finalize', '✓ ยอมรับข้อเสนอสวนกลับทันที')}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="adjust-counter-offer-btn"
+                        onClick={() => {
+                          setUpfrontFee(
+                            Math.round((upfrontFee + counterOfferState.demandedUpfrontFee) / 2)
+                          );
+                          setProposedWage(
+                            Math.round((proposedWage + counterOfferState.demandedWage) / 2)
+                          );
+                          setCounterOfferState(null);
+                          setStepperStep(1);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 font-semibold text-[11px] cursor-pointer"
+                      >
+                        {tr('Adjust Terms & Counter', 'ปรับตัวเลขต่อรองใหม่')}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="walk-away-negotiation-btn"
+                        onClick={() => {
+                          setCounterOfferState(null);
+                          setStepperOpen(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer"
+                      >
+                        {tr('Walk Away', 'ล้มโต๊ะเจรจา')}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1380,6 +1518,43 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                   type="button"
                   data-testid="stepper-submit-btn"
                   onClick={() => {
+                    const targetValuation =
+                      player.askingPrice ||
+                      Math.round(player.marketValue * (player.transferListed ? 0.92 : 1.12));
+                    const targetWage = Math.round(player.wagePerWeek * 1.12);
+                    const totalOfferedFee = upfrontFee + Math.round(installmentsFee * 0.85);
+
+                    const feeShortfall =
+                      !isMyPlayer &&
+                      offerType === 'Transfer' &&
+                      totalOfferedFee < targetValuation * 0.95;
+                    const wageShortfall = proposedWage < targetWage * 0.96;
+
+                    if ((feeShortfall || wageShortfall) && negotiationPatience > 30 && !counterOfferState) {
+                      const demandedUpfront = Math.max(
+                        upfrontFee,
+                        Math.round(targetValuation - installmentsFee * 0.85)
+                      );
+                      const demandedWageVal = Math.max(proposedWage, targetWage);
+                      const demandedBonusVal = Math.max(
+                        signingBonus,
+                        Math.round(demandedWageVal * 2.5)
+                      );
+                      setNegotiationPatience((p) => Math.max(15, p - 35));
+                      setCounterOfferState({
+                        demandedUpfrontFee: demandedUpfront,
+                        demandedWage: demandedWageVal,
+                        demandedBonus: demandedBonusVal,
+                        messageEn: isMyPlayer
+                          ? `${player.lastName}'s agent insists on €${demandedWageVal.toLocaleString()}/wk and a €${demandedBonusVal.toLocaleString()} signing bonus to sign immediately.`
+                          : `${playerClub?.shortName || 'Selling club'} & ${player.lastName}'s agent counter with €${(demandedUpfront / 1_000_000).toFixed(2)}M upfront and €${demandedWageVal.toLocaleString()}/wk wage.`,
+                        messageTh: isMyPlayer
+                          ? `เอเย่นต์ของ ${player.lastName} ยื่นคำขาดขอค่าเหนื่อย €${demandedWageVal.toLocaleString()}/สัปดาห์ พร้อมโบนัส €${demandedBonusVal.toLocaleString()} เพื่อปิดดีลทันที`
+                          : `${playerClub?.shortName || 'สโมสรต้นสังกัด'} และเอเย่นต์ยื่นข้อเสนอสวนกลับที่ค่าตัวก้อนแรก €${(demandedUpfront / 1_000_000).toFixed(2)}M และค่าเหนื่อย €${demandedWageVal.toLocaleString()}/สัปดาห์`,
+                      });
+                      return;
+                    }
+
                     if (isMyPlayer) {
                       onRenewContract(player.id, proposedWage, proposedYears, signingBonus);
                     } else {
@@ -1397,6 +1572,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                         buyBackClauseFee,
                       });
                     }
+                    setCounterOfferState(null);
                     setStepperOpen(false);
                   }}
                   className="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold cursor-pointer"

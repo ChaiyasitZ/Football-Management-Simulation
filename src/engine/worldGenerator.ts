@@ -1239,6 +1239,200 @@ export function createInitialWorldState(
     p.traits = derivePlayerTraitsFromAttributes(p);
   }
 
+  // Assign authentic squad shirt numbers (1–99) per club with real-world star numbers
+  const ICONIC_SHIRT_NUMBERS: Record<string, number> = {
+    'david raya': 22,
+    'william saliba': 2,
+    'gabriel magalhaes': 6,
+    'ben white': 4,
+    'jurrien timber': 12,
+    'declan rice': 41,
+    'martin odegaard': 8,
+    'bukayo saka': 7,
+    'gabriel martinelli': 11,
+    'kai havertz': 29,
+    'mikel merino': 23,
+    'riccardo calafiori': 33,
+    'leandro trossard': 19,
+    'ethan nwaneri': 53,
+    'myles lewis-skelly': 49,
+    'ederson moraes': 31,
+    'ruben dias': 3,
+    'josko gvardiol': 24,
+    'john stones': 5,
+    'manuel akanji': 25,
+    'rodri hernandez': 16,
+    'kevin de bruyne': 17,
+    'bernardo silva': 20,
+    'phil foden': 47,
+    'jeremy doku': 11,
+    'savinho moreira': 26,
+    'erling haaland': 9,
+    'mateo kovacic': 8,
+    'alisson becker': 1,
+    'virgil van dijk': 4,
+    'ibrahima konate': 5,
+    'trent alexander-arnold': 66,
+    'andrew robertson': 26,
+    'ryan gravenberch': 38,
+    'alexis mac allister': 10,
+    'dominik szoboszlai': 8,
+    'mohamed salah': 11,
+    'luis diaz': 7,
+    'cody gakpo': 18,
+    'darwin nunez': 9,
+    'curtis jones': 17,
+    'cole palmer': 20,
+    'moises caicedo': 25,
+    'enzo fernandez': 8,
+    'levi colwill': 6,
+    'marc cucurella': 3,
+    'reece james': 24,
+    'nicolas jackson': 15,
+    'pedro neto': 7,
+    'noni madueke': 11,
+    'bruno fernandes': 8,
+    'kobbie mainoo': 37,
+    'amad diallo': 16,
+    'alejandro garnacho': 17,
+    'lisandro martinez': 6,
+    'matthijs de ligt': 4,
+    'rasmus hojlund': 9,
+    'son heung-min': 7,
+    'james maddison': 10,
+    'dejan kulusevski': 21,
+    'cristian romero': 17,
+    'micky van de ven': 37,
+    'dominic solanke': 19,
+    'alexander isak': 14,
+    'bruno guimaraes': 39,
+    'anthony gordon': 10,
+    'sandro tonali': 8,
+    'ollie watkins': 11,
+    'morgan rogers': 27,
+    'emiliano martinez': 23,
+    'thibaut courtois': 1,
+    'antonio rudiger': 22,
+    'eder militao': 3,
+    'dani carvajal': 2,
+    'federico valverde': 8,
+    'jude bellingham': 5,
+    'aurelien tchouameni': 14,
+    'eduardo camavinga': 6,
+    'vinicius junior': 7,
+    'kylian mbappe': 9,
+    'rodrygo goes': 11,
+    'arda guler': 15,
+    'lamine yamal': 19,
+    'pedri gonzalez': 8,
+    'gavi paez': 6,
+    'pau cubarsi': 2,
+    'jules kounde': 23,
+    'alejandro balde': 3,
+    'raphinha belloli': 11,
+    'robert lewandowski': 9,
+    'dani olmo': 20,
+    'frenkie de jong': 21,
+    'julian alvarez': 19,
+    'antoine griezmann': 7,
+    'jan oblak': 13,
+    'nico williams': 10,
+    'harry kane': 9,
+    'jamal musiala': 42,
+    'michael olise': 17,
+    'joshua kimmich': 6,
+    'alphonso davies': 19,
+    'dayot upamecano': 2,
+    'manuel neuer': 1,
+    'florian wirtz': 10,
+    'granit xhaka': 34,
+    'alejandro grimaldo': 20,
+    'jeremie frimpong': 30,
+    'xavi simons': 10,
+    'benjamin sesko': 30,
+    'serhou guirassy': 9,
+    'gregor kobel': 1,
+    'lautaro martinez': 10,
+    'nicolo barella': 23,
+    'alessandro bastoni': 95,
+    'hakan calhanoglu': 20,
+    'marcus thuram': 9,
+    'federico dimarco': 32,
+    'khvicha kvaratskhelia': 77,
+    'romelu lukaku': 11,
+    'scott mctominay': 8,
+    'rafael leao': 10,
+    'christian pulisic': 11,
+    'theo hernandez': 19,
+    'mike maignan': 16,
+    'kenan yildiz': 10,
+    'dusan vlahovic': 9,
+    'ousmane dembele': 10,
+    'bradley barcola': 29,
+    'joao neves': 87,
+    'vitinha ferreira': 17,
+    'achraf hakimi': 2,
+    'nuno mendes': 25,
+    'gianluigi donnarumma': 1,
+    'viktor gyokeres': 9,
+  };
+
+  for (const clubId of Object.keys(clubs)) {
+    const clubSquad = Object.values(players)
+      .filter((p) => p.clubId === clubId)
+      .sort((a, b) => b.currentAbility - a.currentAbility);
+    const usedNums = new Set<number>();
+
+    // Pass 1: Assign known real-world iconic numbers
+    for (const p of clubSquad) {
+      const fullKey = `${p.firstName} ${p.lastName}`.toLowerCase();
+      const iconic = ICONIC_SHIRT_NUMBERS[fullKey];
+      if (iconic && !usedNums.has(iconic)) {
+        p.shirtNumber = iconic;
+        usedNums.add(iconic);
+      }
+    }
+
+    // Pass 2: Assign position-authentic numbers to remaining players
+    const pickAvailable = (preferred: number[]): number => {
+      for (const n of preferred) {
+        if (!usedNums.has(n)) {
+          usedNums.add(n);
+          return n;
+        }
+      }
+      for (let n = 12; n <= 99; n++) {
+        if (!usedNums.has(n)) {
+          usedNums.add(n);
+          return n;
+        }
+      }
+      return 99;
+    };
+
+    for (const p of clubSquad) {
+      if (p.shirtNumber) continue;
+      const pos = p.positions[0];
+      if (pos === 'GK') {
+        p.shirtNumber = pickAvailable([1, 13, 25, 31, 40]);
+      } else if (pos === 'DR' || pos === 'WBR') {
+        p.shirtNumber = pickAvailable([2, 12, 22, 24, 30]);
+      } else if (pos === 'DL' || pos === 'WBL') {
+        p.shirtNumber = pickAvailable([3, 15, 18, 21, 33]);
+      } else if (pos === 'DC') {
+        p.shirtNumber = pickAvailable([4, 5, 6, 14, 15, 23, 26]);
+      } else if (pos === 'DM' || pos === 'MC') {
+        p.shirtNumber = pickAvailable([6, 8, 16, 17, 20, 23, 28]);
+      } else if (pos === 'AMC') {
+        p.shirtNumber = pickAvailable([10, 8, 14, 20, 21, 27]);
+      } else if (pos === 'AMR' || pos === 'AML' || pos === 'MR' || pos === 'ML') {
+        p.shirtNumber = pickAvailable([7, 11, 17, 19, 20, 22, 29]);
+      } else {
+        p.shirtNumber = pickAvailable([9, 11, 19, 18, 27, 29]);
+      }
+    }
+  }
+
   // Create default Mentoring Group for the controlled club (Veteran >= 25 -> U21 prospects)
   const controlledPlayers = Object.values(players).filter((p) => p.clubId === controlledClub.id);
   const mentorCandidates = controlledPlayers

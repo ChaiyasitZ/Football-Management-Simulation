@@ -28,6 +28,7 @@ interface SquadViewProps {
   onAutoRegisterSquad?: () => void;
   onTogglePlayInReserves?: (playerId: string) => void;
   onUpdateSquadStatus?: (playerId: string, status: Player['squadStatus']) => void;
+  onChangeShirtNumber?: (playerId: string, shirtNumber: number) => void;
 }
 
 export function getPositionGroup(pos: string): PositionGroup {
@@ -46,6 +47,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
   onAutoRegisterSquad,
   onTogglePlayInReserves,
   onUpdateSquadStatus,
+  onChangeShirtNumber,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -411,6 +413,118 @@ export const SquadView: React.FC<SquadViewProps> = ({
             </div>
           </div>
 
+          {/* Visual 2D Pitch Depth Chart (FM27 On-Pitch 1st / 2nd / U21 Stack) */}
+          <div
+            data-testid="visual-pitch-depth-chart"
+            className="relative w-full h-[420px] rounded-xl overflow-hidden border border-slate-700 bg-[#0d4f38] select-none"
+          >
+            <svg viewBox="0 0 100 68" preserveAspectRatio="none" className="absolute inset-0 w-full h-full pointer-events-none">
+              {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
+                <rect
+                  key={i}
+                  x={i * 12.5}
+                  y={0}
+                  width={12.5}
+                  height={68}
+                  fill={i % 2 === 0 ? '#0c4a34' : '#0f543c'}
+                />
+              ))}
+              <rect x="2" y="2" width="96" height="64" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+              <line x1="50" y1="2" x2="50" y2="66" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+              <circle cx="50" cy="34" r="9" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+              <rect x="2" y="16" width="14" height="36" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+              <rect x="84" y="16" width="14" height="36" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.5" />
+            </svg>
+
+            {(
+              [
+                { code: 'GK', left: '10%', top: '50%' },
+                { code: 'DL', left: '27%', top: '18%' },
+                { code: 'DC', left: '26%', top: '50%' },
+                { code: 'DR', left: '27%', top: '82%' },
+                { code: 'DM', left: '45%', top: '64%' },
+                { code: 'MC', left: '52%', top: '36%' },
+                { code: 'AMC', left: '68%', top: '50%' },
+                { code: 'AML', left: '78%', top: '18%' },
+                { code: 'AMR', left: '78%', top: '82%' },
+                { code: 'ST', left: '89%', top: '50%' },
+              ] as const
+            ).map((posNode) => {
+              const zone =
+                depthChart.find((z) => z.code === posNode.code) ||
+                depthChart.find((z) => z.code.includes(posNode.code));
+              if (!zone) return null;
+              const p1 = zone.firstChoice;
+              const p2 = zone.backups[0];
+              const p3 = zone.youths[0] || zone.backups[1];
+              const borderCol =
+                zone.grade === 'strong'
+                  ? 'border-emerald-500/70'
+                  : zone.grade === 'balanced'
+                    ? 'border-sky-500/70'
+                    : 'border-amber-500/80';
+
+              return (
+                <div
+                  key={posNode.code}
+                  style={{ left: posNode.left, top: posNode.top }}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 w-36 bg-slate-950/95 border ${borderCol} rounded-lg p-1.5 shadow-xl text-[10px] space-y-1`}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-0.5 font-mono">
+                    <span className="font-bold text-emerald-400">{posNode.code}</span>
+                    <span className="text-slate-400">{tr(zone.gradeLabelEn, zone.gradeLabelTh)}</span>
+                  </div>
+                  {p1 ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlayer(p1.id)}
+                      className="w-full flex items-center justify-between text-left hover:text-emerald-300 text-white font-semibold truncate cursor-pointer"
+                    >
+                      <span className="truncate">
+                        1. #{p1.shirtNumber || 1} {p1.lastName}
+                      </span>
+                      <span className="font-mono text-emerald-400 ml-1">
+                        {(p1.currentAbility / 10).toFixed(1)}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="text-rose-400 italic">1. Vacant</div>
+                  )}
+                  {p2 ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlayer(p2.id)}
+                      className="w-full flex items-center justify-between text-left hover:text-sky-300 text-slate-300 truncate cursor-pointer"
+                    >
+                      <span className="truncate">
+                        2. #{p2.shirtNumber || 12} {p2.lastName}
+                      </span>
+                      <span className="font-mono text-sky-400 ml-1">
+                        {(p2.currentAbility / 10).toFixed(1)}
+                      </span>
+                    </button>
+                  ) : (
+                    <div className="text-amber-400/80">2. Need Backup</div>
+                  )}
+                  {p3 && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlayer(p3.id)}
+                      className="w-full flex items-center justify-between text-left hover:text-amber-200 text-amber-300/90 truncate cursor-pointer"
+                    >
+                      <span className="truncate">
+                        3. #{p3.shirtNumber || 28} {p3.lastName}
+                      </span>
+                      <span className="font-mono text-amber-300 ml-1">
+                        {(p3.currentAbility / 10).toFixed(1)}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {depthChart.map((zone) => {
               const gradeBadgeClass =
@@ -543,6 +657,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-800 text-[11px] text-slate-400 bg-slate-950/60">
+                <th className="py-2.5 px-2.5 text-center">#No</th>
                 <th className="py-2.5 px-3">{tr('Reg (25)', 'ลงทะเบียน')}</th>
                 <th className="py-2.5 px-3">{tr('Squad Role / U23', 'สถานะลงสนาม / ทีมสำรอง')}</th>
                 <th className="py-2.5 px-3">{tr('Pos', 'ตำแหน่ง')}</th>
@@ -601,6 +716,23 @@ export const SquadView: React.FC<SquadViewProps> = ({
                     onClick={() => onSelectPlayer(p.id)}
                     className="hover:bg-slate-800/60 transition-colors cursor-pointer"
                   >
+                    {/* Squad Shirt Number (1-99) Selector */}
+                    <td className="py-2.5 px-2 text-center font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                      <select
+                        aria-label={`Squad number for ${p.firstName} ${p.lastName}`}
+                        data-testid={`shirt-number-select-${p.id}`}
+                        value={p.shirtNumber || 1}
+                        onChange={(e) => onChangeShirtNumber?.(p.id, Number(e.target.value))}
+                        className="bg-slate-950 border border-slate-800 hover:border-emerald-500/50 rounded px-1.5 py-0.5 text-xs font-mono font-bold text-emerald-400 cursor-pointer"
+                      >
+                        {Array.from({ length: 99 }, (_, i) => i + 1).map((num) => (
+                          <option key={num} value={num}>
+                            #{num}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+
                     {/* Registration Toggle */}
                     <td className="py-2.5 px-3 font-mono text-[11px]" onClick={(e) => e.stopPropagation()}>
                       <button

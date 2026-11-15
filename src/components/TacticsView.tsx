@@ -76,7 +76,7 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
   const club = world.clubs[world.controlledClubId];
   const [editingSecondary, setEditingSecondary] = useState(false);
   const [phaseTab, setPhaseTab] = useState<PhaseTab>('in_possession');
-  const [pitchShapeMode, setPitchShapeMode] = useState<TacticalShapeMode>('base');
+  const [pitchShapeMode, setPitchShapeMode] = useState<TacticalShapeMode | 'dual_ip_oop'>('base');
   const [showChemistryLinks, setShowChemistryLinks] = useState(true);
   const activeTactic = editingSecondary ? club.secondaryTactic : club.primaryTactic;
 
@@ -86,7 +86,11 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
   const alerts = analyzeTacticalRisks(activeTactic, world.players);
   const synergy = evaluateAttributeSynergy(activeTactic, world.players);
-  const phaseCoords = computeTacticalPhaseCoordinates(activeTactic, pitchShapeMode);
+  const effectiveSingleMode: TacticalShapeMode =
+    pitchShapeMode === 'dual_ip_oop' ? 'in_possession' : pitchShapeMode;
+  const phaseCoords = computeTacticalPhaseCoordinates(activeTactic, effectiveSingleMode);
+  const ipCoords = computeTacticalPhaseCoordinates(activeTactic, 'in_possession');
+  const oopCoords = computeTacticalPhaseCoordinates(activeTactic, 'out_of_possession');
   const chemistryLinks = computeTacticalChemistryLinks(activeTactic, world.players);
 
   const handleFormationChange = (newFormation: FormationId) => {
@@ -481,33 +485,39 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
             </button>
           </div>
 
-          {/* 3-Mode Pitch Shape Switcher (Base / In-Possession / Out-of-Possession) */}
-          <div className="grid grid-cols-3 gap-1 p-1 mb-3 bg-slate-950 rounded-lg border border-slate-800">
+          {/* 4-Mode Pitch Shape Switcher (Base / In-Possession / Out-of-Possession / Dual IP vs OOP) */}
+          <div className="grid grid-cols-4 gap-1 p-1 mb-3 bg-slate-950 rounded-lg border border-slate-800">
             {[
               {
-                id: 'base' as TacticalShapeMode,
-                labelEn: '1. Base Shape',
-                labelTh: '1. ผังพื้นฐาน (Base)',
+                id: 'base' as const,
+                labelEn: '1. Base',
+                labelTh: '1. ผังหลัก',
               },
               {
-                id: 'in_possession' as TacticalShapeMode,
-                labelEn: '2. In-Possession',
-                labelTh: '2. ตอนครองบอลบุก',
+                id: 'in_possession' as const,
+                labelEn: '2. In-Poss (IP)',
+                labelTh: '2. ครองบอล (IP)',
               },
               {
-                id: 'out_of_possession' as TacticalShapeMode,
-                labelEn: '3. Out-of-Poss',
-                labelTh: '3. ตอนถอยตั้งรับ',
+                id: 'out_of_possession' as const,
+                labelEn: '3. Out-Poss (OOP)',
+                labelTh: '3. ตั้งรับ (OOP)',
+              },
+              {
+                id: 'dual_ip_oop' as const,
+                labelEn: '4. Dual IP/OOP',
+                labelTh: '4. เทียบคู่ IP/OOP',
               },
             ].map((m) => (
               <button
                 key={m.id}
                 type="button"
+                data-testid={`pitch-mode-${m.id}`}
                 onClick={() => {
                   soundService.playClick();
                   setPitchShapeMode(m.id);
                 }}
-                className={`py-1.5 px-2 rounded text-[11px] font-medium transition-colors cursor-pointer truncate ${
+                className={`py-1.5 px-1.5 rounded text-[11px] font-medium transition-colors cursor-pointer truncate ${
                   pitchShapeMode === m.id
                     ? 'bg-emerald-500 text-slate-950 font-semibold'
                     : 'text-slate-400 hover:text-white'
@@ -518,7 +528,113 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
             ))}
           </div>
 
-          {/* Interactive SVG/DOM Pitch */}
+          {pitchShapeMode === 'dual_ip_oop' ? (
+            <div
+              data-testid="dual-ip-oop-pitch"
+              className="grid grid-cols-2 gap-2.5 w-full aspect-[3/4]"
+            >
+              {(
+                [
+                  {
+                    key: 'ip',
+                    title: tr('IN POSSESSION (IP)', 'เมื่อครองบอลบุก (IP)'),
+                    sub: tr('Attacking Phase Shape', 'การขยับขึ้นเกมรุก'),
+                    coords: ipCoords,
+                    accent: '#10b981',
+                  },
+                  {
+                    key: 'oop',
+                    title: tr('OUT OF POSSESSION (OOP)', 'เมื่อถอยตั้งรับ (OOP)'),
+                    sub: tr('Defensive Block Shape', 'การถอยแพ็กเกมรับ'),
+                    coords: oopCoords,
+                    accent: '#38bdf8',
+                  },
+                ] as const
+              ).map((panel) => (
+                <div
+                  key={panel.key}
+                  className="bg-slate-950 border border-slate-800 rounded-xl p-2 flex flex-col overflow-hidden"
+                >
+                  <div className="mb-1.5 pb-1 border-b border-slate-800">
+                    <div
+                      className="text-xs font-display font-bold uppercase truncate"
+                      style={{ color: panel.accent }}
+                    >
+                      {panel.title}
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">{panel.sub}</div>
+                  </div>
+                  <div className="flex-1 min-h-0 relative rounded-lg overflow-hidden border border-slate-800 bg-[#0d4f38]">
+                    <svg viewBox="0 0 150 220" className="w-full h-full">
+                      <rect x="6" y="6" width="138" height="208" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" />
+                      <line x1="6" y1="110" x2="144" y2="110" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" />
+                      <circle cx="75" cy="110" r="20" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" />
+                      <rect x="35" y="6" width="80" height="30" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" />
+                      <rect x="35" y="184" width="80" height="30" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.2" />
+                      {panel.coords.map((coord, idx) => {
+                        const slot = activeTactic.lineup[idx];
+                        const p = slot?.playerId ? world.players[slot.playerId] : null;
+                        const bx = (coord.baseX / 100) * 150;
+                        const by = (coord.baseY / 100) * 220;
+                        const tx = (coord.x / 100) * 150;
+                        const ty = (coord.y / 100) * 220;
+                        const shirtNum = p?.shirtNumber || idx + 1;
+                        return (
+                          <g
+                            key={`${panel.key}_${idx}`}
+                            onClick={() => setSelectedSlotIdx(idx)}
+                            className="cursor-pointer"
+                          >
+                            {Math.hypot(tx - bx, ty - by) > 3 && (
+                              <line
+                                x1={bx}
+                                y1={by}
+                                x2={tx}
+                                y2={ty}
+                                stroke={panel.accent}
+                                strokeOpacity="0.7"
+                                strokeWidth="1.2"
+                                strokeDasharray="2.5 2"
+                              />
+                            )}
+                            <circle
+                              cx={tx}
+                              cy={ty}
+                              r="7.2"
+                              fill={club.primaryColor}
+                              stroke={selectedSlotIdx === idx ? '#facc15' : '#ffffff'}
+                              strokeWidth={selectedSlotIdx === idx ? '1.8' : '1'}
+                            />
+                            <text
+                              x={tx}
+                              y={ty + 2.4}
+                              textAnchor="middle"
+                              fontSize="6.5"
+                              fontWeight="bold"
+                              fill="#ffffff"
+                            >
+                              {shirtNum}
+                            </text>
+                            <text
+                              x={tx}
+                              y={ty + 13.5}
+                              textAnchor="middle"
+                              fontSize="5.8"
+                              fontWeight="bold"
+                              fill="#f8fafc"
+                            >
+                              {p ? p.lastName.slice(0, 8) : slot.position}
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+          /* Interactive SVG/DOM Pitch */
           <div className="relative w-full aspect-[3/4] rounded-xl overflow-hidden border border-slate-700 bg-[#0d4f38] select-none">
             {/* Pitch Markings + Tactical Phase Overlays + Chemistry Links SVG */}
             <svg viewBox="0 0 300 400" className="absolute inset-0 w-full h-full pointer-events-none">
@@ -762,8 +878,11 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                       </span>
                     )}
                   </div>
-                  <div className="mt-1 px-2 py-0.5 rounded bg-slate-950/90 text-[11px] font-medium text-white whitespace-nowrap border border-slate-800">
-                    {p ? p.lastName : tr('Empty', 'ว่าง')}
+                  <div className="mt-1 px-2 py-0.5 rounded bg-slate-950/90 text-[11px] font-medium text-white whitespace-nowrap border border-slate-800 flex items-center gap-1">
+                    {p?.shirtNumber && (
+                      <span className="font-mono text-emerald-400 font-bold">#{p.shirtNumber}</span>
+                    )}
+                    <span>{p ? p.lastName : tr('Empty', 'ว่าง')}</span>
                   </div>
                   <div
                     className={`text-[10px] px-1.5 rounded truncate max-w-[105px] ${
@@ -780,6 +899,7 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
               );
             })}
           </div>
+          )}
 
           {/* Chemistry Partnerships Legend & Summary */}
           {showChemistryLinks && (

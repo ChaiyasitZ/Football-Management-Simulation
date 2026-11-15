@@ -592,31 +592,16 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* Left readability gradient while keeping right-hand floating footballs vivid */}
       <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent pointer-events-none" />
 
-      {/* SVG Alpha-Key Filter: converts pure black JPEG background to true transparency while keeping dark navy shield interior opaque */}
-      <svg width="0" height="0" className="absolute pointer-events-none" aria-hidden="true">
-        <defs>
-          <filter id="touchline-logo-key" colorInterpolationFilters="sRGB">
-            <feColorMatrix
-              type="matrix"
-              values="1 0 0 0 0
-                      0 1 0 0 0
-                      0 0 1 0 0
-                      6 9 9 0 -0.45"
-            />
-          </filter>
-        </defs>
-      </svg>
-
       {/* TOP BAR: Broadcast Status Pill + Cloud Save + Settings Button */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
         <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/85 border border-slate-800 backdrop-blur-md text-xs font-mono text-slate-300">
           <img
-            src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+            src="/assets/aistudio/touchline_logo.webp"
             alt="TOUCHLINE"
             width={28}
-            height={28}
-            style={{ filter: 'url(#touchline-logo-key)' }}
-            className="w-7 h-7 object-contain"
+            height={20}
+            decoding="async"
+            className="w-7 h-5 object-contain"
           />
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           <span className="font-semibold text-white">TOUCHLINE 26</span>
@@ -682,20 +667,16 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </span>
             </div>
 
-            <div className="relative w-full max-w-[440px] -my-6 -ml-4 flex items-center justify-start pointer-events-none">
+            <div className="relative w-full max-w-[380px] flex items-center justify-start pointer-events-none">
               <img
-                src="/assets/aistudio/Gemini_Generated_Image_1u4yva1u4yva1u4y_6e01f4dd.jpg"
+                src="/assets/aistudio/touchline_logo.webp"
                 alt="TOUCHLINE — The World Is Your Pitch"
-                width={440}
-                height={290}
+                width={380}
+                height={263}
                 fetchPriority="high"
                 decoding="async"
                 data-testid="title-hero-logo"
-                style={{
-                  filter:
-                    'url(#touchline-logo-key) drop-shadow(0 10px 28px rgba(16, 185, 129, 0.32))',
-                }}
-                className="w-full h-60 sm:h-68 object-contain object-left select-none"
+                className="w-full h-auto max-h-52 sm:max-h-56 object-contain object-left drop-shadow-[0_10px_28px_rgba(16,185,129,0.28)] select-none"
               />
             </div>
 

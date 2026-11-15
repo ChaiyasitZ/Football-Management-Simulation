@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Club,
   Fixture,
@@ -131,6 +131,8 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   const [lastShoutMinute, setLastShoutMinute] = useState<number>(-20);
   const [activeShotTooltip, setActiveShotTooltip] = useState<MatchEvent | null>(null);
   const [showInstructionsDrawer, setShowInstructionsDrawer] = useState<boolean>(false);
+  const [tileTeamFilter, setTileTeamFilter] = useState<'both' | 'home' | 'away'>('both');
+  const [postMatchTalkGiven, setPostMatchTalkGiven] = useState<string | null>(null);
 
   // 5 Swappable Analytics Tiles persisted in localStorage
   const [tiles, setTiles] = useState<
@@ -171,45 +173,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     });
   };
 
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const simStateRef = useRef<{
-    minute: number;
-    ballX: number;
-    ballY: number;
-    targetBallX: number;
-    targetBallY: number;
-    flashTimer: number;
-    homeColor: string;
-    awayColor: string;
-    homeCoords: [number, number][];
-    awayCoords: [number, number][];
-  }>({
-    minute: 0,
-    ballX: 50,
-    ballY: 50,
-    targetBallX: 50,
-    targetBallY: 50,
-    flashTimer: 0,
-    homeColor: homeClub.primaryColor,
-    awayColor: awayClub.primaryColor,
-    homeCoords: [],
-    awayCoords: [],
-  });
-
-  // Compute true formation coordinates from club tactics
-  useEffect(() => {
-    const homeCoords: [number, number][] = homeClub.primaryTactic.lineup.map((slot) => [
-      Math.max(6, Math.min(68, (100 - slot.y) * 0.72)),
-      Math.max(10, Math.min(90, slot.x)),
-    ]);
-    const awayCoords: [number, number][] = awayClub.primaryTactic.lineup.map((slot) => [
-      Math.max(32, Math.min(94, 100 - (100 - slot.y) * 0.72)),
-      Math.max(10, Math.min(90, 100 - slot.x)),
-    ]);
-    simStateRef.current.homeCoords = homeCoords;
-    simStateRef.current.awayCoords = awayCoords;
-  }, [homeClub.primaryTactic.lineup, awayClub.primaryTactic.lineup]);
-
   // Sync when lockedFixtureId or targetFixture completion status changes
   useEffect(() => {
     if (!targetFixture) return;
@@ -237,9 +200,8 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       setSelectedSubOutId(null);
       setLiveShouts([]);
       setLastShoutMinute(-20);
+      setPostMatchTalkGiven(null);
     }
-    simStateRef.current.homeColor = homeClub.primaryColor;
-    simStateRef.current.awayColor = awayClub.primaryColor;
   }, [lockedFixtureId, targetFixture?.status, targetFixture?.result]);
 
   // Pre-compute match simulation when kickoff starts
@@ -282,19 +244,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           return endMinute;
         }
         const nextMin = prev + 1;
-        simStateRef.current.minute = nextMin;
-
         const ev = simResult.events.find((e) => e.minute === nextMin);
-        if (ev) {
-          simStateRef.current.targetBallX = ev.pitchX;
-          simStateRef.current.targetBallY = ev.pitchY;
-          if (ev.eventType === 'Goal') {
-            simStateRef.current.flashTimer = 0.6;
-            soundService.playGoalCheer();
-          }
-        } else {
-          simStateRef.current.targetBallX = 25 + ((nextMin * 19) % 50);
-          simStateRef.current.targetBallY = 20 + ((nextMin * 29) % 60);
+        if (ev && ev.eventType === 'Goal') {
+          soundService.playGoalCheer();
         }
 
         // Pause at Half-Time (45') if team talk not yet given
@@ -321,118 +273,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       onCompleteMatch(targetFixture.id, simResult);
     }
   }, [currentMinute, simResult, targetFixture, committedToWorld, onCompleteMatch]);
-
-  // Isolated 60fps 2D Tactical Pitch Canvas Loop
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    let animId = 0;
-    let lastTime = performance.now();
-
-    const fallbackHome: [number, number][] = [
-      [8, 50], [22, 20], [20, 38], [20, 62], [22, 80],
-      [38, 30], [36, 50], [38, 70], [58, 22], [58, 78], [66, 50],
-    ];
-    const fallbackAway: [number, number][] = [
-      [92, 50], [78, 20], [80, 38], [80, 62], [78, 80],
-      [62, 30], [64, 50], [62, 70], [42, 22], [42, 78], [34, 50],
-    ];
-
-    const renderPitch = (now: number) => {
-      const rawDt = (now - lastTime) / 1000;
-      const dt = Math.min(rawDt, 0.05);
-      lastTime = now;
-
-      const w = canvas.width;
-      const h = canvas.height;
-      const st = simStateRef.current;
-
-      st.ballX += (st.targetBallX - st.ballX) * Math.min(1, dt * 6);
-      st.ballY += (st.targetBallY - st.ballY) * Math.min(1, dt * 6);
-      if (st.flashTimer > 0) {
-        st.flashTimer = Math.max(0, st.flashTimer - dt);
-      }
-
-      const stripeCount = 10;
-      const stripeW = w / stripeCount;
-      for (let i = 0; i < stripeCount; i++) {
-        ctx.fillStyle = i % 2 === 0 ? '#0c4a34' : '#0f543c';
-        ctx.fillRect(i * stripeW, 0, stripeW, h);
-      }
-
-      if (st.flashTimer > 0) {
-        ctx.fillStyle = `rgba(250, 204, 21, ${st.flashTimer * 0.35})`;
-        ctx.fillRect(0, 0, w, h);
-      }
-
-      const pad = 16;
-      const pw = w - pad * 2;
-      const ph = h - pad * 2;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(pad, pad, pw, ph);
-
-      ctx.beginPath();
-      ctx.moveTo(w / 2, pad);
-      ctx.lineTo(w / 2, h - pad);
-      ctx.stroke();
-
-      ctx.beginPath();
-      ctx.arc(w / 2, h / 2, 32, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.strokeRect(pad, h * 0.22, pw * 0.14, h * 0.56);
-      ctx.strokeRect(w - pad - pw * 0.14, h * 0.22, pw * 0.14, h * 0.56);
-
-      const homeBaseCoords = st.homeCoords.length === 11 ? st.homeCoords : fallbackHome;
-      const awayBaseCoords = st.awayCoords.length === 11 ? st.awayCoords : fallbackAway;
-
-      const shiftX = (st.ballX - 50) * 0.22;
-      const shiftY = (st.ballY - 50) * 0.15;
-
-      homeBaseCoords.forEach(([bx, by], idx) => {
-        const px = pad + ((Math.max(4, Math.min(95, bx + (idx === 0 ? 0 : shiftX)))) / 100) * pw;
-        const py = pad + ((Math.max(6, Math.min(94, by + (idx === 0 ? 0 : shiftY)))) / 100) * ph;
-        ctx.fillStyle = st.homeColor;
-        ctx.strokeStyle = '#0f172a';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(px, py, 6.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      });
-
-      awayBaseCoords.forEach(([bx, by], idx) => {
-        const px = pad + ((Math.max(5, Math.min(96, bx + (idx === 0 ? 0 : shiftX)))) / 100) * pw;
-        const py = pad + ((Math.max(6, Math.min(94, by + (idx === 0 ? 0 : shiftY)))) / 100) * ph;
-        ctx.fillStyle = st.awayColor;
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(px, py, 6.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      });
-
-      const ballPx = pad + (st.ballX / 100) * pw;
-      const ballPy = pad + (st.ballY / 100) * ph;
-      ctx.fillStyle = '#facc15';
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(ballPx, ballPy, 4.8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      animId = requestAnimationFrame(renderPitch);
-    };
-
-    animId = requestAnimationFrame(renderPitch);
-    return () => cancelAnimationFrame(animId);
-  }, []);
 
   const handleStartOrTogglePlay = () => {
     soundService.playWhistle();
@@ -760,7 +600,52 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     }
   };
 
-  // Render Vertical Formation Pitch for Left/Right Flanks (FM27 IP Pitch)
+  // Track sent-off players up to currentMinute so 10-man impact is reflected on pitch and formations
+  const sentOffPlayerIds = new Set(
+    visibleEvents
+      .filter((e) => e.eventType === 'RedCard' && e.playerId)
+      .map((e) => e.playerId!)
+  );
+
+  const getShortRoleCode = (role: string): string => {
+    const map: Record<string, string> = {
+      Goalkeeper: 'GK',
+      'Sweeper Keeper': 'SK',
+      'Full Back': 'FB',
+      'Wing Back': 'WB',
+      'Complete Wing Back': 'CWB',
+      'Inverted Wing Back': 'IWB',
+      'Central Defender': 'CD',
+      'Ball Playing Defender': 'BPD',
+      'No-Nonsense Centre Back': 'NCB',
+      'Defensive Midfielder': 'DM',
+      Anchor: 'ANC',
+      'Half Back': 'HB',
+      'Deep-Lying Playmaker': 'DLP',
+      'Central Midfielder': 'CM',
+      'Box-to-Box Midfielder': 'BBM',
+      'Ball Winning Midfielder': 'BWM',
+      'Advanced Playmaker': 'AP',
+      Mezzala: 'MEZ',
+      Carrilero: 'CAR',
+      'Attacking Midfielder': 'AM',
+      Trequartista: 'TRQ',
+      'Shadow Striker': 'SS',
+      Winger: 'W',
+      'Inverted Winger': 'IW',
+      'Inside Forward': 'IF',
+      'Wide Playmaker': 'WP',
+      'False 9': 'F9',
+      'Deep-Lying Forward': 'DLF',
+      'Advanced Forward': 'AF',
+      'Pressing Forward': 'PF',
+      'Target Forward': 'TF',
+      'Complete Forward': 'CF',
+    };
+    return map[role] || role.slice(0, 3).toUpperCase();
+  };
+
+  // Render Vertical Formation Pitch for Left/Right Flanks (FM27 IP Pitch with Jersey Silhouette & Real Numbers)
   const renderVerticalFormationPitch = (club: Club, side: 'home' | 'away') => {
     const isMyTeam = club.id === myClub.id;
     const phaseCoords = computeTacticalPhaseCoordinates(
@@ -793,7 +678,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           <ClubKitJersey club={club} variant={side} size="sm" />
         </div>
 
-        {/* Vertical Pitch SVG with 11 Players */}
+        {/* Vertical Pitch SVG with 11 Players in Kit Jerseys */}
         <div className="flex-1 min-h-0 relative rounded-lg overflow-hidden border border-slate-800 bg-[#0c4a34]">
           <svg viewBox="0 0 68 100" preserveAspectRatio="none" className="w-full h-full">
             {[0, 1, 2, 3, 4, 5, 6, 7].map((idx) => (
@@ -831,12 +716,16 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               const hasYellow = visibleEvents.some(
                 (e) => e.eventType === 'YellowCard' && e.playerId === p.id
               );
+              const isSentOff = sentOffPlayerIds.has(p.id);
+              const shirtNum = p.shirtNumber || idx + 1;
+              const roleShort = getShortRoleCode(slot.role);
 
               return (
                 <g
                   key={p.id}
+                  opacity={isSentOff ? 0.45 : 1}
                   onClick={() => {
-                    if (isMyTeam && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute) {
+                    if (isMyTeam && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute && !isSentOff) {
                       setSelectedSubOutId(selectedSubOutId === p.id ? null : p.id);
                     } else {
                       onSelectPlayer(p.id);
@@ -844,49 +733,77 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   }}
                   className="cursor-pointer"
                 >
-                  {/* Shirt Circle */}
-                  <circle
-                    cx={cx}
-                    cy={cy}
-                    r="4.2"
-                    fill={club.primaryColor}
+                  {/* Mini Kit Jersey Silhouette */}
+                  <path
+                    d={`M ${cx - 2.3} ${cy - 3.8} L ${cx - 4.4} ${cy - 2.2} L ${cx - 3.6} ${cy - 0.5} L ${cx - 2.6} ${cy - 1.1} L ${cx - 2.6} ${cy + 3.4} L ${cx + 2.6} ${cy + 3.4} L ${cx + 2.6} ${cy - 1.1} L ${cx + 3.6} ${cy - 0.5} L ${cx + 4.4} ${cy - 2.2} L ${cx + 2.3} ${cy - 3.8} Z`}
+                    fill={idx === 0 ? '#f59e0b' : club.primaryColor}
                     stroke={selectedSubOutId === p.id ? '#facc15' : '#ffffff'}
-                    strokeWidth={selectedSubOutId === p.id ? '1.2' : '0.7'}
+                    strokeWidth={selectedSubOutId === p.id ? '1.1' : '0.6'}
                   />
+                  {/* Real Squad Number */}
                   <text
                     x={cx}
                     y={cy + 1.2}
                     textAnchor="middle"
-                    fontSize="3.2"
+                    fontSize="3.1"
                     fontWeight="bold"
                     fill="#ffffff"
                   >
-                    {idx + 1}
+                    {shirtNum}
                   </text>
-                  {/* Rating Pill */}
+                  {/* Role Code Pill (Left) */}
                   <rect
-                    x={cx + 2.6}
+                    x={cx - 9.2}
+                    y={cy - 5.2}
+                    width="6.4"
+                    height="3.4"
+                    rx="0.9"
+                    fill="#0f172a"
+                    stroke="#334155"
+                    strokeWidth="0.35"
+                  />
+                  <text
+                    x={cx - 6.0}
+                    y={cy - 2.8}
+                    textAnchor="middle"
+                    fontSize="2.1"
+                    fontWeight="bold"
+                    fill="#94a3b8"
+                  >
+                    {roleShort}
+                  </text>
+                  {/* Rating Pill (Right) */}
+                  <rect
+                    x={cx + 2.8}
                     y={cy - 5.2}
                     width="7.2"
                     height="3.6"
                     rx="1"
-                    fill={rating >= 7.2 ? '#10b981' : rating >= 6.5 ? '#1e293b' : '#f59e0b'}
+                    fill={
+                      isSentOff
+                        ? '#e11d48'
+                        : rating >= 7.4
+                          ? '#10b981'
+                          : rating >= 6.5
+                            ? '#1e293b'
+                            : '#f59e0b'
+                    }
                   />
                   <text
-                    x={cx + 6.2}
+                    x={cx + 6.4}
                     y={cy - 2.6}
                     textAnchor="middle"
                     fontSize="2.5"
                     fontWeight="bold"
                     fill="#ffffff"
                   >
-                    {currentMinute === 0 ? '6.8' : rating.toFixed(1)}
+                    {isSentOff ? 'RED' : currentMinute === 0 ? '6.8' : rating.toFixed(1)}
                   </text>
                   {/* Condition Bar */}
-                  <rect x={cx - 4} y={cy + 4.6} width="8" height="1.1" rx="0.5" fill="#0f172a" />
+                  <rect x={cx - 4} y={cy + 4.2} width="8" height="1.1" rx="0.5" fill="#0f172a" />
                   <rect
                     x={cx - 4}
-                    y={cy + 4.6}
+                    y={cy + 4.2}
                     width={(liveCond / 100) * 8}
                     height="1.1"
                     rx="0.5"
@@ -895,7 +812,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   {/* Player Surname */}
                   <text
                     x={cx}
-                    y={cy + 8.3}
+                    y={cy + 7.9}
                     textAnchor="middle"
                     fontSize="2.7"
                     fontWeight="700"
@@ -903,7 +820,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   >
                     {p.lastName.slice(0, 8)}
                     {goalsCount > 0 ? ' ⚽' : ''}
-                    {hasYellow ? ' 🟨' : ''}
+                    {isSentOff ? ' 🟥' : hasYellow ? ' 🟨' : ''}
                   </text>
                 </g>
               );
@@ -930,12 +847,15 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       { id: 'LATEST_SCORES', labelEn: 'LATEST SCORES', labelTh: 'ผลคู่อื่นสด (Latest Scores)' },
     ];
 
+    const supportsFilter =
+      activeType === 'HEAT_MAP' || activeType === 'PASS_MAP' || activeType === 'SHOT_MAP';
+
     return (
       <div
         data-testid={`fm27-tile-${tileIndex + 1}`}
         className={`bg-slate-900/95 border border-slate-800 rounded-xl p-2.5 flex flex-col min-h-0 overflow-hidden ${containerClassName}`}
       >
-        {/* Tile Header with Swappable Dropdown */}
+        {/* Tile Header with Swappable Dropdown + Home/Away/Both Filter */}
         <div className="flex items-center justify-between gap-1.5 pb-1.5 mb-1.5 border-b border-slate-800/90 shrink-0">
           <select
             aria-label={`Select view for Tile ${tileIndex + 1}`}
@@ -950,10 +870,35 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               </option>
             ))}
           </select>
-          {tileIndex < 3 && (
-            <span className="text-[10px] font-mono text-slate-400 shrink-0">
-              {homeClub.shortName} vs {awayClub.shortName}
-            </span>
+          {supportsFilter ? (
+            <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded p-0.5 shrink-0">
+              {(
+                [
+                  { id: 'both', label: 'ALL' },
+                  { id: 'home', label: homeClub.shortName.slice(0, 3).toUpperCase() },
+                  { id: 'away', label: awayClub.shortName.slice(0, 3).toUpperCase() },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setTileTeamFilter(f.id)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer ${
+                    tileTeamFilter === f.id
+                      ? 'bg-emerald-500 text-slate-950 font-bold'
+                      : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            tileIndex < 3 && (
+              <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                {homeClub.shortName} vs {awayClub.shortName}
+              </span>
+            )
           )}
         </div>
 
@@ -963,22 +908,43 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             const cols = 6;
             const rows = 4;
             const homePoss = simResult ? simResult.homeStats.possession : 52;
+            const focusClub = tileTeamFilter === 'away' ? awayClub : homeClub;
+            const focusCoords = computeTacticalPhaseCoordinates(
+              focusClub.primaryTactic,
+              'in_possession'
+            );
             return (
               <div className="h-full flex flex-col justify-between">
                 <svg viewBox="0 0 120 72" className="w-full h-full max-h-32 rounded border border-slate-800 bg-slate-950">
+                  <defs>
+                    <radialGradient id={`heatGrad_${tileIndex}`} cx="50%" cy="50%" r="50%">
+                      <stop offset="0%" stopColor="#ef4444" stopOpacity="0.65" />
+                      <stop offset="55%" stopColor="#f59e0b" stopOpacity="0.35" />
+                      <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+                    </radialGradient>
+                  </defs>
                   {Array.from({ length: rows }).map((_, r) =>
                     Array.from({ length: cols }).map((__, c) => {
                       const seedVal = ((r + 1) * 17 + (c + 1) * 31 + currentMinute) % 100;
-                      const intensity =
-                        c < 3
-                          ? (homePoss / 100) * (0.35 + (seedVal % 55) / 100)
-                          : ((100 - homePoss) / 100) * (0.35 + (seedVal % 55) / 100);
+                      const baseRatio =
+                        tileTeamFilter === 'home'
+                          ? c >= 2
+                            ? 0.56
+                            : 0.34
+                          : tileTeamFilter === 'away'
+                            ? c <= 3
+                              ? 0.56
+                              : 0.34
+                            : c < 3
+                              ? homePoss / 100
+                              : (100 - homePoss) / 100;
+                      const intensity = baseRatio * (0.35 + (seedVal % 55) / 100);
                       const fill =
                         intensity > 0.42
-                          ? 'rgba(239, 68, 68, 0.52)'
+                          ? 'rgba(239, 68, 68, 0.44)'
                           : intensity > 0.28
-                            ? 'rgba(245, 158, 11, 0.42)'
-                            : 'rgba(16, 185, 129, 0.24)';
+                            ? 'rgba(245, 158, 11, 0.34)'
+                            : 'rgba(16, 185, 129, 0.2)';
                       return (
                         <g key={`${r}_${c}`}>
                           <rect
@@ -1003,6 +969,23 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       );
                     })
                   )}
+                  {/* Smooth Radial Heat Blobs over key tactical touch zones */}
+                  {focusCoords.slice(5, 11).map((fc, idx) => {
+                    const rx =
+                      tileTeamFilter === 'away'
+                        ? 112 - ((100 - fc.y) / 100) * 96
+                        : 8 + ((100 - fc.y) / 100) * 96;
+                    const ry = 6 + (fc.x / 100) * 60;
+                    return (
+                      <circle
+                        key={`blob_${idx}`}
+                        cx={rx}
+                        cy={ry}
+                        r="14"
+                        fill={`url(#heatGrad_${tileIndex})`}
+                      />
+                    );
+                  })}
                 </svg>
                 <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-1">
                   <span>{tr('Def Third: 29%', 'แดนหลัง: 29%')}</span>
@@ -1014,7 +997,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           })()}
 
           {activeType === 'PASS_MAP' && (() => {
-            const coords = computeTacticalPhaseCoordinates(homeClub.primaryTactic, 'in_possession');
+            const targetClub = tileTeamFilter === 'away' ? awayClub : homeClub;
+            const isAwayMap = targetClub.id === awayClub.id;
+            const coords = computeTacticalPhaseCoordinates(targetClub.primaryTactic, 'in_possession');
             const edges: [number, number, number][] = [
               [0, 2, 1.4],
               [0, 3, 1.4],
@@ -1039,9 +1024,13 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     const ca = coords[a];
                     const cb = coords[b];
                     if (!ca || !cb) return null;
-                    const x1 = 8 + ((100 - ca.y) / 100) * 98;
+                    const x1 = isAwayMap
+                      ? 112 - ((100 - ca.y) / 100) * 98
+                      : 8 + ((100 - ca.y) / 100) * 98;
                     const y1 = 6 + (ca.x / 100) * 60;
-                    const x2 = 8 + ((100 - cb.y) / 100) * 98;
+                    const x2 = isAwayMap
+                      ? 112 - ((100 - cb.y) / 100) * 98
+                      : 8 + ((100 - cb.y) / 100) * 98;
                     const y2 = 6 + (cb.x / 100) * 60;
                     return (
                       <line
@@ -1050,20 +1039,39 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         y1={y1}
                         x2={x2}
                         y2={y2}
-                        stroke="#10b981"
+                        stroke={isAwayMap ? '#38bdf8' : '#10b981'}
                         strokeOpacity="0.65"
                         strokeWidth={w * 0.8}
                       />
                     );
                   })}
                   {coords.map((c, i) => {
-                    const cx = 8 + ((100 - c.y) / 100) * 98;
+                    const slot = targetClub.primaryTactic.lineup[i];
+                    const p = slot?.playerId ? world.players[slot.playerId] : null;
+                    const num = p?.shirtNumber || i + 1;
+                    const cx = isAwayMap
+                      ? 112 - ((100 - c.y) / 100) * 98
+                      : 8 + ((100 - c.y) / 100) * 98;
                     const cy = 6 + (c.x / 100) * 60;
                     return (
                       <g key={i}>
-                        <circle cx={cx} cy={cy} r="3.1" fill={homeClub.primaryColor} stroke="#fff" strokeWidth="0.6" />
-                        <text x={cx} y={cy + 1} textAnchor="middle" fontSize="2.6" fill="#fff" fontWeight="bold">
-                          {i + 1}
+                        <circle
+                          cx={cx}
+                          cy={cy}
+                          r="3.2"
+                          fill={targetClub.primaryColor}
+                          stroke="#fff"
+                          strokeWidth="0.6"
+                        />
+                        <text
+                          x={cx}
+                          y={cy + 1}
+                          textAnchor="middle"
+                          fontSize="2.5"
+                          fill="#fff"
+                          fontWeight="bold"
+                        >
+                          {num}
                         </text>
                       </g>
                     );
@@ -1153,15 +1161,26 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           })()}
 
           {activeType === 'SHOT_MAP' && (() => {
-            const shotEvents = visibleEvents.filter(
-              (e) =>
+            const shotEvents = visibleEvents.filter((e) => {
+              const isShotEv =
                 e.eventType === 'Goal' ||
                 e.eventType === 'Save' ||
                 e.eventType === 'BlockedShot' ||
                 e.eventType === 'Shot' ||
                 e.eventType === 'PenaltyMissed' ||
-                e.eventType === 'FreeKick'
-            );
+                e.eventType === 'FreeKick';
+              if (!isShotEv) return false;
+              if (tileTeamFilter === 'both') return true;
+              const shooterClubId =
+                e.eventType === 'Save'
+                  ? e.teamId === homeClub.id
+                    ? awayClub.id
+                    : homeClub.id
+                  : e.teamId;
+              return tileTeamFilter === 'home'
+                ? shooterClubId === homeClub.id
+                : shooterClubId === awayClub.id;
+            });
             return (
               <div className="h-full flex flex-col justify-between">
                 <svg viewBox="0 0 100 60" className="w-full h-full max-h-32 bg-slate-950 rounded border border-slate-800">
@@ -1881,6 +1900,67 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         </div>
       )}
 
+      {/* Full-Time Post-Match Review, Man of the Match & Dressing Room Talk Banner */}
+      {currentMinute >= maxMatchMinute && simResult && !postMatchTalkGiven && (
+        <div
+          data-testid="fulltime-postmatch-banner"
+          className="mx-2 mt-1.5 px-3 py-2 rounded-xl bg-slate-950 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-2 shrink-0 shadow-xl"
+        >
+          <div className="flex items-center gap-3">
+            <div className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-xs">
+              <span className="text-amber-300 font-bold mr-1.5">★ MOTM:</span>
+              <span className="text-white font-semibold">
+                {world.players[simResult.manOfTheMatchPlayerId]
+                  ? `${world.players[simResult.manOfTheMatchPlayerId].firstName} ${world.players[simResult.manOfTheMatchPlayerId].lastName}`
+                  : homeClub.shortName}
+              </span>
+              <span className="ml-1.5 font-mono text-emerald-400 font-bold">
+                {(simResult.playerRatings[simResult.manOfTheMatchPlayerId] || 8.2).toFixed(1)}
+              </span>
+            </div>
+            {simResult.penaltyShootout && (
+              <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono">
+                <span className="text-amber-400 font-bold mr-1">PENS:</span>
+                <span className="text-white">
+                  {homeClub.shortName} {simResult.penaltyShootout.homePenalties} -{' '}
+                  {simResult.penaltyShootout.awayPenalties} {awayClub.shortName}
+                </span>
+                <span className="ml-2">🟢🟢🟢🔴🟢</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-slate-400 mr-1">
+              {tr('Post-Match Team Talk:', 'พูดคุยหลังจบเกม:')}
+            </span>
+            {[
+              {
+                id: 'praise_ft',
+                label: tr('👏 Praise Squad Effort', '👏 ชื่นชมความทุ่มเท'),
+              },
+              {
+                id: 'demand_ft',
+                label: tr('🔥 Demand Higher Standards', '🔥 กำชับยกระดับฟอร์ม'),
+              },
+              {
+                id: 'focus_next',
+                label: tr('🎯 Focus on Next Fixture', '🎯 โฟกัสนัดต่อไปทันที'),
+              },
+            ].map((btn) => (
+              <button
+                key={btn.id}
+                type="button"
+                onClick={() => setPostMatchTalkGiven(btn.label)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/50 text-xs text-emerald-300 font-medium cursor-pointer"
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {tacticalSummary && (
         <div className="mx-2 mt-1.5 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-200 shrink-0 flex items-center justify-between">
           <div>
@@ -2020,11 +2100,13 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       <rect x="3" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
                       <rect x="83" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
 
-                      {/* Home 11 Players */}
+                      {/* Home 11 Players (Sent-off players removed for 10-man realism) */}
                       {homePhaseCoords.map((coord, idx) => {
                         const slot = homeClub.primaryTactic.lineup[idx];
                         const p = slot?.playerId ? world.players[slot.playerId] : null;
+                        if (p && sentOffPlayerIds.has(p.id)) return null;
                         const isCapt = p && homeClub.primaryTactic.setPieces?.captainId === p.id;
+                        const shirtNum = p?.shirtNumber || idx + 1;
                         const rawHoriz = Math.max(
                           6,
                           Math.min(72, (100 - coord.y) * 0.72 + (idx === 0 ? 0 : ballPullX))
@@ -2057,7 +2139,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                               fontWeight="bold"
                               fill="#ffffff"
                             >
-                              {idx + 1}
+                              {shirtNum}
                             </text>
                             {p && (
                               <text
@@ -2076,11 +2158,13 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         );
                       })}
 
-                      {/* Away 11 Players */}
+                      {/* Away 11 Players (Sent-off players removed for 10-man realism) */}
                       {awayPhaseCoords.map((coord, idx) => {
                         const slot = awayClub.primaryTactic.lineup[idx];
                         const p = slot?.playerId ? world.players[slot.playerId] : null;
+                        if (p && sentOffPlayerIds.has(p.id)) return null;
                         const isCapt = p && awayClub.primaryTactic.setPieces?.captainId === p.id;
+                        const shirtNum = p?.shirtNumber || idx + 1;
                         const rawHoriz = Math.max(
                           28,
                           Math.min(94, 100 - (100 - coord.y) * 0.72 + (idx === 0 ? 0 : ballPullX))
@@ -2113,7 +2197,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                               fontWeight="bold"
                               fill="#ffffff"
                             >
-                              {idx + 1}
+                              {shirtNum}
                             </text>
                             {p && (
                               <text
@@ -2170,13 +2254,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     </svg>
                   );
                 })()}
-                <canvas
-                  ref={canvasRef}
-                  width={520}
-                  height={310}
-                  data-testid="match-pitch-canvas"
-                  className="hidden"
-                />
               </div>
 
               {/* Latest Commentary Ticker Bar underneath Pitch */}
