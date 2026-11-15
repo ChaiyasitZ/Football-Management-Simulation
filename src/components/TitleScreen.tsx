@@ -23,7 +23,7 @@ import {
   ScenarioChallengeId,
   WorldState,
 } from '../types/game';
-import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
+import { CLUB_TEMPLATES, LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
 import { soundService } from '../engine/soundService';
 import type { User } from '../firebase';
@@ -32,7 +32,7 @@ import { ClubKitJersey, CompetitionBadge, TrophyArtwork } from './TrophyAndKitVi
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 
 interface TitleScreenProps {
-  world: WorldState;
+  world?: WorldState | null;
   saveSlots: SaveSlotMeta[];
   authUser: User | null;
   onGoogleSignIn: () => void;
@@ -47,6 +47,122 @@ interface TitleScreenProps {
   onLoadSlot: (slotId: string) => void;
   onDeleteSlot: (slotId: string) => void;
 }
+
+/**
+ * Lightweight 280-club map built directly from CLUB_TEMPLATES (<0.5ms) so TitleScreen
+ * renders immediately for <100ms LCP/FCP before the 5,800-player WorldState finishes generating in idle time.
+ */
+const LIGHTWEIGHT_PREVIEW_CLUBS: Record<string, Club> = (() => {
+  const map: Record<string, Club> = {};
+  (Object.keys(LEAGUES_CONFIG) as LeagueId[]).forEach((leagueId) => {
+    const config = LEAGUES_CONFIG[leagueId];
+    const templates = CLUB_TEMPLATES[leagueId] || [];
+    templates.slice(0, config.targetClubCount).forEach((tpl, idx) => {
+      const clubId = `club_${leagueId.toLowerCase()}_${idx + 1}`;
+      const repFactor = Math.pow(tpl.reputation / 70, 2.8);
+      const balance = Math.round(repFactor * 42_000_000);
+      const transferBudget = Math.round(repFactor * 28_000_000);
+      const wageBudgetPerWeek = Math.round(repFactor * 1_650_000);
+      map[clubId] = {
+        id: clubId,
+        name: tpl.name,
+        shortName: tpl.shortName,
+        countryId: config.countryId,
+        leagueId,
+        city: tpl.city,
+        primaryColor: tpl.primaryColor,
+        secondaryColor: tpl.secondaryColor,
+        logoUrl: tpl.logoUrl,
+        stadiumName: tpl.stadiumName,
+        stadiumCapacity: tpl.stadiumCapacity,
+        reputation: tpl.reputation,
+        trainingFacilities: Math.min(20, Math.max(10, Math.round(tpl.reputation / 5))),
+        youthFacilities: Math.min(20, Math.max(9, Math.round(tpl.reputation / 5.2))),
+        finances: {
+          balance,
+          transferBudget,
+          wageBudgetPerWeek,
+          wageUsedPerWeek: Math.round(wageBudgetPerWeek * 0.85),
+          debt: 0,
+          sponsorRevenueAnnual: Math.round(repFactor * 35_000_000),
+          ticketPriceAvg: Math.round(35 + (tpl.reputation - 65) * 1.1),
+        },
+        boardExpectations: {
+          targetLeaguePosition: Math.max(1, Math.min(config.targetClubCount, idx + 1)),
+          cupTarget: idx < 4 ? 'Semi-Final' : idx < 10 ? 'Quarter-Final' : 'Compete',
+          clubVision:
+            idx < 4
+              ? 'Compete for the league title and maintain elite European status'
+              : idx < 10
+                ? 'Challenge for European qualification and promote youth prospects'
+                : 'Secure top-flight status and maintain long-term financial sustainability',
+          confidence: {
+            overall: 78,
+            leaguePerformance: 76,
+            financialManagement: 82,
+            youthDevelopment: 75,
+            squadAtmosphere: 80,
+          },
+        },
+        aiManager: {
+          name: tpl.managerName,
+          style: 'Possession-focused Manager',
+          reputation: tpl.reputation,
+          jobSecurity: 80,
+        },
+        primaryTactic: {
+          id: `tac_${clubId}_1`,
+          name: 'Primary 4-3-3',
+          formation: '4-3-3',
+          instructions: {
+            mentality: 'Positive',
+            passingDirectness: 'Shorter',
+            tempo: 'Higher',
+            attackingWidth: 'Wide',
+            buildUp: 'Play Out of Defence',
+            pressingIntensity: 'High',
+            defensiveLine: 'High',
+            lineOfEngagement: 'High',
+            transition: 'Counter-Press',
+            defensiveApproach: 'Zonal Marking',
+            timeWasting: 'Never',
+            offsideTrap: true,
+            tackling: 'Standard',
+          },
+          familiarity: 80,
+          lineup: [],
+          benchPlayerIds: [],
+        },
+        secondaryTactic: {
+          id: `tac_${clubId}_2`,
+          name: 'Secondary 4-2-3-1',
+          formation: '4-2-3-1',
+          instructions: {
+            mentality: 'Balanced',
+            passingDirectness: 'Mixed',
+            tempo: 'Standard',
+            attackingWidth: 'Standard',
+            buildUp: 'Mixed',
+            pressingIntensity: 'Standard',
+            defensiveLine: 'Standard',
+            lineOfEngagement: 'Mid',
+            transition: 'Counter',
+            defensiveApproach: 'Zonal Marking',
+            timeWasting: 'Never',
+            offsideTrap: false,
+            tackling: 'Standard',
+          },
+          familiarity: 68,
+          lineup: [],
+          benchPlayerIds: [],
+        },
+        trainingFocus: 'Possession',
+        trainingIntensity: 'Standard',
+      };
+    });
+  });
+  return map;
+})();
 
 interface FloatingBall {
   x: number;
@@ -217,6 +333,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [isMuted, setIsMuted] = useState(soundService.isMuted());
 
+  const isModalOpenRef = useRef(false);
+  isModalOpenRef.current = showSetupModal || showLoadModal || showSettingsModal;
+
+  const clubsMap = world?.clubs ?? LIGHTWEIGHT_PREVIEW_CLUBS;
+  const controlledClubId = world?.controlledClubId ?? 'club_eng_pl_1';
+
   // Setup state
   const [managerName, setManagerName] = useState('Mikel Arteta');
   const [customEditedName, setCustomEditedName] = useState(false);
@@ -260,7 +382,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const handleSelectLeague = (lId: LeagueId) => {
     setSelectedLeague(lId);
     setClubSearchQuery('');
-    const firstInLeague = Object.values(world.clubs).find((c) => c.leagueId === lId);
+    const firstInLeague = Object.values(clubsMap).find((c) => c.leagueId === lId);
     if (firstInLeague) {
       setSelectedClubId(firstInLeague.id);
       if (!customEditedName) setManagerName(firstInLeague.aiManager.name);
@@ -274,7 +396,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
     }
   };
 
-  const leagueClubs: Club[] = Object.values(world.clubs).filter(
+  const leagueClubs: Club[] = Object.values(clubsMap).filter(
     (c) =>
       c.leagueId === selectedLeague &&
       (clubSearchQuery.trim() === '' ||
@@ -282,11 +404,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         c.shortName.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()) ||
         c.city.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()))
   );
-  const allClubsInSelectedLeague: Club[] = Object.values(world.clubs).filter(
+  const allClubsInSelectedLeague: Club[] = Object.values(clubsMap).filter(
     (c) => c.leagueId === selectedLeague
   );
-  const activeClub = world.clubs[selectedClubId] || allClubsInSelectedLeague[0];
-  const defaultQuickClub = world.clubs[world.controlledClubId] || activeClub;
+  const activeClub = clubsMap[selectedClubId] || allClubsInSelectedLeague[0];
+  const defaultQuickClub = clubsMap[controlledClubId] || activeClub;
 
   // Animated Floating Footballs + Tactical Stadium Backdrop Canvas
   useEffect(() => {
@@ -341,6 +463,13 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
     let lastTime = performance.now();
     const render = (now: number) => {
+      // Pause canvas GPU/CPU work while a modal is open or browser tab is backgrounded
+      if (isModalOpenRef.current || document.hidden) {
+        lastTime = now;
+        animId = requestAnimationFrame(render);
+        return;
+      }
+
       const rawDt = (now - lastTime) / 1000;
       const dt = Math.min(rawDt, 0.05);
       const timeSec = now / 1000;

@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import {
   Bell,
   Bookmark,
@@ -12,6 +13,7 @@ import {
   ChevronRight,
   Globe2,
   Home,
+  Loader2,
   Search,
   Settings,
   Shield,
@@ -95,10 +97,6 @@ import {
 } from './firebase';
 import { soundService } from './engine/soundService';
 import { TitleScreen } from './components/TitleScreen';
-import { MatchCenterView } from './components/MatchCenterView';
-import { TacticsView } from './components/TacticsView';
-import { SquadView } from './components/SquadAndProfileModal';
-import { PlayerProfilePage } from './components/PlayerProfilePage';
 import {
   ClubStaffYouthWorldView,
   CompetitionsAndScheduleView,
@@ -118,6 +116,30 @@ import {
   ToastHistoryDrawer,
 } from './ui/UIComponents';
 import { LanguageProvider, LanguageSwitcher, useLanguage } from './i18n/LanguageContext';
+
+const MatchCenterView = React.lazy(() =>
+  import('./components/MatchCenterView').then((m) => ({ default: m.MatchCenterView }))
+);
+const TacticsView = React.lazy(() =>
+  import('./components/TacticsView').then((m) => ({ default: m.TacticsView }))
+);
+const SquadView = React.lazy(() =>
+  import('./components/SquadAndProfileModal').then((m) => ({ default: m.SquadView }))
+);
+const PlayerProfilePage = React.lazy(() =>
+  import('./components/PlayerProfilePage').then((m) => ({ default: m.PlayerProfilePage }))
+);
+
+/**
+ * Yields to the browser rendering pipeline so button press feedback paints in <16ms (INP < 50ms)
+ * before heavy simulation work runs.
+ */
+const yieldToBrowserPaint = () =>
+  new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      setTimeout(resolve, 0);
+    });
+  });
 
 type ShellState = 'title' | 'playing' | 'paused';
 
@@ -256,7 +278,44 @@ function TouchlineShell() {
   const [shellState, setShellState] = useState<ShellState>(
     isAutostart ? 'playing' : 'title'
   );
-  const [world, setWorld] = useState<WorldState>(() => createInitialWorldState(20261110));
+  // Defer heavy 5,800-player world generation until after TitleScreen paints (unless ?autostart=1)
+  const [worldState, setWorld] = useState<WorldState | null>(() =>
+    isAutostart ? createInitialWorldState(20261110) : null
+  );
+
+  // Pre-warm initial WorldState in browser idle time after TitleScreen LCP/FCP completes
+  useEffect(() => {
+    if (worldState) return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      const idleId = win.requestIdleCallback(
+        () => {
+          setWorld((prev) => prev ?? createInitialWorldState(20261110));
+        },
+        { timeout: 1200 }
+      );
+      return () => {
+        if (typeof win.cancelIdleCallback === 'function') win.cancelIdleCallback(idleId);
+      };
+    }
+    const timerId = window.setTimeout(() => {
+      setWorld((prev) => prev ?? createInitialWorldState(20261110));
+    }, 180);
+    return () => window.clearTimeout(timerId);
+  }, [worldState]);
+
+  const ensureWorld = (): WorldState => {
+    if (worldState) return worldState;
+    const generated = createInitialWorldState(20261110);
+    setWorld(generated);
+    return generated;
+  };
+
+  // Non-null reference for active playing/paused views
+  const world = (worldState as WorldState);
 
   // Hash-based Navigation & History Stack
   const [routeHistory, setRouteHistory] = useState<string[]>(['#/home/portal']);
@@ -287,8 +346,25 @@ function TouchlineShell() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
   const [commandQuery, setCommandQuery] = useState<string>('');
+  const deferredCommandQuery = useDeferredValue(commandQuery);
+  const [isSimulatingDay, setIsSimulatingDay] = useState<boolean>(false);
 
   const isAdvancingRef = useRef(false);
+
+  const scheduleIdleAutosave = (stateToSave: WorldState) => {
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    };
+    const runSave = () => {
+      const updatedSlots = saveWorldStateToSlot('slot_autosave', stateToSave);
+      setSaveSlots(updatedSlots);
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      win.requestIdleCallback(runSave, { timeout: 1000 });
+    } else {
+      window.setTimeout(runSave, 50);
+    }
+  };
 
   const navigateToRoute = (nextRoute: string) => {
     const normalized = nextRoute.startsWith('#/') ? nextRoute : `#/${nextRoute}`;
@@ -342,7 +418,7 @@ function TouchlineShell() {
       {
         id: `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         timestamp: timeStr,
-        gameDate: world.gameDate,
+        gameDate: worldState?.gameDate || '2025-08-10',
         message: msg,
       },
       ...prev.slice(0, 39),
@@ -370,6 +446,9 @@ function TouchlineShell() {
       ? 'squad'
       : currentCatConfig.subTabs.find((s) => s.id === seg2)?.id ||
         currentCatConfig.defaultSubTab;
+
+  const analyticsRoute =
+    shellState === 'title' ? '/title' : `/${routeClean || 'home/portal'}`;
 
   // Subscribe to Google / Gmail Auth state & sync Cloud Firestore save slots
   useEffect(() => {
@@ -426,6 +505,168 @@ function TouchlineShell() {
     document.body.dataset.state = shellState;
   }, [shellState]);
 
+  const handleQuickStart = () => {
+    soundService.playClick();
+    ensureWorld();
+    setShellState('playing');
+  };
+
+  const handleStartCustomCareer = (
+    customManager: Partial<ManagerProfile>,
+    clubId: string,
+    scenarioChallenge: ScenarioChallengeId = 'STANDARD',
+    customClubConfig: CustomClubConfig | null = null
+  ) => {
+    soundService.playWhistle();
+    const freshWorld = createInitialWorldState(
+      Date.now() % 1000000,
+      customManager,
+      clubId,
+      scenarioChallenge,
+      customClubConfig
+    );
+    setWorld(freshWorld);
+    scheduleIdleAutosave(freshWorld);
+    navigateToRoute('#/home/portal');
+    setShellState('playing');
+    showToast(
+      tr(
+        `Started managerial career with ${freshWorld.clubs[clubId].name}!`,
+        `เริ่มต้นอาชีพผู้จัดการทีมกับสโมสร ${freshWorld.clubs[clubId].name}!`
+      )
+    );
+  };
+
+  const handleAdvanceDay = async () => {
+    if (isAdvancingRef.current || !worldState) return;
+
+    const pendingUrgent = getPendingUrgentInboxItem(worldState.inbox);
+    if (pendingUrgent) {
+      soundService.playClick();
+      navigateToRoute('#/home/inbox');
+      setFocusedNewsId(pendingUrgent.id);
+      showToast(
+        tr(
+          `Action Required: Please respond to "${trDynamic(pendingUrgent.title)}" in your Inbox before continuing.`,
+          `มีเรื่องสำคัญที่ต้องตอบ: กรุณาตอบกลับ "${trDynamic(pendingUrgent.title)}" ในกล่องข้อความก่อนเดินเวลาต่อ`
+        )
+      );
+      return;
+    }
+
+    isAdvancingRef.current = true;
+    setIsSimulatingDay(true);
+    try {
+      soundService.playAdvanceDay();
+      // Yield to browser paint so button active state renders in <16ms (INP < 50ms)
+      await yieldToBrowserPaint();
+
+      const { nextState, stoppedReason, urgentInboxItem } = advanceWorldOneDay(worldState);
+      setWorld(nextState);
+      scheduleIdleAutosave(nextState);
+
+      if (stoppedReason === 'URGENT_INBOX') {
+        const targetItem = urgentInboxItem || getPendingUrgentInboxItem(nextState.inbox);
+        navigateToRoute('#/home/inbox');
+        if (targetItem) setFocusedNewsId(targetItem.id);
+        showToast(
+          tr(
+            `Urgent Inbox Item: "${trDynamic(targetItem?.title || '')}" requires your response.`,
+            `มีเรื่องด่วนในกล่องข้อความ: "${trDynamic(targetItem?.title || '')}" รอการตอบกลับจากคุณ`
+          )
+        );
+      } else if (stoppedReason === 'USER_MATCHDAY') {
+        navigateToRoute('#/match/center');
+        showToast(
+          tr(
+            'Matchday has arrived! Ready for kick-off in Match Center.',
+            'ถึงวันแข่งขันแล้ว! พร้อมลงสนามในสนามแข่งขัน'
+          )
+        );
+      } else {
+        showToast(
+          tr(
+            `Advanced to ${nextState.gameDate} (Auto-saved)`,
+            `เดินเวลาสู่วันที่ ${nextState.gameDate} (บันทึกอัตโนมัติ)`
+          )
+        );
+      }
+    } finally {
+      isAdvancingRef.current = false;
+      setIsSimulatingDay(false);
+    }
+  };
+
+  const handleAdvanceToNextMatchday = async () => {
+    if (isAdvancingRef.current || !worldState) return;
+
+    const pendingUrgent = getPendingUrgentInboxItem(worldState.inbox);
+    if (pendingUrgent) {
+      soundService.playClick();
+      navigateToRoute('#/home/inbox');
+      setFocusedNewsId(pendingUrgent.id);
+      showToast(
+        tr(
+          `Action Required: Please respond to "${trDynamic(pendingUrgent.title)}" in your Inbox before skipping to Matchday.`,
+          `มีเรื่องสำคัญที่ต้องตอบ: กรุณาตอบกลับ "${trDynamic(pendingUrgent.title)}" ในกล่องข้อความก่อนข้ามไปวันแข่ง`
+        )
+      );
+      return;
+    }
+
+    isAdvancingRef.current = true;
+    setIsSimulatingDay(true);
+    try {
+      soundService.playAdvanceDay();
+      await yieldToBrowserPaint();
+
+      let curr = worldState;
+      let steps = 0;
+      let lastStoppedReason: 'USER_MATCHDAY' | 'TRANSFER_OFFER' | 'URGENT_INBOX' | undefined;
+      let lastUrgentItem = undefined;
+      while (steps < 10) {
+        const res = advanceWorldOneDay(curr);
+        curr = res.nextState;
+        steps += 1;
+        lastStoppedReason = res.stoppedReason;
+        lastUrgentItem = res.urgentInboxItem;
+        setWorld(curr);
+        if (res.stoppedReason === 'USER_MATCHDAY' || res.stoppedReason === 'URGENT_INBOX') {
+          break;
+        }
+        // Time-slice multi-day advancement across frames to prevent Long Tasks > 50ms
+        await yieldToBrowserPaint();
+      }
+      scheduleIdleAutosave(curr);
+
+      if (lastStoppedReason === 'URGENT_INBOX') {
+        const targetItem = lastUrgentItem || getPendingUrgentInboxItem(curr.inbox);
+        navigateToRoute('#/home/inbox');
+        if (targetItem) setFocusedNewsId(targetItem.id);
+        showToast(
+          tr(
+            `Stopped at ${curr.gameDate}: Urgent Inbox item "${trDynamic(targetItem?.title || '')}" requires your response!`,
+            `หยุดเวลาที่ ${curr.gameDate}: มีเรื่องสำคัญในกล่องข้อความ "${trDynamic(targetItem?.title || '')}" ที่ต้องตอบกลับ!`
+          )
+        );
+      } else {
+        navigateToRoute('#/match/center');
+        showToast(
+          tr(
+            `Advanced to Matchday ${curr.gameDate}`,
+            `เดินเวลาสู่วันแข่งขัน ${curr.gameDate} เรียบร้อยแล้ว`
+          )
+        );
+      }
+    } finally {
+      isAdvancingRef.current = false;
+      setIsSimulatingDay(false);
+    }
+  };
+
+  const handleAdvanceDayRef = useRef(handleAdvanceDay);
+  handleAdvanceDayRef.current = handleAdvanceDay;
+
   // Keyboard shortcuts in playing / paused states (including Ctrl+K / Cmd+K Command Palette)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -472,162 +713,12 @@ function TouchlineShell() {
         shellState === 'playing' &&
         !commandPaletteOpen
       ) {
-        handleAdvanceDay();
+        void handleAdvanceDayRef.current();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  });
-
-  const handleQuickStart = () => {
-    soundService.playClick();
-    setShellState('playing');
-  };
-
-  const handleStartCustomCareer = (
-    customManager: Partial<ManagerProfile>,
-    clubId: string,
-    scenarioChallenge: ScenarioChallengeId = 'STANDARD',
-    customClubConfig: CustomClubConfig | null = null
-  ) => {
-    soundService.playWhistle();
-    const freshWorld = createInitialWorldState(
-      Date.now() % 1000000,
-      customManager,
-      clubId,
-      scenarioChallenge,
-      customClubConfig
-    );
-    setWorld(freshWorld);
-    const updatedSlots = saveWorldStateToSlot('slot_autosave', freshWorld);
-    setSaveSlots(updatedSlots);
-    navigateToRoute('#/home/portal');
-    setShellState('playing');
-    showToast(
-      tr(
-        `Started managerial career with ${freshWorld.clubs[clubId].name}!`,
-        `เริ่มต้นอาชีพผู้จัดการทีมกับสโมสร ${freshWorld.clubs[clubId].name}!`
-      )
-    );
-  };
-
-  const handleAdvanceDay = () => {
-    if (isAdvancingRef.current) return;
-
-    const pendingUrgent = getPendingUrgentInboxItem(world.inbox);
-    if (pendingUrgent) {
-      soundService.playClick();
-      navigateToRoute('#/home/inbox');
-      setFocusedNewsId(pendingUrgent.id);
-      showToast(
-        tr(
-          `Action Required: Please respond to "${trDynamic(pendingUrgent.title)}" in your Inbox before continuing.`,
-          `มีเรื่องสำคัญที่ต้องตอบ: กรุณาตอบกลับ "${trDynamic(pendingUrgent.title)}" ในกล่องข้อความก่อนเดินเวลาต่อ`
-        )
-      );
-      return;
-    }
-
-    isAdvancingRef.current = true;
-    try {
-      soundService.playAdvanceDay();
-      const { nextState, stoppedReason, urgentInboxItem } = advanceWorldOneDay(world);
-      setWorld(nextState);
-      const updatedSlots = saveWorldStateToSlot('slot_autosave', nextState);
-      setSaveSlots(updatedSlots);
-
-      if (stoppedReason === 'URGENT_INBOX') {
-        const targetItem = urgentInboxItem || getPendingUrgentInboxItem(nextState.inbox);
-        navigateToRoute('#/home/inbox');
-        if (targetItem) setFocusedNewsId(targetItem.id);
-        showToast(
-          tr(
-            `Urgent Inbox Item: "${trDynamic(targetItem?.title || '')}" requires your response.`,
-            `มีเรื่องด่วนในกล่องข้อความ: "${trDynamic(targetItem?.title || '')}" รอการตอบกลับจากคุณ`
-          )
-        );
-      } else if (stoppedReason === 'USER_MATCHDAY') {
-        navigateToRoute('#/match/center');
-        showToast(
-          tr(
-            'Matchday has arrived! Ready for kick-off in Match Center.',
-            'ถึงวันแข่งขันแล้ว! พร้อมลงสนามในสนามแข่งขัน'
-          )
-        );
-      } else {
-        showToast(
-          tr(
-            `Advanced to ${nextState.gameDate} (Auto-saved)`,
-            `เดินเวลาสู่วันที่ ${nextState.gameDate} (บันทึกอัตโนมัติ)`
-          )
-        );
-      }
-    } finally {
-      isAdvancingRef.current = false;
-    }
-  };
-
-  const handleAdvanceToNextMatchday = () => {
-    if (isAdvancingRef.current) return;
-
-    const pendingUrgent = getPendingUrgentInboxItem(world.inbox);
-    if (pendingUrgent) {
-      soundService.playClick();
-      navigateToRoute('#/home/inbox');
-      setFocusedNewsId(pendingUrgent.id);
-      showToast(
-        tr(
-          `Action Required: Please respond to "${trDynamic(pendingUrgent.title)}" in your Inbox before skipping to Matchday.`,
-          `มีเรื่องสำคัญที่ต้องตอบ: กรุณาตอบกลับ "${trDynamic(pendingUrgent.title)}" ในกล่องข้อความก่อนข้ามไปวันแข่ง`
-        )
-      );
-      return;
-    }
-
-    isAdvancingRef.current = true;
-    try {
-      soundService.playAdvanceDay();
-      let curr = world;
-      let steps = 0;
-      let lastStoppedReason: 'USER_MATCHDAY' | 'TRANSFER_OFFER' | 'URGENT_INBOX' | undefined;
-      let lastUrgentItem = undefined;
-      while (steps < 10) {
-        const res = advanceWorldOneDay(curr);
-        curr = res.nextState;
-        steps += 1;
-        lastStoppedReason = res.stoppedReason;
-        lastUrgentItem = res.urgentInboxItem;
-        if (res.stoppedReason === 'USER_MATCHDAY' || res.stoppedReason === 'URGENT_INBOX') {
-          break;
-        }
-      }
-      setWorld(curr);
-      const updatedSlots = saveWorldStateToSlot('slot_autosave', curr);
-      setSaveSlots(updatedSlots);
-
-      if (lastStoppedReason === 'URGENT_INBOX') {
-        const targetItem = lastUrgentItem || getPendingUrgentInboxItem(curr.inbox);
-        navigateToRoute('#/home/inbox');
-        if (targetItem) setFocusedNewsId(targetItem.id);
-        showToast(
-          tr(
-            `Stopped at ${curr.gameDate}: Urgent Inbox item "${trDynamic(targetItem?.title || '')}" requires your response!`,
-            `หยุดเวลาที่ ${curr.gameDate}: มีเรื่องสำคัญในกล่องข้อความ "${trDynamic(targetItem?.title || '')}" ที่ต้องตอบกลับ!`
-          )
-        );
-      } else {
-        navigateToRoute('#/match/center');
-        showToast(
-          tr(
-            `Advanced to Matchday ${curr.gameDate}`,
-            `เดินเวลาสู่วันแข่งขัน ${curr.gameDate} เรียบร้อยแล้ว`
-          )
-        );
-      }
-    } finally {
-      isAdvancingRef.current = false;
-    }
-  };
+  }, [shellState, commandPaletteOpen, quickPeekPlayerId, notifDrawerOpen]);
 
   const handleCompleteMatch = (fixtureId: string, result: MatchResult) => {
     const updated = completeUserMatchdayAndSyncWorld(world, fixtureId, result);
@@ -816,39 +907,67 @@ function TouchlineShell() {
     setWorld({ ...world, clubs: { ...world.clubs, [club.id]: club } });
   };
 
+  const commandMatchedPlayers = useMemo(() => {
+    if (!commandPaletteOpen || !worldState) return [];
+    const q = deferredCommandQuery.trim().toLowerCase();
+    return Object.values(worldState.players)
+      .filter((p) => {
+        if (!q) return p.clubId === worldState.controlledClubId;
+        return `${p.firstName} ${p.lastName}`.toLowerCase().includes(q);
+      })
+      .sort((a, b) => b.currentAbility - a.currentAbility)
+      .slice(0, 6);
+  }, [commandPaletteOpen, worldState, deferredCommandQuery]);
+
+  const commandMatchedClubs = useMemo(() => {
+    if (!commandPaletteOpen || !worldState) return [];
+    const q = deferredCommandQuery.trim().toLowerCase();
+    const myLeagueId = worldState.clubs[worldState.controlledClubId]?.leagueId;
+    return Object.values(worldState.clubs)
+      .filter((c) => {
+        if (!q) return c.leagueId === myLeagueId;
+        return c.name.toLowerCase().includes(q) || c.shortName.toLowerCase().includes(q);
+      })
+      .slice(0, 6);
+  }, [commandPaletteOpen, worldState, deferredCommandQuery]);
+
   if (shellState === 'title') {
     return (
-      <TitleScreen
-        world={world}
-        saveSlots={saveSlots}
-        authUser={authUser}
-        onGoogleSignIn={handleGoogleSignIn}
-        onGoogleSignOut={handleGoogleSignOut}
-        onQuickStart={handleQuickStart}
-        onStartCustomCareer={handleStartCustomCareer}
-        onLoadSlot={async (slotId) => {
-          const loaded = authUser
-            ? await loadWorldStateFromFirestoreSlot(slotId)
-            : loadWorldStateFromSlot(slotId);
-          if (loaded) {
-            setWorld(loaded);
-            setShellState('playing');
-            showToast(
-              tr(`Loaded career save: ${loaded.saveName}`, `โหลดเซฟเกม ${loaded.saveName} สำเร็จ!`)
-            );
-          }
-        }}
-        onDeleteSlot={async (slotId) => {
-          const updated = authUser
-            ? await deleteSaveSlotFromFirestore(slotId)
-            : deleteSavedSlot(slotId);
-          setSaveSlots(updated);
-        }}
-      />
+      <>
+        <TitleScreen
+          world={worldState}
+          saveSlots={saveSlots}
+          authUser={authUser}
+          onGoogleSignIn={handleGoogleSignIn}
+          onGoogleSignOut={handleGoogleSignOut}
+          onQuickStart={handleQuickStart}
+          onStartCustomCareer={handleStartCustomCareer}
+          onLoadSlot={async (slotId) => {
+            const loaded = authUser
+              ? await loadWorldStateFromFirestoreSlot(slotId)
+              : loadWorldStateFromSlot(slotId);
+            if (loaded) {
+              setWorld(loaded);
+              setShellState('playing');
+              showToast(
+                tr(`Loaded career save: ${loaded.saveName}`, `โหลดเซฟเกม ${loaded.saveName} สำเร็จ!`)
+              );
+            }
+          }}
+          onDeleteSlot={async (slotId) => {
+            const updated = authUser
+              ? await deleteSaveSlotFromFirestore(slotId)
+              : deleteSavedSlot(slotId);
+            setSaveSlots(updated);
+          }}
+        />
+        <SpeedInsights route={analyticsRoute} />
+      </>
     );
   }
 
-  const controlledClub = world.clubs[world.controlledClubId];
+  const activeWorld = worldState ?? ensureWorld();
+  const controlledClub = activeWorld.clubs[activeWorld.controlledClubId];
   const unreadCount = world.inbox.filter((n) => !n.isRead).length;
   const pendingUrgentInboxItem = getPendingUrgentInboxItem(world.inbox);
   const incomingOfferCount = world.transferOffers.filter(
@@ -1220,24 +1339,33 @@ function TouchlineShell() {
 
             <button
               type="button"
+              disabled={isSimulatingDay}
               onClick={handleAdvanceToNextMatchday}
-              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-slate-200 font-medium text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
-              {tr('Skip to Matchday', 'ข้ามไปวันแข่ง')}
+              {isSimulatingDay
+                ? tr('Simulating...', 'กำลังจำลอง...')
+                : tr('Skip to Matchday', 'ข้ามไปวันแข่ง')}
             </button>
 
             <button
               type="button"
+              disabled={isSimulatingDay}
               onClick={handleAdvanceDay}
-              className={`px-4 py-1.5 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+              className={`px-4 py-1.5 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
                 pendingUrgentInboxItem
                   ? 'bg-amber-500 hover:bg-amber-400 text-slate-950'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
+                  : 'bg-emerald-500 hover:bg-emerald-400 disabled:opacity-75 text-slate-950'
               }`}
             >
-              {pendingUrgentInboxItem
-                ? tr('Respond in Inbox ! →', 'ตอบข้อความด่วน ! →')
-                : tr('Continue →', 'เดินเวลาต่อ →')}
+              {isSimulatingDay && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              <span>
+                {pendingUrgentInboxItem
+                  ? tr('Respond in Inbox ! →', 'ตอบข้อความด่วน ! →')
+                  : isSimulatingDay
+                    ? tr('Advancing...', 'กำลังเดินเวลา...')
+                    : tr('Continue →', 'เดินเวลาต่อ →')}
+              </span>
             </button>
           </div>
         </header>
@@ -1257,6 +1385,14 @@ function TouchlineShell() {
 
         {/* Scrollable Workspace Viewport */}
         <main className={isFullScreenMatch ? 'flex-1 overflow-hidden p-0' : 'flex-1 overflow-y-auto p-5'}>
+          <Suspense
+            fallback={
+              <div className="h-full w-full flex items-center justify-center p-12 text-xs font-mono text-slate-400 gap-2">
+                <Loader2 className="w-4 h-4 text-emerald-400 animate-spin" />
+                <span>{tr('Loading tactical module...', 'กำลังโหลดหน้าต่างจัดการทีม...')}</span>
+              </div>
+            }
+          >
           {/* FULL-PAGE PLAYER PROFILE VIEW (#/player/:id) */}
           {activePlayerProfile ? (
             <PlayerProfilePage
@@ -1838,6 +1974,7 @@ function TouchlineShell() {
               )}
             </>
           )}
+          </Suspense>
         </main>
       </div>
 
@@ -1912,8 +2049,8 @@ function TouchlineShell() {
                     }))
                   )
                     .filter((item) => {
-                      if (!commandQuery.trim()) return true;
-                      const q = commandQuery.toLowerCase();
+                      if (!deferredCommandQuery.trim()) return true;
+                      const q = deferredCommandQuery.toLowerCase();
                       return (
                         item.labelEn.toLowerCase().includes(q) ||
                         item.labelTh.toLowerCase().includes(q)
@@ -1943,41 +2080,33 @@ function TouchlineShell() {
                   {tr('Players Database', 'ฐานข้อมูลนักเตะ')}
                 </div>
                 <div className="space-y-1">
-                  {Object.values(world.players)
-                    .filter((p) => {
-                      if (!commandQuery.trim()) return p.clubId === controlledClub.id;
-                      const q = commandQuery.toLowerCase();
-                      return `${p.firstName} ${p.lastName}`.toLowerCase().includes(q);
-                    })
-                    .sort((a, b) => b.currentAbility - a.currentAbility)
-                    .slice(0, 6)
-                    .map((p) => {
-                      const c = world.clubs[p.clubId];
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => {
-                            openFullPlayerProfile(p.id);
-                            setCommandPaletteOpen(false);
-                          }}
-                          className="w-full px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 flex items-center justify-between text-left cursor-pointer"
-                        >
-                          <div>
-                            <span className="font-semibold text-white">
-                              {p.firstName} {p.lastName}
-                            </span>{' '}
-                            <span className="text-slate-400 font-mono">
-                              ({p.positions[0]} · {c?.shortName})
-                            </span>
-                          </div>
-                          <span className="font-mono text-emerald-400">
-                            CA {(p.currentAbility / 10).toFixed(1)} · €
-                            {(p.marketValue / 1_000_000).toFixed(1)}M
+                  {commandMatchedPlayers.map((p) => {
+                    const c = world.clubs[p.clubId];
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          openFullPlayerProfile(p.id);
+                          setCommandPaletteOpen(false);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 flex items-center justify-between text-left cursor-pointer"
+                      >
+                        <div>
+                          <span className="font-semibold text-white">
+                            {p.firstName} {p.lastName}
+                          </span>{' '}
+                          <span className="text-slate-400 font-mono">
+                            ({p.positions[0]} · {c?.shortName})
                           </span>
-                        </button>
-                      );
-                    })}
+                        </div>
+                        <span className="font-mono text-emerald-400">
+                          CA {(p.currentAbility / 10).toFixed(1)} · €
+                          {(p.marketValue / 1_000_000).toFixed(1)}M
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1987,33 +2116,23 @@ function TouchlineShell() {
                   {tr('European Clubs (280)', 'สโมสรยุโรป (280 ทีม)')}
                 </div>
                 <div className="grid grid-cols-2 gap-1">
-                  {Object.values(world.clubs)
-                    .filter((c) => {
-                      if (!commandQuery.trim()) return c.leagueId === controlledClub.leagueId;
-                      const q = commandQuery.toLowerCase();
-                      return (
-                        c.name.toLowerCase().includes(q) ||
-                        c.shortName.toLowerCase().includes(q)
-                      );
-                    })
-                    .slice(0, 6)
-                    .map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          setExternalInspectedClubId(c.id);
-                          navigateToRoute('#/world/clubs');
-                          setCommandPaletteOpen(false);
-                        }}
-                        className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 flex items-center justify-between text-left cursor-pointer"
-                      >
-                        <span className="text-white truncate">{c.name}</span>
-                        <span className="font-mono text-sky-400">
-                          {c.countryId} · Rep {c.reputation}
-                        </span>
-                      </button>
-                    ))}
+                  {commandMatchedClubs.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        setExternalInspectedClubId(c.id);
+                        navigateToRoute('#/world/clubs');
+                        setCommandPaletteOpen(false);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 flex items-center justify-between text-left cursor-pointer"
+                    >
+                      <span className="text-white truncate">{c.name}</span>
+                      <span className="font-mono text-sky-400">
+                        {c.countryId} · Rep {c.reputation}
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
@@ -2121,6 +2240,7 @@ function TouchlineShell() {
           {toastMessage}
         </div>
       )}
+      <SpeedInsights route={analyticsRoute} />
     </div>
   );
 }

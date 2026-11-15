@@ -108,7 +108,19 @@ async function testConnection() {
     }
   }
 }
-testConnection();
+if (typeof window !== 'undefined') {
+  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => void })
+    .requestIdleCallback;
+  if (typeof ric === 'function') {
+    ric(() => {
+      void testConnection();
+    });
+  } else {
+    setTimeout(() => {
+      void testConnection();
+    }, 1500);
+  }
+}
 
 /**
  * Ensures the authenticated user's /users/{uid} public profile and

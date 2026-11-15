@@ -88,7 +88,7 @@ export const PlayerAvatar: React.FC<{
   club?: Pick<Club, 'id' | 'leagueId' | 'countryId' | 'primaryColor' | 'secondaryColor'> | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
-}> = ({ player, club, size = 'sm', className = '' }) => {
+}> = React.memo(({ player, club, size = 'sm', className = '' }) => {
   const [imgError, setImgError] = useState(false);
   const faceUrl = getPlayerFaceUrl(player, club);
 
@@ -106,7 +106,16 @@ export const PlayerAvatar: React.FC<{
     xl: 'w-16 h-16 text-base',
   };
 
+  const pixelSizeMap: Record<typeof size, number> = {
+    xs: 20,
+    sm: 28,
+    md: 36,
+    lg: 48,
+    xl: 64,
+  };
+
   if (faceUrl && !imgError) {
+    const px = pixelSizeMap[size];
     return (
       <div
         className={`${sizeClasses[size]} rounded-full overflow-hidden bg-slate-800 border border-slate-700/80 shrink-0 flex items-center justify-center select-none ${className}`}
@@ -115,7 +124,10 @@ export const PlayerAvatar: React.FC<{
         <img
           src={faceUrl}
           alt={`${player.firstName} ${player.lastName}`}
+          width={px}
+          height={px}
           loading="lazy"
+          decoding="async"
           referrerPolicy="no-referrer"
           onError={() => setImgError(true)}
           className="w-full h-full object-cover object-top"
@@ -283,4 +295,4 @@ export const PlayerAvatar: React.FC<{
       </svg>
     </div>
   );
-};
+});

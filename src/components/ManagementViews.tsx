@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   Club,
   CupId,
@@ -1272,44 +1272,62 @@ export const ScoutingView: React.FC<{
   const [maxAge, setMaxAge] = useState(26);
   const [maxValueM, setMaxValueM] = useState(60);
   const [searchQuery, setSearchQuery] = useState('');
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [expiringOnly, setExpiringOnly] = useState(false);
 
   const currentYear = Number(world.gameDate.slice(0, 4)) || 2025;
 
-  const allExternalPlayers = Object.values(world.players).filter((p) => {
-    if (p.clubId === world.controlledClubId) return false;
-    const c = world.clubs[p.clubId];
-    if (!c) return false;
-    if (leagueFilter === 'SOUTH_AMERICA') {
-      if (p.nationality !== 'BRA' && p.nationality !== 'ARG') return false;
-    } else if (leagueFilter !== 'ALL_EUROPE' && c.leagueId !== leagueFilter) {
-      return false;
-    }
-    if (posFilter !== 'ANY' && getPositionGroup(p.positions[0]) !== posFilter) return false;
-    const age = getAgeAtDate(p.dateOfBirth, world.gameDate);
-    if (age > maxAge) return false;
-    if (p.marketValue > maxValueM * 1_000_000) return false;
-    if (expiringOnly) {
-      const expYear = Number((p.contractEndDate || '2028-06-30').slice(0, 4)) || 2028;
-      if (expYear - currentYear > 1) return false;
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      return (
-        `${p.firstName} ${p.lastName}`.toLowerCase().includes(q) ||
-        c.name.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+  const displayedPlayers = useMemo(() => {
+    const q = deferredSearchQuery.trim().toLowerCase();
+    return Object.values(world.players)
+      .filter((p) => {
+        if (p.clubId === world.controlledClubId) return false;
+        const c = world.clubs[p.clubId];
+        if (!c) return false;
+        if (leagueFilter === 'SOUTH_AMERICA') {
+          if (p.nationality !== 'BRA' && p.nationality !== 'ARG') return false;
+        } else if (leagueFilter !== 'ALL_EUROPE' && c.leagueId !== leagueFilter) {
+          return false;
+        }
+        if (posFilter !== 'ANY' && getPositionGroup(p.positions[0]) !== posFilter) return false;
+        const age = getAgeAtDate(p.dateOfBirth, world.gameDate);
+        if (age > maxAge) return false;
+        if (p.marketValue > maxValueM * 1_000_000) return false;
+        if (expiringOnly) {
+          const expYear = Number((p.contractEndDate || '2028-06-30').slice(0, 4)) || 2028;
+          if (expYear - currentYear > 1) return false;
+        }
+        if (q) {
+          return (
+            `${p.firstName} ${p.lastName}`.toLowerCase().includes(q) ||
+            c.name.toLowerCase().includes(q)
+          );
+        }
+        return true;
+      })
+      .sort((a, b) => b.currentAbility - a.currentAbility)
+      .slice(0, 60);
+  }, [
+    world.players,
+    world.clubs,
+    world.controlledClubId,
+    world.gameDate,
+    leagueFilter,
+    posFilter,
+    maxAge,
+    maxValueM,
+    expiringOnly,
+    currentYear,
+    deferredSearchQuery,
+  ]);
 
-  const displayedPlayers = allExternalPlayers
-    .sort((a, b) => b.currentAbility - a.currentAbility)
-    .slice(0, 60);
-
-  const shortlistedPlayers = world.shortlistPlayerIds
-    .map((id) => world.players[id])
-    .filter((p): p is Player => Boolean(p));
+  const shortlistedPlayers = useMemo(
+    () =>
+      world.shortlistPlayerIds
+        .map((id) => world.players[id])
+        .filter((p): p is Player => Boolean(p)),
+    [world.shortlistPlayerIds, world.players]
+  );
 
   if (subView === 'shortlist') {
     return (
@@ -1678,33 +1696,53 @@ export const TransfersView: React.FC<{
   const [tab, setTab] = useState<'market' | 'deadline' | 'bosman' | 'incoming' | 'shortlist' | 'history'>('market');
   const currentYear = Number(world.gameDate.slice(0, 4)) || 2025;
   const isDeadlineWindow = isTransferDeadlineWindow(world.gameDate);
-  const deadlineBargains = getDeadlineDayBargains(world);
-  const releaseClauseTargets = Object.values(world.players)
-    .filter((p) => p.clubId !== club.id && Boolean(p.releaseClause))
-    .sort((a, b) => b.currentAbility - a.currentAbility)
-    .slice(0, 18);
-
-  const transferListedPlayers = Object.values(world.players)
-    .filter((p) => p.clubId !== club.id && (p.transferListed || p.loanListed))
-    .sort((a, b) => b.currentAbility - a.currentAbility)
-    .slice(0, 45);
-
-  const bosmanPlayers = Object.values(world.players)
-    .filter((p) => {
-      if (p.clubId === club.id) return false;
-      const expYear = Number((p.contractEndDate || '2028-06-30').slice(0, 4)) || 2028;
-      return expYear - currentYear <= 1;
-    })
-    .sort((a, b) => b.currentAbility - a.currentAbility)
-    .slice(0, 50);
-
-  const incomingOffers = world.transferOffers.filter(
-    (o) => o.sellingClubId === club.id && o.status === 'PendingClub'
+  const deadlineBargains = useMemo(() => getDeadlineDayBargains(world), [world]);
+  const releaseClauseTargets = useMemo(
+    () =>
+      Object.values(world.players)
+        .filter((p) => p.clubId !== club.id && Boolean(p.releaseClause))
+        .sort((a, b) => b.currentAbility - a.currentAbility)
+        .slice(0, 18),
+    [world.players, club.id]
   );
 
-  const shortlistedPlayers = world.shortlistPlayerIds
-    .map((id) => world.players[id])
-    .filter((p): p is Player => Boolean(p));
+  const transferListedPlayers = useMemo(
+    () =>
+      Object.values(world.players)
+        .filter((p) => p.clubId !== club.id && (p.transferListed || p.loanListed))
+        .sort((a, b) => b.currentAbility - a.currentAbility)
+        .slice(0, 45),
+    [world.players, club.id]
+  );
+
+  const bosmanPlayers = useMemo(
+    () =>
+      Object.values(world.players)
+        .filter((p) => {
+          if (p.clubId === club.id) return false;
+          const expYear = Number((p.contractEndDate || '2028-06-30').slice(0, 4)) || 2028;
+          return expYear - currentYear <= 1;
+        })
+        .sort((a, b) => b.currentAbility - a.currentAbility)
+        .slice(0, 50),
+    [world.players, club.id, currentYear]
+  );
+
+  const incomingOffers = useMemo(
+    () =>
+      world.transferOffers.filter(
+        (o) => o.sellingClubId === club.id && o.status === 'PendingClub'
+      ),
+    [world.transferOffers, club.id]
+  );
+
+  const shortlistedPlayers = useMemo(
+    () =>
+      world.shortlistPlayerIds
+        .map((id) => world.players[id])
+        .filter((p): p is Player => Boolean(p)),
+    [world.shortlistPlayerIds, world.players]
+  );
 
   return (
     <div className="space-y-4">

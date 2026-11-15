@@ -33,7 +33,7 @@ export const ClubBadge: React.FC<{
   club?: Pick<Club, 'name' | 'shortName' | 'primaryColor' | 'secondaryColor' | 'logoUrl'> | null;
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
-}> = ({ club, size = 'md', className = '' }) => {
+}> = React.memo(({ club, size = 'md', className = '' }) => {
   const [imgError, setImgError] = useState(false);
 
   const resolvedLogoUrl =
@@ -53,11 +53,23 @@ export const ClubBadge: React.FC<{
     lg: 'w-11 h-11 text-base rounded-lg',
   };
 
+  const pixelSizeMap = {
+    xs: 16,
+    sm: 24,
+    md: 32,
+    lg: 44,
+  };
+
   if (resolvedLogoUrl && !imgError) {
+    const px = pixelSizeMap[size];
     return (
       <img
         src={resolvedLogoUrl}
         alt={club.name}
+        width={px}
+        height={px}
+        loading="lazy"
+        decoding="async"
         referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
         className={`${sizeMap[size]} object-contain shrink-0 select-none ${className}`}
@@ -153,4 +165,4 @@ export const ClubBadge: React.FC<{
       </svg>
     </div>
   );
-};
+});
