@@ -8,6 +8,7 @@ import {
   FreeKickRoutineType,
   LineOfEngagement,
   Mentality,
+  OppositionPlayerInstruction,
   PassingDirectness,
   PlayerInstruction,
   PlayerRole,
@@ -265,6 +266,103 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                   </option>
                 );
               })}
+            </select>
+          </div>
+
+          {/* Tactical Blueprints & Quick Presets */}
+          <div className="flex items-center gap-2">
+            <label htmlFor="tactical-preset-select" className="text-xs text-slate-400">
+              {tr('Preset:', 'ปรัชญาสำเร็จรูป:')}
+            </label>
+            <select
+              id="tactical-preset-select"
+              data-testid="tactical-preset-select"
+              defaultValue=""
+              onChange={(e) => {
+                const presetId = e.target.value;
+                if (!presetId) return;
+                soundService.playClick();
+                if (presetId === 'gegenpress_433') {
+                  onUpdateTactic(
+                    {
+                      ...activeTactic,
+                      instructions: {
+                        ...activeTactic.instructions,
+                        mentality: 'Attacking',
+                        passingDirectness: 'Mixed',
+                        tempo: 'Higher',
+                        pressingIntensity: 'Very High',
+                        defensiveLine: 'High',
+                        lineOfEngagement: 'High',
+                        whenPossessionLost: 'Counter-Press',
+                        whenPossessionWon: 'Counter',
+                        transition: 'Counter-Press',
+                      },
+                    },
+                    editingSecondary
+                  );
+                } else if (presetId === 'tikitaka_4231') {
+                  onUpdateTactic(
+                    {
+                      ...activeTactic,
+                      instructions: {
+                        ...activeTactic.instructions,
+                        mentality: 'Positive',
+                        passingDirectness: 'Shorter',
+                        tempo: 'Standard',
+                        buildUp: 'Play Out of Defence',
+                        pressingIntensity: 'High',
+                        defensiveLine: 'High',
+                        whenPossessionLost: 'Counter-Press',
+                        whenPossessionWon: 'Hold Shape',
+                      },
+                    },
+                    editingSecondary
+                  );
+                } else if (presetId === 'lowblock_532') {
+                  onUpdateTactic(
+                    {
+                      ...activeTactic,
+                      instructions: {
+                        ...activeTactic.instructions,
+                        mentality: 'Cautious',
+                        passingDirectness: 'More Direct',
+                        tempo: 'Higher',
+                        pressingIntensity: 'Standard',
+                        defensiveLine: 'Deep',
+                        lineOfEngagement: 'Low',
+                        whenPossessionLost: 'Regroup',
+                        whenPossessionWon: 'Counter',
+                        transition: 'Regroup',
+                      },
+                    },
+                    editingSecondary
+                  );
+                } else if (presetId === 'wingplay_442') {
+                  onUpdateTactic(
+                    {
+                      ...activeTactic,
+                      instructions: {
+                        ...activeTactic.instructions,
+                        mentality: 'Positive',
+                        passingDirectness: 'More Direct',
+                        attackingWidth: 'Wide',
+                        buildUp: 'More Direct',
+                        tempo: 'Higher',
+                      },
+                    },
+                    editingSecondary
+                  );
+                }
+                e.target.value = '';
+              }}
+              className="px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-emerald-300 font-medium cursor-pointer"
+            >
+              <option value="">{tr('Load Tactical Preset...', 'โหลดชุดแท็กติกสำเร็จรูป...')}</option>
+              <option value="gegenpress_433">⚡ Gegenpress (High Press &amp; Fast Tempo)</option>
+              <option value="tikitaka_4231">🎯 Tiki-Taka Control (Short Passing &amp; Possession)</option>
+              <option value="lowblock_532">🛡️ Low-Block Counter (Deep Line &amp; Direct Break)</option>
+              <option value="wingplay_442">🪽 Direct Wing Play (Wide Flanks &amp; High Tempo)</option>
             </select>
           </div>
         </div>
@@ -1907,6 +2005,192 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                       </option>
                     </select>
                   </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Phase 2: Opposition Instructions (สั่งประกบตัวอันตรายคู่แข่งนัดถัดไป) */}
+          {(() => {
+            const nextFixture = world.fixtures.find(
+              (f) =>
+                f.status === 'Scheduled' &&
+                (f.homeClubId === club.id || f.awayClubId === club.id)
+            );
+            const oppClubId = nextFixture
+              ? nextFixture.homeClubId === club.id
+                ? nextFixture.awayClubId
+                : nextFixture.homeClubId
+              : Object.keys(world.clubs).find((cid) => cid !== club.id) || club.id;
+            const oppClub = world.clubs[oppClubId];
+            const oppStarters = (oppClub?.primaryTactic.lineup || [])
+              .map((s) => (s.playerId ? world.players[s.playerId] : null))
+              .filter((p): p is NonNullable<typeof p> => Boolean(p && p.positions[0] !== 'GK'))
+              .slice(0, 6);
+            const oiMap = activeTactic.oppositionInstructions || {};
+
+            const updatePlayerOI = (
+              playerId: string,
+              patch: Partial<OppositionPlayerInstruction>
+            ) => {
+              const existing: OppositionPlayerInstruction = oiMap[playerId] || {
+                playerId,
+                tightMarking: 'Default',
+                triggerPress: 'Default',
+                tackling: 'Normal',
+                showOntoFoot: 'Default',
+              };
+              onUpdateTactic(
+                {
+                  ...activeTactic,
+                  oppositionInstructions: {
+                    ...oiMap,
+                    [playerId]: { ...existing, ...patch },
+                  },
+                },
+                editingSecondary
+              );
+            };
+
+            return (
+              <div
+                className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3"
+                data-testid="opposition-instructions-panel"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-semibold text-rose-400">
+                      🎯{' '}
+                      {tr(
+                        `Opposition Instructions vs ${oppClub?.shortName || 'Next Opponent'}`,
+                        `สั่งประกบตัวอันตรายคู่แข่ง (${oppClub?.name || 'นัดถัดไป'})`
+                      )}
+                    </h3>
+                    <p className="text-[10px] text-slate-400">
+                      {tr(
+                        'Target key opposition playmakers & forwards with tight marking, press triggers, and weak-foot traps.',
+                        'สั่งจับตายเพลย์เมกเกอร์และกองหน้าคู่แข่งด้วยประกบติด รุมบีบเร็ว และบีบให้เล่นเท้าไม่ถนัด'
+                      )}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="assman-auto-oi-btn"
+                    onClick={() => {
+                      soundService.playClick();
+                      const nextOi: Record<string, OppositionPlayerInstruction> = { ...oiMap };
+                      oppStarters.slice(0, 3).forEach((op) => {
+                        nextOi[op.id] = {
+                          playerId: op.id,
+                          tightMarking: 'Always',
+                          triggerPress: 'Always',
+                          tackling: 'Hard',
+                          showOntoFoot: 'Weak Foot',
+                        };
+                      });
+                      onUpdateTactic(
+                        {
+                          ...activeTactic,
+                          oppositionInstructions: nextOi,
+                        },
+                        editingSecondary
+                      );
+                    }}
+                    className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-semibold cursor-pointer shrink-0"
+                  >
+                    ⚡ {tr('AssMan Auto-Mark Threats', 'ให้ผู้ช่วยสั่งประกบตัวอันตราย')}
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  {oppStarters.map((op, idx) => {
+                    const oi: OppositionPlayerInstruction = oiMap[op.id] || {
+                      playerId: op.id,
+                      tightMarking: 'Default',
+                      triggerPress: 'Default',
+                      tackling: 'Normal',
+                      showOntoFoot: 'Default',
+                    };
+                    return (
+                      <div
+                        key={op.id}
+                        data-testid={`oi-row-${idx}`}
+                        className="p-2 rounded-lg bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-[115px]">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-mono font-bold text-[10px]">
+                            #{op.shirtNumber || idx + 7} {op.positions[0]}
+                          </span>
+                          <span className="font-semibold text-white truncate max-w-[90px]">
+                            {op.lastName}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePlayerOI(op.id, {
+                                tightMarking: oi.tightMarking === 'Always' ? 'Default' : 'Always',
+                              })
+                            }
+                            className={`px-1.5 py-0.5 rounded border text-[10px] cursor-pointer ${
+                              oi.tightMarking === 'Always'
+                                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {tr('Tight Mark', 'ประกบติด')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePlayerOI(op.id, {
+                                triggerPress: oi.triggerPress === 'Always' ? 'Default' : 'Always',
+                              })
+                            }
+                            className={`px-1.5 py-0.5 rounded border text-[10px] cursor-pointer ${
+                              oi.triggerPress === 'Always'
+                                ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {tr('Press', 'รุมบีบ')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePlayerOI(op.id, {
+                                tackling: oi.tackling === 'Hard' ? 'Normal' : 'Hard',
+                              })
+                            }
+                            className={`px-1.5 py-0.5 rounded border text-[10px] cursor-pointer ${
+                              oi.tackling === 'Hard'
+                                ? 'bg-rose-500/20 border-rose-500/50 text-rose-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {tr('Hard Tackle', 'เข้าหนัก')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updatePlayerOI(op.id, {
+                                showOntoFoot:
+                                  oi.showOntoFoot === 'Weak Foot' ? 'Default' : 'Weak Foot',
+                              })
+                            }
+                            className={`px-1.5 py-0.5 rounded border text-[10px] cursor-pointer ${
+                              oi.showOntoFoot === 'Weak Foot'
+                                ? 'bg-sky-500/20 border-sky-500/50 text-sky-300 font-bold'
+                                : 'bg-slate-900 border-slate-800 text-slate-400'
+                            }`}
+                          >
+                            {tr('Weak Foot', 'บีบเท้าบอด')}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );

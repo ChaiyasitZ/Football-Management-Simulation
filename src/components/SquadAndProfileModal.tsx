@@ -23,7 +23,7 @@ interface SquadViewProps {
   world: WorldState;
   onSelectPlayer: (playerId: string) => void;
   onQuickPeekPlayer?: (playerId: string) => void;
-  initialViewMode?: 'table' | 'planner';
+  initialViewMode?: 'table' | 'planner' | 'dynamics';
   onToggleRegistration?: (playerId: string) => void;
   onAutoRegisterSquad?: () => void;
   onTogglePlayInReserves?: (playerId: string) => void;
@@ -55,7 +55,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
   const [posFilter, setPosFilter] = useState<'ALL' | PositionGroup>('ALL');
   const [subFilter, setSubFilter] = useState<'ALL' | 'REGISTERED' | 'HOMEGROWN' | 'RESERVES' | 'UNHAPPY'>('ALL');
   const [sortBy, setSortBy] = useState<'ca' | 'fitness' | 'sharpness' | 'morale' | 'age' | 'wage' | 'value' | 'rating'>('ca');
-  const [viewMode, setViewMode] = useState<'table' | 'planner'>(initialViewMode);
+  const [viewMode, setViewMode] = useState<'table' | 'planner' | 'dynamics'>(initialViewMode);
   const [tablePreset, setTablePreset] = useState<'ALL' | 'OVERVIEW' | 'CONDITION' | 'CONTRACT' | 'STATS'>('ALL');
 
   React.useEffect(() => {
@@ -293,6 +293,18 @@ export const SquadView: React.FC<SquadViewProps> = ({
             >
               {tr('Squad Planner & Depth Chart', 'ผังความลึกขุมกำลัง (Depth Chart)')}
             </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('dynamics')}
+              data-testid="squad-dynamics-toggle-btn"
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
+                viewMode === 'dynamics'
+                  ? 'bg-emerald-500 text-slate-950'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              {tr('🤝 Squad Dynamics & Hierarchy', '🤝 ห้องแต่งตัว & อิทธิพล (Dynamics)')}
+            </button>
           </div>
 
           <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
@@ -386,7 +398,222 @@ export const SquadView: React.FC<SquadViewProps> = ({
         </div>
       </div>
 
-      {viewMode === 'planner' ? (
+      {viewMode === 'dynamics' ? (
+        <div
+          className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5"
+          data-testid="squad-dynamics-view"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-sm font-display font-bold text-white">
+                {tr(
+                  '🤝 Locker Room Hierarchy Pyramid & Active Player Promises',
+                  '🤝 พีระมิดลำดับอิทธิพลในห้องแต่งตัว & คำสัญญาของนักเตะ (Squad Dynamics)'
+                )}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {tr(
+                  'Team Leaders set dressing room standards. Breaking promises to influential leaders triggers locker-room mutiny.',
+                  'ขาใหญ่ในห้องแต่งตัวมีผลต่อขวัญกำลังใจทั้งทีม หากผิดสัญญากับกลุ่ม Team Leaders อาจเกิดคลื่นใต้น้ำต่อต้านผู้จัดการทีม'
+                )}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-mono">
+              <span className="px-2.5 py-1 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold">
+                {tr('Dressing Room Cohesion:', 'ความสามัคคีในทีม:')}{' '}
+                {Math.round(
+                  clubPlayers.reduce((sum, p) => sum + p.morale, 0) / Math.max(1, clubPlayers.length)
+                )}
+                %
+              </span>
+            </div>
+          </div>
+
+          {/* 3-Tier Influence Pyramid */}
+          {(() => {
+            const sortedByInfluence = [...clubPlayers].sort((a, b) => {
+              const scoreA =
+                a.attributes.mental.leadership * 2.2 +
+                a.currentAbility * 0.4 +
+                getAgeAtDate(a.dateOfBirth, world.gameDate) * 1.5;
+              const scoreB =
+                b.attributes.mental.leadership * 2.2 +
+                b.currentAbility * 0.4 +
+                getAgeAtDate(b.dateOfBirth, world.gameDate) * 1.5;
+              return scoreB - scoreA;
+            });
+            const teamLeaders = sortedByInfluence.slice(0, 3);
+            const highlyInfluential = sortedByInfluence.slice(3, 9);
+            const socialCore = sortedByInfluence.slice(9, 19);
+
+            return (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Tier 1: Team Leaders */}
+                <div className="bg-slate-950 border border-amber-500/40 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-400">
+                      {tr('👑 Tier 1: Team Leaders (Captains)', '👑 ระดับ 1: ขาใหญ่ประจำห้องแต่งตัว')}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">{teamLeaders.length}</span>
+                  </div>
+                  <div className="space-y-2">
+                    {teamLeaders.map((p, idx) => (
+                      <div
+                        key={p.id}
+                        onClick={() => onSelectPlayer(p.id)}
+                        className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 hover:border-amber-500/50 flex items-center justify-between cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <PlayerAvatar player={p} club={club} size="sm" />
+                          <div className="truncate">
+                            <div className="text-xs font-bold text-white truncate">
+                              {idx === 0 ? '© ' : ''}
+                              {p.firstName} {p.lastName}
+                            </div>
+                            <div className="text-[10px] font-mono text-amber-300">
+                              LDR {p.attributes.mental.leadership} · {p.squadStatus}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-emerald-400">
+                          {p.morale}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tier 2: Highly Influential */}
+                <div className="bg-slate-950 border border-sky-500/30 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-sky-400">
+                      {tr('⚡ Tier 2: Highly Influential', '⚡ ระดับ 2: แกนหลักผู้มีอิทธิพลสูง')}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {highlyInfluential.length}
+                    </span>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    {highlyInfluential.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => onSelectPlayer(p.id)}
+                        className="p-2 rounded-lg bg-slate-900/80 border border-slate-800 hover:border-sky-500/40 flex items-center justify-between cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <PlayerAvatar player={p} club={club} size="xs" />
+                          <div className="truncate">
+                            <div className="text-xs font-semibold text-white truncate">
+                              {p.firstName} {p.lastName}
+                            </div>
+                            <div className="text-[10px] font-mono text-slate-400">
+                              LDR {p.attributes.mental.leadership} · {p.positions[0]}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-xs font-mono text-sky-300">{p.morale}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Tier 3: Social Core & Youth Contingent */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-400">
+                      {tr('🌱 Tier 3: Core Social Group & Youth', '🌱 ระดับ 3: กลุ่มผู้เล่นหมุนเวียน & ดาวรุ่ง')}
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400">{socialCore.length}</span>
+                  </div>
+                  <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                    {socialCore.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => onSelectPlayer(p.id)}
+                        className="p-2 rounded-lg bg-slate-900/60 border border-slate-800/80 flex items-center justify-between cursor-pointer text-xs"
+                      >
+                        <span className="text-slate-200 truncate">
+                          {p.firstName} {p.lastName}{' '}
+                          <span className="text-[10px] font-mono text-slate-400">
+                            ({p.positions[0]})
+                          </span>
+                        </span>
+                        <span className="font-mono text-[11px] text-slate-300">{p.morale}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Active Player Promises Tracker */}
+          <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                {tr(
+                  '📜 Active Dressing Room Promises & Expectations Tracker',
+                  '📜 ติดตามคำสัญญาที่ให้ไว้กับนักเตะ (Active Player Promises)'
+                )}
+              </h4>
+              <span className="text-[11px] font-mono text-slate-400">
+                {tr('Updated Weekly', 'อัปเดตสถานะรายสัปดาห์')}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+              {clubPlayers.slice(0, 4).map((p, idx) => {
+                const promiseTypes = [
+                  {
+                    title: tr('Guaranteed Starter Minutes', 'สัญญาการันตีลงตัวจริงต่อเนื่อง'),
+                    status: (p.consecutiveBenched || 0) >= 2 ? 'AT RISK' : 'ON TRACK',
+                    color:
+                      (p.consecutiveBenched || 0) >= 2
+                        ? 'text-amber-400 border-amber-500/40 bg-amber-500/10'
+                        : 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10',
+                  },
+                  {
+                    title: tr('Qualify for UEFA Champions League', 'พาทีมคว้าโควตา UCL ฤดูกาลนี้'),
+                    status: 'IN PROGRESS',
+                    color: 'text-sky-300 border-sky-500/40 bg-sky-500/10',
+                  },
+                  {
+                    title: tr('Preferred Shirt Number Assigned', 'มอบเบอร์เสื้อหลักที่นักเตะต้องการ'),
+                    status: p.shirtNumber && p.shirtNumber <= 11 ? 'FULFILLED' : 'ON TRACK',
+                    color: 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10',
+                  },
+                  {
+                    title: tr('Long-Term Contract Security', 'ความมั่นคงของสัญญาระยะยาว'),
+                    status: p.morale >= 70 ? 'ON TRACK' : 'AT RISK',
+                    color:
+                      p.morale >= 70
+                        ? 'text-emerald-400 border-emerald-500/40 bg-emerald-500/10'
+                        : 'text-amber-400 border-amber-500/40 bg-amber-500/10',
+                  },
+                ];
+                const pr = promiseTypes[idx % promiseTypes.length];
+                return (
+                  <div
+                    key={p.id}
+                    className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-white truncate">
+                        {p.firstName} {p.lastName}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded border text-[10px] font-mono font-bold ${pr.color}`}
+                      >
+                        {pr.status}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300">{pr.title}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : viewMode === 'planner' ? (
         <div
           className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
           data-testid="squad-planner-depth-chart"

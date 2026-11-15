@@ -6595,3 +6595,447 @@ export function sendPlayerToAffiliateLoan(
     ),
   };
 }
+
+/**
+ * Phase 1.3: Apply Post-Match or Pre-Match Dressing Room Team Talk effects directly to WorldState
+ */
+export function applyPostMatchTeamTalk(
+  state: WorldState,
+  tone: 'PRAISE' | 'DEMAND' | 'FOCUS' | 'praise_ft' | 'demand_ft' | 'focus_next',
+  fixtureId?: string
+): { nextState: WorldState; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const updatedPlayers: Record<string, Player> = { ...state.players };
+
+  const fixture = fixtureId ? state.fixtures.find((f) => f.id === fixtureId) : undefined;
+  const isHome = fixture ? fixture.homeClubId === myClub.id : true;
+  const myGoals = fixture?.result ? (isHome ? fixture.result.homeGoals : fixture.result.awayGoals) : 1;
+  const oppGoals = fixture?.result ? (isHome ? fixture.result.awayGoals : fixture.result.homeGoals) : 1;
+  const wonOrDrew = myGoals >= oppGoals;
+  const normalizedTone =
+    tone === 'praise_ft' ? 'PRAISE' : tone === 'demand_ft' ? 'DEMAND' : tone === 'focus_next' ? 'FOCUS' : tone;
+
+  for (const p of Object.values(state.players)) {
+    if (p.clubId !== myClub.id) continue;
+    if (normalizedTone === 'PRAISE') {
+      const moraleGain = wonOrDrew ? 6 : 4;
+      updatedPlayers[p.id] = {
+        ...p,
+        morale: Math.min(100, p.morale + moraleGain),
+        satisfaction: Math.min(100, p.satisfaction + 3),
+      };
+    } else if (normalizedTone === 'DEMAND') {
+      const det = p.attributes.mental.determination;
+      const moraleDelta = det >= 14 ? 4 : -1;
+      updatedPlayers[p.id] = {
+        ...p,
+        morale: Math.max(15, Math.min(100, p.morale + moraleDelta)),
+        matchSharpness: Math.min(100, p.matchSharpness + 3),
+      };
+    } else {
+      updatedPlayers[p.id] = {
+        ...p,
+        fitness: Math.min(100, p.fitness + 2),
+        morale: Math.min(100, p.morale + 2),
+      };
+    }
+  }
+
+  const msg =
+    normalizedTone === 'PRAISE'
+      ? trText(
+          'Dressing Room Talk: Squad morale boosted (+5 Morale across all matchday players)!',
+          'พูดคุยในห้องแต่งตัว: ขวัญกำลังใจของนักเตะในทีมพุ่งสูงขึ้น (+5 Morale)!'
+        )
+      : normalizedTone === 'DEMAND'
+        ? trText(
+            'Dressing Room Talk: Determined players responded with higher sharpness (+3 Sharpness, +4 Morale)!',
+            'พูดคุยในห้องแต่งตัว: นักเตะที่มีความมุ่งมั่นตอบสนองอย่างดีเยี่ยม (+3 ความคมชัด, +4 กำลังใจ)!'
+          )
+        : trText(
+            'Dressing Room Talk: Squad focused on recovery and preparation (+2% Condition & +2 Morale)!',
+            'พูดคุยในห้องแต่งตัว: ลูกทีมมุ่งเน้นการฟื้นฟูร่างกายและเตรียมพร้อมนัดถัดไป (+2% ความฟิต)!'
+          );
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+    },
+    message: msg,
+  };
+}
+
+/**
+ * Phase 3.2: Offer own player to AI clubs ("Offer to Clubs") to solicit an immediate incoming bid
+ */
+export function offerPlayerToClubs(
+  state: WorldState,
+  playerId: string
+): { nextState: WorldState; offer: TransferOffer | null; bidsCreated: number; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const player = state.players[playerId];
+  if (!player || player.clubId !== myClub.id) {
+    return {
+      nextState: state,
+      offer: null,
+      bidsCreated: 0,
+      message: trText('You can only offer your own players to clubs.', 'สามารถเร่ขายได้เฉพาะนักเตะในสังกัดของคุณเท่านั้น'),
+    };
+  }
+
+  const basePrice = player.askingPrice || player.marketValue;
+  const suitors = Object.values(state.clubs).filter(
+    (c) =>
+      c.id !== myClub.id &&
+      c.finances.transferBudget >= basePrice * 0.75 &&
+      Math.abs(c.reputation - myClub.reputation) <= 18
+  );
+  const buyer =
+    suitors[Math.abs(state.randomSeed + player.currentAbility * 7) % Math.max(1, suitors.length)] ||
+    Object.values(state.clubs).find((c) => c.id !== myClub.id)!;
+
+  const upfront = Math.round((basePrice * 0.88) / 100_000) * 100_000;
+  const installments = Math.round((basePrice * 0.12) / 100_000) * 100_000;
+
+  const newOffer: TransferOffer = {
+    id: `of_in_solic_${player.id}_${Date.now()}`,
+    date: state.gameDate,
+    playerId: player.id,
+    buyingClubId: buyer.id,
+    sellingClubId: myClub.id,
+    offerType: 'Transfer',
+    upfrontFee: upfront,
+    installmentsFee: installments,
+    sellOnPercentage: 5,
+    proposedWagePerWeek: Math.round(player.wagePerWeek * 1.15),
+    proposedContractYears: 4,
+    proposedSquadStatus: 'Important Player',
+    signingBonus: Math.round(player.wagePerWeek * 2),
+    agentFee: Math.round(player.wagePerWeek * 1.5),
+    status: 'PendingClub',
+  };
+
+  const updatedPlayer: Player = {
+    ...player,
+    transferListed: true,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [player.id]: updatedPlayer,
+      },
+      transferOffers: [newOffer, ...state.transferOffers],
+      inbox: [
+        {
+          id: `news_of_solic_${newOffer.id}`,
+          gameDate: state.gameDate,
+          category: 'Transfer',
+          title: trText(
+            `Official Transfer Bid Received: ${buyer.name} Offer €${((upfront + installments) / 1_000_000).toFixed(2)}M for ${player.firstName} ${player.lastName}`,
+            `ข้อเสนอซื้อตัวจากสโมสรอื่น: ${buyer.name} ยื่นซื้อ ${player.firstName} ${player.lastName} มูลค่า €${((upfront + installments) / 1_000_000).toFixed(2)}M`
+          ),
+          body: trText(
+            `Following your circulation of ${player.firstName} ${player.lastName}'s availability, ${buyer.name} have submitted an official transfer bid of €${(upfront / 1_000_000).toFixed(2)}M upfront + €${(installments / 1_000_000).toFixed(2)}M in installments. Review or counter-negotiate in Transfers -> Incoming Offers.`,
+            `หลังจากที่คุณแจ้งความจำนงพร้อมปล่อยตัว ${player.firstName} ${player.lastName} ล่าสุด ${buyer.name} ได้ยื่นข้อเสนออย่างเป็นทางการเข้ามาแล้วที่ €${(upfront / 1_000_000).toFixed(2)}M ก้อนแรก + ผ่อนชำระ €${(installments / 1_000_000).toFixed(2)}M`
+          ),
+          isRead: false,
+          isImportant: true,
+          relatedClubId: buyer.id,
+          relatedPlayerId: player.id,
+          actionType: 'GoToTransfer',
+        },
+        ...state.inbox,
+      ],
+    },
+    offer: newOffer,
+    bidsCreated: newOffer ? 1 : 0,
+    message: trText(
+      `${buyer.name} submitted a €${((upfront + installments) / 1_000_000).toFixed(2)}M bid for ${player.firstName} ${player.lastName}!`,
+      `${buyer.name} ยื่นข้อเสนอขอซื้อ ${player.firstName} ${player.lastName} มูลค่า €${((upfront + installments) / 1_000_000).toFixed(2)}M เข้ามาแล้ว!`
+    ),
+  };
+}
+
+/**
+ * Phase 3.1: Interactive Incoming Bid Counter-Negotiation (Upfront + Installments + Sell-On % + Buy-Back Clause)
+ */
+export function negotiateIncomingTransferBid(
+  state: WorldState,
+  offerId: string,
+  params: {
+    action?: 'ACCEPT' | 'COUNTER' | 'REJECT';
+    demandedUpfrontFee?: number;
+    demandedInstallmentsFee?: number;
+    upfrontFee?: number;
+    installmentsFee?: number;
+    sellOnPercentage?: number;
+    buyBackClauseFee?: number;
+    forceAccept?: boolean;
+  }
+): {
+  nextState: WorldState;
+  outcome: 'COMPLETED' | 'COUNTER_ACCEPTED' | 'REJECTED';
+  accepted: boolean;
+  message: string;
+} {
+  const offer = state.transferOffers.find((o) => o.id === offerId);
+  if (!offer) {
+    return { nextState: state, outcome: 'REJECTED', accepted: false, message: 'Offer not found.' };
+  }
+
+  const player = state.players[offer.playerId];
+  const buyingClub = state.clubs[offer.buyingClubId];
+  const myClub = state.clubs[state.controlledClubId];
+
+  if (!player || !buyingClub || !myClub) {
+    return { nextState: state, outcome: 'REJECTED', accepted: false, message: 'Invalid offer entities.' };
+  }
+
+  const resolvedAction =
+    params.action ?? (params.forceAccept ? 'ACCEPT' : 'COUNTER');
+
+  if (resolvedAction === 'REJECT') {
+    return {
+      nextState: {
+        ...state,
+        transferOffers: state.transferOffers.map((o) =>
+          o.id === offerId ? { ...o, status: 'Rejected' } : o
+        ),
+      },
+      outcome: 'REJECTED',
+      accepted: false,
+      message: trText(
+        `Rejected ${buyingClub.name}'s transfer bid for ${player.firstName} ${player.lastName}.`,
+        `ปฏิเสธข้อเสนอของ ${buyingClub.name} ที่ยื่นซื้อ ${player.firstName} ${player.lastName} แล้ว`
+      ),
+    };
+  }
+
+  const rawUpfront = params.demandedUpfrontFee ?? params.upfrontFee;
+  const rawInstallments = params.demandedInstallmentsFee ?? params.installmentsFee;
+
+  const finalUpfront =
+    typeof rawUpfront === 'number' ? rawUpfront : offer.upfrontFee;
+  const finalInstallments =
+    typeof rawInstallments === 'number' ? rawInstallments : offer.installmentsFee;
+  const finalSellOn =
+    typeof params.sellOnPercentage === 'number' ? params.sellOnPercentage : offer.sellOnPercentage;
+  const finalBuyBack =
+    typeof params.buyBackClauseFee === 'number' && params.buyBackClauseFee > 0
+      ? params.buyBackClauseFee
+      : undefined;
+
+  const totalDemanded = finalUpfront + finalInstallments;
+  const maxWillingToPay = Math.round(
+    Math.max(player.marketValue * 1.45, (offer.upfrontFee + offer.installmentsFee) * 1.32)
+  );
+
+  if (resolvedAction === 'COUNTER' && !params.forceAccept && totalDemanded > maxWillingToPay) {
+    return {
+      nextState: {
+        ...state,
+        transferOffers: state.transferOffers.map((o) =>
+          o.id === offerId
+            ? {
+                ...o,
+                status: 'Rejected',
+                rejectionReason: `${buyingClub.name} walked away after your €${(totalDemanded / 1_000_000).toFixed(1)}M demand exceeded their valuation.`,
+              }
+            : o
+        ),
+      },
+      outcome: 'REJECTED',
+      accepted: false,
+      message: trText(
+        `${buyingClub.name} walked away — your €${(totalDemanded / 1_000_000).toFixed(2)}M counter-demand was too high!`,
+        `${buyingClub.name} ถอนตัวจากการเจรจา เนื่องจากราคาที่คุณเรียก (€${(totalDemanded / 1_000_000).toFixed(2)}M) สูงเกินงบ!`
+      ),
+    };
+  }
+
+  // Finalize sale of player to buyingClub
+  const updatedPlayer: Player = {
+    ...player,
+    clubId: buyingClub.id,
+    transferListed: false,
+    loanListed: false,
+    wagePerWeek: offer.proposedWagePerWeek,
+    transferHistory: [
+      {
+        date: state.gameDate,
+        fromClubId: myClub.id,
+        toClubId: buyingClub.id,
+        fee: totalDemanded,
+        type: 'Transfer',
+      },
+      ...player.transferHistory,
+    ],
+  };
+
+  const updatedMyClub: Club = {
+    ...myClub,
+    finances: {
+      ...myClub.finances,
+      balance: myClub.finances.balance + totalDemanded,
+      transferBudget: myClub.finances.transferBudget + Math.round(totalDemanded * 0.85),
+      wageUsedPerWeek: Math.max(0, myClub.finances.wageUsedPerWeek - player.wagePerWeek),
+    },
+    primaryTactic: {
+      ...myClub.primaryTactic,
+      lineup: myClub.primaryTactic.lineup.map((s) =>
+        s.playerId === player.id ? { ...s, playerId: null } : s
+      ),
+      benchPlayerIds: myClub.primaryTactic.benchPlayerIds.filter((id) => id !== player.id),
+    },
+  };
+
+  const updatedBuyingClub: Club = {
+    ...buyingClub,
+    finances: {
+      ...buyingClub.finances,
+      balance: buyingClub.finances.balance - finalUpfront,
+      transferBudget: Math.max(0, buyingClub.finances.transferBudget - finalUpfront),
+    },
+  };
+
+  const newBuyBackClauses = [...(state.buyBackClauses || [])];
+  if (finalBuyBack && finalBuyBack > 0) {
+    newBuyBackClauses.unshift({
+      id: `bbc_${player.id}_${Date.now()}`,
+      playerId: player.id,
+      playerName: `${player.firstName} ${player.lastName}`,
+      soldToClubId: buyingClub.id,
+      soldToClubName: buyingClub.name,
+      buyBackFee: finalBuyBack,
+      expiresSeason: '2028/29',
+      createdDate: state.gameDate,
+    });
+  }
+
+  const newTx = {
+    id: `tx_sale_${offer.id}`,
+    date: state.gameDate,
+    clubId: myClub.id,
+    category: 'Player Sale' as const,
+    amount: totalDemanded,
+    description: `Sold ${player.firstName} ${player.lastName} to ${buyingClub.name} (${finalSellOn}% sell-on${finalBuyBack ? `, €${(finalBuyBack / 1_000_000).toFixed(1)}M Buy-Back` : ''})`,
+    balanceAfter: updatedMyClub.finances.balance,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [player.id]: updatedPlayer,
+      },
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedMyClub,
+        [buyingClub.id]: updatedBuyingClub,
+      },
+      transferOffers: state.transferOffers.map((o) =>
+        o.id === offerId
+          ? {
+              ...o,
+              upfrontFee: finalUpfront,
+              installmentsFee: finalInstallments,
+              sellOnPercentage: finalSellOn,
+              buyBackClauseFee: finalBuyBack,
+              status: 'Completed',
+            }
+          : o
+      ),
+      buyBackClauses: newBuyBackClauses,
+      transactions: [newTx, ...state.transactions],
+    },
+    outcome: resolvedAction === 'COUNTER' ? 'COUNTER_ACCEPTED' : 'COMPLETED',
+    accepted: true,
+    message: trText(
+      `Deal Completed! Sold ${player.firstName} ${player.lastName} to ${buyingClub.name} for €${(totalDemanded / 1_000_000).toFixed(2)}M (${finalSellOn}% sell-on${finalBuyBack ? `, €${(finalBuyBack / 1_000_000).toFixed(1)}M Buy-Back` : ''}).`,
+      `ปิดดีลสำเร็จ! ขาย ${player.firstName} ${player.lastName} ให้ ${buyingClub.name} มูลค่ารวม €${(totalDemanded / 1_000_000).toFixed(2)}M (ส่วนแบ่งขายต่อ ${finalSellOn}%${finalBuyBack ? `, ออปชันซื้อกลับ €${(finalBuyBack / 1_000_000).toFixed(1)}M` : ''})`
+    ),
+  };
+}
+
+/**
+ * Phase 3.2: Exercise an active Buy-Back Clause to bring a former player back immediately
+ */
+export function exerciseBuyBackClause(
+  state: WorldState,
+  clauseId: string
+): { nextState: WorldState; success: boolean; completed: boolean; message: string } {
+  const clause = (state.buyBackClauses || []).find((c) => c.id === clauseId);
+  if (!clause) {
+    return { nextState: state, success: false, completed: false, message: 'Buy-Back clause not found.' };
+  }
+
+  const myClub = state.clubs[state.controlledClubId];
+  const player = state.players[clause.playerId];
+  if (!player) {
+    return { nextState: state, success: false, completed: false, message: 'Player not found.' };
+  }
+
+  if (myClub.finances.transferBudget < clause.buyBackFee) {
+    return {
+      nextState: state,
+      success: false,
+      completed: false,
+      message: trText(
+        `Insufficient transfer budget to trigger €${(clause.buyBackFee / 1_000_000).toFixed(1)}M Buy-Back Clause.`,
+        `งบซื้อขายไม่เพียงพอสำหรับจ่ายค่าออปชันซื้อกลับ €${(clause.buyBackFee / 1_000_000).toFixed(1)}M`
+      ),
+    };
+  }
+
+  const updatedPlayer: Player = {
+    ...player,
+    clubId: myClub.id,
+    morale: Math.min(100, player.morale + 10),
+    transferHistory: [
+      {
+        date: state.gameDate,
+        fromClubId: clause.soldToClubId,
+        toClubId: myClub.id,
+        fee: clause.buyBackFee,
+        type: 'Transfer',
+      },
+      ...player.transferHistory,
+    ],
+  };
+
+  const updatedMyClub: Club = {
+    ...myClub,
+    finances: {
+      ...myClub.finances,
+      balance: myClub.finances.balance - clause.buyBackFee,
+      transferBudget: myClub.finances.transferBudget - clause.buyBackFee,
+    },
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [player.id]: updatedPlayer,
+      },
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedMyClub,
+      },
+      buyBackClauses: (state.buyBackClauses || []).filter((c) => c.id !== clauseId),
+    },
+    success: true,
+    completed: true,
+    message: trText(
+      `Triggered €${(clause.buyBackFee / 1_000_000).toFixed(1)}M Buy-Back Clause! ${player.firstName} ${player.lastName} rejoins ${myClub.name}!`,
+      `ใช้ออปชันซื้อกลับ €${(clause.buyBackFee / 1_000_000).toFixed(1)}M สำเร็จ! ดึงตัว ${player.firstName} ${player.lastName} กลับสู่ ${myClub.name} แล้ว!`
+    ),
+  };
+}
+

@@ -66,6 +66,7 @@ export interface PlayerProfilePageProps {
   onSignBosmanFree?: (playerId: string, proposedWage: number, contractYears: number) => void;
   onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
   onSendToAffiliateLoan?: (playerId: string) => void;
+  onOfferPlayerToClubs?: (playerId: string) => void;
 }
 
 type ProfileTabId = 'overview' | 'development' | 'contract' | 'stats' | 'scout';
@@ -84,6 +85,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   onSignBosmanFree,
   onActivateReleaseClause,
   onSendToAffiliateLoan,
+  onOfferPlayerToClubs,
 }) => {
   const { tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<ProfileTabId>('overview');
@@ -283,6 +285,17 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     ? tr('Shortlisted', 'อยู่ในรายชื่อเป้าหมาย')
                     : tr('Add to Shortlist', 'เพิ่มเข้าเป้าหมาย')}
                 </span>
+              </button>
+            )}
+
+            {isMyPlayer && onOfferPlayerToClubs && (
+              <button
+                type="button"
+                data-testid="offer-to-clubs-btn"
+                onClick={() => onOfferPlayerToClubs(player.id)}
+                className="px-3.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-semibold text-xs cursor-pointer"
+              >
+                {tr('📢 Offer to Clubs', '📢 เร่ขายให้สโมสรอื่น')}
               </button>
             )}
 

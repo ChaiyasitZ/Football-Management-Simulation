@@ -339,6 +339,14 @@ export interface SetPieceSetup {
   freeKickRoutine: FreeKickRoutineType;
 }
 
+export interface OppositionPlayerInstruction {
+  playerId: string;
+  tightMarking: 'Always' | 'Default' | 'Never';
+  triggerPress: 'Always' | 'Default';
+  tackling: 'Hard' | 'Normal' | 'Easy';
+  showOntoFoot: 'Weak Foot' | 'Inside' | 'Outside' | 'Default';
+}
+
 export interface TacticalSystem {
   id: string;
   name: string;
@@ -348,6 +356,7 @@ export interface TacticalSystem {
   benchPlayerIds: string[]; // up to 9 subs
   familiarity: number; // 1-100
   setPieces?: SetPieceSetup;
+  oppositionInstructions?: Record<string, OppositionPlayerInstruction>;
 }
 
 export type StaffRole =
@@ -538,6 +547,8 @@ export interface MatchEvent {
   playerName?: string;
   secondaryPlayerId?: string;
   secondaryPlayerName?: string;
+  subOutPlayerId?: string;
+  subInPlayerId?: string;
   text: string;
   xGDelta?: number;
   shotXg?: number;
@@ -802,6 +813,17 @@ export interface HallOfFameEntry {
   isUser?: boolean;
 }
 
+export interface BuyBackClauseRecord {
+  id: string;
+  playerId: string;
+  playerName: string;
+  soldToClubId: string;
+  soldToClubName: string;
+  buyBackFee: number;
+  expiresSeason: string;
+  createdDate: string;
+}
+
 export interface WorldState {
   saveId: string;
   saveName: string;
@@ -835,4 +857,5 @@ export interface WorldState {
   customClubConfig?: CustomClubConfig | null;
   lastMindGameMatchday?: number;
   socialFeed?: FanSocialPost[];
+  buyBackClauses?: BuyBackClauseRecord[];
 }

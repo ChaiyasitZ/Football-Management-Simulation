@@ -1682,18 +1682,36 @@ export const TransfersView: React.FC<{
   world: WorldState;
   onSelectPlayer: (playerId: string) => void;
   onRespondToIncomingOffer?: (offerId: string, action: 'ACCEPT' | 'COUNTER' | 'REJECT') => void;
+  onNegotiateIncomingOffer?: (
+    offerId: string,
+    params: {
+      upfrontFee: number;
+      installmentsFee: number;
+      sellOnPercentage: number;
+      buyBackClauseFee?: number;
+      forceAccept?: boolean;
+    }
+  ) => void;
+  onExerciseBuyBackClause?: (clauseId: string) => void;
   onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
   onTriggerGlobalSuperBid?: () => void;
 }> = ({
   world,
   onSelectPlayer,
   onRespondToIncomingOffer,
+  onNegotiateIncomingOffer,
+  onExerciseBuyBackClause,
   onActivateReleaseClause,
   onTriggerGlobalSuperBid,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const [tab, setTab] = useState<'market' | 'deadline' | 'bosman' | 'incoming' | 'shortlist' | 'history'>('market');
+  const [negotiatingOfferId, setNegotiatingOfferId] = useState<string | null>(null);
+  const [counterUpfrontM, setCounterUpfrontM] = useState<number>(20);
+  const [counterInstallmentsM, setCounterInstallmentsM] = useState<number>(5);
+  const [counterSellOnPct, setCounterSellOnPct] = useState<number>(15);
+  const [counterBuyBackM, setCounterBuyBackM] = useState<number>(0);
   const currentYear = Number(world.gameDate.slice(0, 4)) || 2025;
   const isDeadlineWindow = isTransferDeadlineWindow(world.gameDate);
   const deadlineBargains = useMemo(() => getDeadlineDayBargains(world), [world]);
@@ -2030,77 +2048,382 @@ export const TransfersView: React.FC<{
           </div>
         </div>
       ) : tab === 'incoming' ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          {incomingOffers.length === 0 ? (
-            <div className="text-center py-10 text-xs text-slate-400">
-              {tr(
-                'No pending incoming bids for your players right now. AI clubs submit bids on Mondays for transfer-listed or star/wonderkid players.',
-                'ยังไม่มีข้อเสนอขอซื้อตัวนักเตะในทีมของคุณ ณ ขณะนี้ (สโมสร AI จะยื่นข้อเสนอในวันจันทร์สำหรับนักเตะที่ขึ้นบัญชีขายหรือดาวรุ่งฟอร์มเด่น)'
-              )}
+        <div className="space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+            {incomingOffers.length === 0 ? (
+              <div className="text-center py-10 text-xs text-slate-400">
+                {tr(
+                  'No pending incoming bids for your players right now. Click "Simulate Saudi / MLS Super-Club Bid" above or use "📢 Offer to Clubs" on any player profile!',
+                  'ยังไม่มีข้อเสนอขอซื้อตัวนักเตะในทีมของคุณ ณ ขณะนี้ (สามารถกดปุ่มจำลองข้อเสนอทุ่มซื้อด้านบน หรือกดปุ่ม "📢 เร่ขายให้สโมสรอื่น" ในหน้าโปรไฟล์นักเตะได้ทันที)'
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {incomingOffers.map((off) => {
+                  const p = world.players[off.playerId];
+                  const buyerClub = world.clubs[off.buyingClubId];
+                  if (!p || !buyerClub) return null;
+                  return (
+                    <div
+                      key={off.id}
+                      className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-slate-950 border border-amber-500/40 text-xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <PlayerAvatar player={p} club={club} size="md" />
+                        <div>
+                          <div className="text-sm font-bold text-white">
+                            {p.firstName} {p.lastName}{' '}
+                            <span className="text-xs font-mono text-emerald-400">
+                              ({p.positions.join('/')} · CA {(p.currentAbility / 10).toFixed(1)})
+                            </span>
+                          </div>
+                          <div className="text-slate-300 mt-0.5">
+                            {tr('Bid from:', 'สโมสรที่ยื่นซื้อ:')}{' '}
+                            <span className="font-semibold text-amber-300">{buyerClub.name}</span> ·{' '}
+                            {tr('Offered Fee:', 'วงเงินที่เสนอ:')}{' '}
+                            <span className="font-mono font-bold text-emerald-400">
+                              €{(off.upfrontFee / 1_000_000).toFixed(2)}M
+                            </span>
+                            {off.installmentsFee > 0 &&
+                              ` + €${(off.installmentsFee / 1_000_000).toFixed(2)}M Inst.`}
+                            {off.sellOnPercentage > 0 && ` (+${off.sellOnPercentage}% Sell-On)`}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onRespondToIncomingOffer?.(off.id, 'ACCEPT')}
+                          className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer"
+                        >
+                          {tr('Accept Offer', 'ตอบรับข้อเสนอขาย')}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`open-counter-negotiation-btn-${off.id}`}
+                          onClick={() => {
+                            setNegotiatingOfferId(off.id);
+                            setCounterUpfrontM(
+                              Number(((off.upfrontFee * 1.15) / 1_000_000).toFixed(1))
+                            );
+                            setCounterInstallmentsM(
+                              Number(((off.installmentsFee || off.upfrontFee * 0.1) / 1_000_000).toFixed(1))
+                            );
+                            setCounterSellOnPct(off.sellOnPercentage || 15);
+                            setCounterBuyBackM(
+                              Number(((p.marketValue * 1.6) / 1_000_000).toFixed(1))
+                            );
+                          }}
+                          className="px-3.5 py-2 bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/50 font-semibold rounded-lg cursor-pointer"
+                        >
+                          {tr('🤝 Counter-Negotiate & Clauses', '🤝 เปิดโต๊ะเจรจาต่อรอง & พ่วงออปชันซื้อกลับ')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRespondToIncomingOffer?.(off.id, 'REJECT')}
+                          className="px-3.5 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 font-semibold rounded-lg cursor-pointer"
+                        >
+                          {tr('Reject', 'ปฏิเสธ')}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Active Buy-Back Clauses Directory */}
+          <div
+            className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+            data-testid="buyback-clauses-directory"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-sky-400">
+                  {tr(
+                    '🔄 Active Buy-Back Clauses Held by Your Club',
+                    '🔄 ทะเบียนนักเตะที่สโมสรมีสิทธิ์ใช้ออปชันซื้อกลับ (Buy-Back Clauses)'
+                  )}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    'Insert a Buy-Back Clause when selling prospects via Counter-Negotiation to bring them home at a fixed price.',
+                    'เมื่อขายดาวรุ่งและพ่วงสัญญา Buy-Back Clause คุณสามารถกดใช้ออปชันดึงตัวกลับสโมสรในราคาคงที่ได้ทันที'
+                  )}
+                </p>
+              </div>
+              <span className="text-xs font-mono text-slate-400">
+                {(world.buyBackClauses || []).length} {tr('Active', 'สัญญา')}
+              </span>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {incomingOffers.map((off) => {
-                const p = world.players[off.playerId];
-                const buyerClub = world.clubs[off.buyingClubId];
-                if (!p || !buyerClub) return null;
-                return (
-                  <div
-                    key={off.id}
-                    className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-slate-950 border border-amber-500/40 text-xs"
-                  >
-                    <div className="flex items-center gap-3">
-                      <PlayerAvatar player={p} club={club} size="md" />
+
+            {(world.buyBackClauses || []).length === 0 ? (
+              <div className="text-xs text-slate-500 py-4 text-center bg-slate-950 rounded-lg border border-slate-800">
+                {tr(
+                  'No active buy-back clauses yet. Negotiate a Buy-Back Clause when accepting an incoming bid above.',
+                  'ยังไม่มีนักเตะที่พ่วงออปชันซื้อกลับ (สามารถเพิ่มเงื่อนไข Buy-Back Clause ได้ในหน้าต่างต่อรองข้อเสนอขาเข้า)'
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {(world.buyBackClauses || []).map((cl) => {
+                  const p = world.players[cl.playerId];
+                  const curClub = p ? world.clubs[p.clubId] : world.clubs[cl.soldToClubId];
+                  if (!p) return null;
+                  return (
+                    <div
+                      key={cl.id}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-sky-500/30 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <PlayerAvatar player={p} club={curClub} size="sm" />
+                        <div className="truncate">
+                          <div className="font-bold text-white truncate">
+                            {p.firstName} {p.lastName}{' '}
+                            <span className="font-mono text-emerald-400">
+                              (CA {(p.currentAbility / 10).toFixed(1)})
+                            </span>
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400">
+                            {curClub?.shortName} · {tr('Fixed Buy-Back:', 'ราคาซื้อกลับคงที่:')}{' '}
+                            <span className="text-sky-300 font-bold">
+                              €{(cl.buyBackFee / 1_000_000).toFixed(2)}M
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      {onExerciseBuyBackClause && (
+                        <button
+                          type="button"
+                          data-testid={`exercise-buyback-btn-${cl.id}`}
+                          onClick={() => onExerciseBuyBackClause(cl.id)}
+                          className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
+                        >
+                          {tr('Exercise Buy-Back', 'ใช้ออปชันซื้อกลับ')}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Interactive Incoming Bid Counter-Negotiation Modal */}
+          {negotiatingOfferId &&
+            (() => {
+              const activeOffer = incomingOffers.find((o) => o.id === negotiatingOfferId);
+              if (!activeOffer) return null;
+              const p = world.players[activeOffer.playerId];
+              const buyerClub = world.clubs[activeOffer.buyingClubId];
+              if (!p || !buyerClub) return null;
+
+              const totalPackageM = counterUpfrontM + counterInstallmentsM;
+              const maxCeilingM = Number(
+                (
+                  (Math.max(p.marketValue, activeOffer.upfrontFee) *
+                    (1.32 + (buyerClub.reputation - 60) * 0.008)) /
+                  1_000_000
+                ).toFixed(2)
+              );
+              const patienceScore = Math.max(
+                5,
+                Math.min(
+                  100,
+                  Math.round(
+                    100 -
+                      Math.max(0, ((totalPackageM - maxCeilingM * 0.75) / Math.max(1, maxCeilingM)) * 120) -
+                      counterSellOnPct * 0.8
+                  )
+                )
+              );
+
+              return (
+                <div
+                  data-testid="incoming-bid-negotiation-modal"
+                  className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
+                >
+                  <div className="bg-slate-900 border border-sky-500/40 rounded-2xl max-w-xl w-full p-5 space-y-4 shadow-2xl">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                       <div>
-                        <div className="text-sm font-bold text-white">
-                          {p.firstName} {p.lastName}{' '}
-                          <span className="text-xs font-mono text-emerald-400">
-                            ({p.positions.join('/')} · CA {(p.currentAbility / 10).toFixed(1)})
-                          </span>
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-sky-400">
+                          {tr('INCOMING TRANSFER COUNTER-NEGOTIATION', 'โต๊ะเจรจาต่อรองข้อเสนอซื้อตัวขาเข้า')}
                         </div>
-                        <div className="text-slate-300 mt-0.5">
-                          {tr('Bid from:', 'สโมสรที่ยื่นซื้อ:')}{' '}
-                          <span className="font-semibold text-amber-300">{buyerClub.name}</span> ·{' '}
-                          {tr('Offered Fee:', 'วงเงินที่เสนอ:')}{' '}
-                          <span className="font-mono font-bold text-emerald-400">
-                            €{(off.upfrontFee / 1_000_000).toFixed(2)}M
-                          </span>
-                          {off.sellOnPercentage > 0 && ` (+${off.sellOnPercentage}% Sell-On)`}
-                        </div>
+                        <h3 className="text-base font-display font-bold text-white">
+                          {p.firstName} {p.lastName} → {buyerClub.name}
+                        </h3>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setNegotiatingOfferId(null)}
+                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Buying Club Patience Bar */}
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-400">
+                          {tr(`${buyerClub.shortName} Negotiation Patience`, `ความอดทนของสโมสรผู้ซื้อ (${buyerClub.shortName})`)}
+                        </span>
+                        <span
+                          className={`font-mono font-bold ${
+                            patienceScore >= 60
+                              ? 'text-emerald-400'
+                              : patienceScore >= 35
+                                ? 'text-amber-400'
+                                : 'text-red-400'
+                          }`}
+                        >
+                          {patienceScore}% · Est. Ceiling ~€{maxCeilingM}M
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className={`h-full transition-all ${
+                            patienceScore >= 60
+                              ? 'bg-emerald-500'
+                              : patienceScore >= 35
+                                ? 'bg-amber-500'
+                                : 'bg-red-500'
+                          }`}
+                          style={{ width: `${patienceScore}%` }}
+                        />
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onRespondToIncomingOffer?.(off.id, 'ACCEPT')}
-                        className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer"
-                      >
-                        {tr('Accept Offer', 'ตอบรับข้อเสนอขาย')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onRespondToIncomingOffer?.(off.id, 'COUNTER')}
-                        className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 font-semibold rounded-lg cursor-pointer"
-                      >
-                        {tr(
-                          `Demand +20% (€${((off.upfrontFee * 1.2) / 1_000_000).toFixed(2)}M)`,
-                          `ต่อรอง +20% (€${((off.upfrontFee * 1.2) / 1_000_000).toFixed(2)}M)`
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onRespondToIncomingOffer?.(off.id, 'REJECT')}
-                        className="px-3.5 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/40 font-semibold rounded-lg cursor-pointer"
-                      >
-                        {tr('Reject', 'ปฏิเสธ')}
-                      </button>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">{tr('Upfront Fee (€M)', 'เงินก้อนแรก (€M)')}</span>
+                          <span className="font-mono font-bold text-emerald-400">
+                            €{counterUpfrontM.toFixed(1)}M
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={1}
+                          max={Math.max(120, Math.round(maxCeilingM * 1.4))}
+                          step={0.5}
+                          value={counterUpfrontM}
+                          onChange={(e) => setCounterUpfrontM(Number(e.target.value))}
+                          className="w-full accent-emerald-500"
+                        />
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">{tr('Installments (€M)', 'ผ่อนชำระ 24 เดือน (€M)')}</span>
+                          <span className="font-mono font-bold text-sky-400">
+                            €{counterInstallmentsM.toFixed(1)}M
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={60}
+                          step={0.5}
+                          value={counterInstallmentsM}
+                          onChange={(e) => setCounterInstallmentsM(Number(e.target.value))}
+                          className="w-full accent-sky-500"
+                        />
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">{tr('Sell-On Clause (%)', 'ส่วนแบ่งขายต่อครั้งหน้า (%)')}</span>
+                          <span className="font-mono font-bold text-amber-300">
+                            {counterSellOnPct}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={30}
+                          step={5}
+                          value={counterSellOnPct}
+                          onChange={(e) => setCounterSellOnPct(Number(e.target.value))}
+                          className="w-full accent-amber-500"
+                        />
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">{tr('Buy-Back Clause (€M)', 'ออปชันซื้อกลับ (€M)')}</span>
+                          <span className="font-mono font-bold text-purple-300">
+                            {counterBuyBackM > 0 ? `€${counterBuyBackM.toFixed(1)}M` : tr('None', 'ไม่ระบุ')}
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={150}
+                          step={1}
+                          value={counterBuyBackM}
+                          onChange={(e) => setCounterBuyBackM(Number(e.target.value))}
+                          className="w-full accent-purple-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-800">
+                      <div className="text-xs font-mono text-slate-300">
+                        {tr('Total Package:', 'มูลค่ารวม:')}{' '}
+                        <span className="text-emerald-400 font-bold">
+                          €{totalPackageM.toFixed(2)}M
+                        </span>{' '}
+                        + {counterSellOnPct}% Sell-On
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          data-testid="submit-counter-offer-btn"
+                          onClick={() => {
+                            onNegotiateIncomingOffer?.(activeOffer.id, {
+                              upfrontFee: Math.round(counterUpfrontM * 1_000_000),
+                              installmentsFee: Math.round(counterInstallmentsM * 1_000_000),
+                              sellOnPercentage: counterSellOnPct,
+                              buyBackClauseFee:
+                                counterBuyBackM > 0
+                                  ? Math.round(counterBuyBackM * 1_000_000)
+                                  : undefined,
+                            });
+                            setNegotiatingOfferId(null);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          {tr('Propose Counter-Terms', 'ยื่นข้อเสนอต่อรอง')}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="finalize-negotiated-sale-btn"
+                          onClick={() => {
+                            onNegotiateIncomingOffer?.(activeOffer.id, {
+                              upfrontFee: Math.round(counterUpfrontM * 1_000_000),
+                              installmentsFee: Math.round(counterInstallmentsM * 1_000_000),
+                              sellOnPercentage: counterSellOnPct,
+                              buyBackClauseFee:
+                                counterBuyBackM > 0
+                                  ? Math.round(counterBuyBackM * 1_000_000)
+                                  : undefined,
+                              forceAccept: true,
+                            });
+                            setNegotiatingOfferId(null);
+                          }}
+                          className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          {tr('Accept & Seal Deal Now', 'ตกลงขายพร้อมเงื่อนไขนี้ทันที')}
+                        </button>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </div>
+              );
+            })()}
         </div>
       ) : tab === 'history' ? (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
@@ -3641,21 +3964,63 @@ export const CompetitionsAndScheduleView: React.FC<{
           )}
 
           {subView === 'stats' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+              data-testid="league-player-stats-6-grid"
+            >
               {[
-                { title: tr('Top Scorers', 'ดาวซัลโวสูงสุด (Top Scorers)'), list: leaders.topScorers, key: 'goals' as const },
-                { title: tr('Top Assists', 'แอสซิสต์สูงสุด (Top Assists)'), list: leaders.topAssists, key: 'assists' as const },
-                { title: tr('Highest Average Rating', 'เรตติ้งเฉลี่ยสูงสุด (Top Rating)'), list: leaders.topRated, key: 'averageRating' as const },
+                {
+                  title: tr('⚽ Golden Boot (Top Scorers)', '⚽ ดาวซัลโวสูงสุด (Golden Boot)'),
+                  items: leaders.topScorers.map((p) => ({
+                    player: p,
+                    badge: `${p.stats.goals} G`,
+                  })),
+                },
+                {
+                  title: tr('🎯 Playmaker Award (Top Assists)', '🎯 จอมทัพแอสซิสต์สูงสุด (Playmaker)'),
+                  items: leaders.topAssists.map((p) => ({
+                    player: p,
+                    badge: `${p.stats.assists} A`,
+                  })),
+                },
+                {
+                  title: tr('⭐ Highest Average Rating', '⭐ เรตติ้งเฉลี่ยสูงสุด (Top Rating)'),
+                  items: leaders.topRated.map((p) => ({
+                    player: p,
+                    badge: p.stats.averageRating.toFixed(2),
+                  })),
+                },
+                {
+                  title: tr('🧤 Golden Glove (GK Clean Sheets)', '🧤 ถุงมือทองคำ (คลีนชีตผู้รักษาประตู)'),
+                  items: (leaders.topCleanSheets || []).map((row) => ({
+                    player: row.player,
+                    badge: `${row.value} CS`,
+                  })),
+                },
+                {
+                  title: tr('🔥 xG Overperformers (Clinical Finishing)', '🔥 จบสกอร์คมเกินคาด (Goals - xG)'),
+                  items: (leaders.topXgOverperformers || []).map((row) => ({
+                    player: row.player,
+                    badge: `${row.diff >= 0 ? '+' : ''}${row.diff.toFixed(2)} xG`,
+                  })),
+                },
+                {
+                  title: tr('🛡️ Defensive Monsters (Tkl + Int / 90)', '🛡️ จอมสกัดเกมรับ (Tackles + Int / 90)'),
+                  items: (leaders.topDefensiveMonsters || []).map((row) => ({
+                    player: row.player,
+                    badge: `${row.actionsPer90.toFixed(1)}/90`,
+                  })),
+                },
               ].map((col) => (
                 <div key={col.title} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
                   <h3 className="text-xs font-semibold text-emerald-400 mb-3">{col.title}</h3>
-                  {col.list.length === 0 ? (
+                  {col.items.length === 0 ? (
                     <div className="text-xs text-slate-500 py-6 text-center">
                       {tr('Stats available after Matchday 1', 'รอข้อมูลหลังเริ่มแข่งขันนัดแรก')}
                     </div>
                   ) : (
                     <div className="space-y-1.5">
-                      {col.list.map((p, idx) => (
+                      {col.items.slice(0, 8).map(({ player: p, badge }, idx) => (
                         <button
                           key={p.id}
                           type="button"
@@ -3672,10 +4037,8 @@ export const CompetitionsAndScheduleView: React.FC<{
                               ({world.clubs[p.clubId]?.shortName})
                             </span>
                           </div>
-                          <span className="font-mono tabular-nums font-bold text-emerald-400">
-                            {col.key === 'averageRating'
-                              ? p.stats.averageRating.toFixed(2)
-                              : p.stats[col.key]}
+                          <span className="font-mono tabular-nums font-bold text-emerald-400 shrink-0 ml-2">
+                            {badge}
                           </span>
                         </button>
                       ))}

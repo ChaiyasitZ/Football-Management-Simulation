@@ -592,6 +592,41 @@ export function simulateMatch(
     ratings[p.id] = 6.7;
   }
 
+  // Apply Opposition Instructions (OI) impact against targeted opposing starters
+  const applyOppositionInstructionsModifier = (
+    myTac: TacticalSystem,
+    myStr: TeamMatchStrength,
+    oppStr: TeamMatchStrength
+  ) => {
+    const oiMap = myTac.oppositionInstructions;
+    if (!oiMap) return;
+    let oppAttackPenalty = 0;
+    let myDefenseBoost = 0;
+    for (const oppP of oppStr.activePlayers) {
+      const oi = oiMap[oppP.id];
+      if (!oi) continue;
+      if (oi.tightMarking === 'Always') {
+        oppAttackPenalty += 0.015;
+        myDefenseBoost += 0.01;
+      }
+      if (oi.triggerPress === 'Always') {
+        oppAttackPenalty += oppP.attributes.mental.composure <= 13 ? 0.02 : 0.01;
+        myStr.pressModifier *= 1.015;
+      }
+      if (oi.tackling === 'Hard') {
+        oppAttackPenalty += 0.012;
+        myDefenseBoost += 0.012;
+      }
+      if (oi.showOntoFoot && oi.showOntoFoot !== 'Default') {
+        oppAttackPenalty += 0.012;
+      }
+    }
+    oppStr.attack *= Math.max(0.88, 1 - oppAttackPenalty);
+    myStr.defense *= Math.min(1.12, 1 + myDefenseBoost);
+  };
+  applyOppositionInstructionsModifier(homeTactic, homeStrength, awayStrength);
+  applyOppositionInstructionsModifier(awayTactic, awayStrength, homeStrength);
+
   // Possession calculation
   const midRatio =
     (homeStrength.midfield * homeStrength.pressModifier) /
@@ -785,6 +820,8 @@ export function simulateMatch(
               playerName: `${pIn.firstName} ${pIn.lastName}`,
               secondaryPlayerId: pOut.id,
               secondaryPlayerName: `${pOut.firstName} ${pOut.lastName}`,
+              subOutPlayerId: pOut.id,
+              subInPlayerId: pIn.id,
               text: trText(
                 `Min ${minute}': Substitution (${clubObj.shortName}) — ${pIn.firstName} ${pIn.lastName} replaces ${pOut.firstName} ${pOut.lastName}.`,
                 `นาที ${minute}': เปลี่ยนตัวผู้เล่น (${clubObj.shortName}) — ส่ง ${pIn.firstName} ${pIn.lastName} ลงมาแทน ${pOut.firstName} ${pOut.lastName}`
@@ -887,6 +924,8 @@ export function simulateMatch(
               playerName: `${pIn.firstName} ${pIn.lastName}`,
               secondaryPlayerId: pOut.id,
               secondaryPlayerName: `${pOut.firstName} ${pOut.lastName}`,
+              subOutPlayerId: pOut.id,
+              subInPlayerId: pIn.id,
               text: trText(
                 `Min ${minute}': AI Substitution (${aiClub.shortName}) — ${pIn.firstName} ${pIn.lastName} comes on for ${pOut.firstName} ${pOut.lastName}.`,
                 `นาที ${minute}': แก้เกมเปลี่ยนตัว (${aiClub.shortName}) — ส่ง ${pIn.firstName} ${pIn.lastName} ลงสนามแทน ${pOut.firstName} ${pOut.lastName}`
@@ -898,6 +937,7 @@ export function simulateMatch(
         };
 
         evalAiTeam(awayClub, awayTactic, awayStrength, awayStats.goals, homeStats.goals);
+        evalAiTeam(homeClub, homeTactic, homeStrength, homeStats.goals, awayStats.goals);
       }
 
       const homeShoutMod = getShoutModifiersForTeam(homeClub.id, minute, homeStats.goals > awayStats.goals);

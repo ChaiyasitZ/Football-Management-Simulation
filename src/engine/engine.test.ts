@@ -2,7 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LEAGUES_CONFIG } from './leaguesConfig';
 import { createInitialWorldState } from './worldGenerator';
-import { generateLeagueSchedule, recomputeLeagueStandings } from './leagueEngine';
+import {
+  generateLeagueSchedule,
+  getLeaguePlayerLeaders,
+  recomputeLeagueStandings,
+} from './leagueEngine';
 import {
   reconcileMatchResultEventsAndStats,
   simulateMatch,
@@ -13,6 +17,7 @@ import {
   advanceWorldOneDay,
   applyForManagerJob,
   applyMatchResultToWorld,
+  applyPostMatchTeamTalk,
   appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
@@ -22,6 +27,7 @@ import {
   dispatchSouthAmericaWonderkidScout,
   evaluateClubFFPStatus,
   evaluateSquadMedicalRisk,
+  exerciseBuyBackClause,
   expandClubStadium,
   exportWorldDatabaseJson,
   generateAnnualYouthIntake,
@@ -33,6 +39,8 @@ import {
   isTransferDeadlineWindow,
   liveEditClubFinancesAndFacilities,
   loadWorldStateFromSlot,
+  negotiateIncomingTransferBid,
+  offerPlayerToClubs,
   organizePreSeasonTour,
   prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
@@ -1392,6 +1400,131 @@ test('FM26/FM27 Complete Audit: Authentic Squad Shirt Numbers (1-99), Dynamic AI
     subOrTacticalEvents.length >= 1,
     'Simulated match must include AI live tactical shifts or substitutions at minutes 62/76'
   );
+  const subEvents = res.events.filter((e) => e.eventType === 'Substitution');
+  for (const subEv of subEvents) {
+    assert.ok(subEv.subOutPlayerId, 'Substitution event must populate subOutPlayerId');
+    assert.ok(subEv.subInPlayerId, 'Substitution event must populate subInPlayerId');
+  }
 });
+
+test('Next-Stage Master Plan: Team Talk Morale Persistence, Opposition Instructions, Offer to Clubs, Incoming Bid Negotiation + Buy-Back Clause, and 6-Category Player Leaders', () => {
+  let world = createInitialWorldState(994422);
+  const myClubId = world.controlledClubId;
+  const myClub = world.clubs[myClubId];
+  const myPlayers = Object.values(world.players).filter((p) => p.clubId === myClubId);
+
+  // 1. Pre-Match & Post-Match Team Talk persistence into WorldState
+  const starterId = myClub.primaryTactic.lineup[0]?.playerId!;
+  const initialMorale = world.players[starterId].morale;
+  const talkRes = applyPostMatchTeamTalk(world, 'praise_ft');
+  assert.ok(
+    talkRes.nextState.players[starterId].morale >= initialMorale,
+    'Praise team talk must boost or maintain starter morale in WorldState'
+  );
+  world = talkRes.nextState;
+
+  // 2. Opposition Instructions applied in simulateMatch
+  const fx = world.fixtures.find(
+    (f) => f.homeClubId === myClubId || f.awayClubId === myClubId
+  )!;
+  const oppClubId = fx.homeClubId === myClubId ? fx.awayClubId : fx.homeClubId;
+  const oppClub = world.clubs[oppClubId];
+  const oppStarterId = oppClub.primaryTactic.lineup[9]?.playerId!;
+  const clubWithOI: typeof myClub = {
+    ...world.clubs[myClubId],
+    primaryTactic: {
+      ...world.clubs[myClubId].primaryTactic,
+      oppositionInstructions: {
+        [oppStarterId]: {
+          playerId: oppStarterId,
+          tightMarking: 'Always',
+          triggerPress: 'Always',
+          tackling: 'Hard',
+          showOntoFoot: 'Weak Foot',
+        },
+      },
+    },
+  };
+  const matchWithOI = simulateMatch(
+    fx,
+    fx.homeClubId === myClubId ? clubWithOI : oppClub,
+    fx.awayClubId === myClubId ? clubWithOI : oppClub,
+    world.players,
+    3030
+  );
+  assert.ok(matchWithOI.events.length > 0, 'Match with Opposition Instructions must simulate cleanly');
+
+  // 3. Offer Player to Clubs + Incoming Bid Counter-Negotiation with Buy-Back Clause + Exercise Buy-Back Clause
+  const playerToSell = myPlayers.sort((a, b) => b.currentAbility - a.currentAbility)[3];
+  const offerRes = offerPlayerToClubs(world, playerToSell.id);
+  assert.equal(offerRes.bidsCreated >= 1, true, 'Offering player to clubs must generate at least 1 incoming bid');
+  world = offerRes.nextState;
+
+  const incomingOffer = world.transferOffers.find(
+    (o) => o.playerId === playerToSell.id && o.sellingClubId === myClubId && o.status === 'PendingClub'
+  )!;
+  assert.ok(incomingOffer, 'Incoming offer for offered player must exist');
+
+  const buyBackFee = 22_000_000;
+  const negRes = negotiateIncomingTransferBid(world, incomingOffer.id, {
+    upfrontFee: incomingOffer.upfrontFee,
+    installmentsFee: 2_000_000,
+    sellOnPercentage: 15,
+    buyBackClauseFee: buyBackFee,
+    forceAccept: true,
+  });
+  assert.equal(negRes.accepted, true, 'Negotiated sale must be accepted');
+  world = negRes.nextState;
+  assert.equal(
+    world.players[playerToSell.id].clubId,
+    incomingOffer.buyingClubId,
+    'Sold player must move to buying club'
+  );
+  assert.equal(
+    (world.buyBackClauses || []).length,
+    1,
+    'Buy-Back clause must be recorded on WorldState'
+  );
+
+  // Ensure enough transfer budget to exercise buy-back
+  const clause = world.buyBackClauses![0];
+  world = {
+    ...world,
+    clubs: {
+      ...world.clubs,
+      [myClubId]: {
+        ...world.clubs[myClubId],
+        finances: {
+          ...world.clubs[myClubId].finances,
+          transferBudget: Math.max(world.clubs[myClubId].finances.transferBudget, buyBackFee + 5_000_000),
+          balance: Math.max(world.clubs[myClubId].finances.balance, buyBackFee + 5_000_000),
+        },
+      },
+    },
+  };
+  const buyBackRes = exerciseBuyBackClause(world, clause.id);
+  assert.equal(buyBackRes.completed, true, 'Exercising buy-back clause must succeed');
+  assert.equal(
+    buyBackRes.nextState.players[playerToSell.id].clubId,
+    myClubId,
+    'Player must return to controlled club after exercising buy-back clause'
+  );
+
+  // 4. Verify 6-category Player Stat Leaders
+  const worldAfterMatch = applyMatchResultToWorld(buyBackRes.nextState, fx.id, matchWithOI);
+  const leaders = getLeaguePlayerLeaders(
+    myClub.leagueId,
+    worldAfterMatch.clubs,
+    worldAfterMatch.players
+  );
+  assert.ok(Array.isArray(leaders.topScorers));
+  assert.ok(Array.isArray(leaders.topAssists));
+  assert.ok(Array.isArray(leaders.topRated));
+  assert.ok(Array.isArray(leaders.topCleanSheets));
+  assert.ok(Array.isArray(leaders.topXgOverperformers));
+  assert.ok(Array.isArray(leaders.topDefensiveMonsters));
+  assert.ok(leaders.topDefensiveMonsters.length > 0, 'Defensive Monsters leaderboard must be populated');
+});
+
 
 

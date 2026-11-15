@@ -50,6 +50,7 @@ interface MatchCenterViewProps {
   onSelectPlayer: (playerId: string) => void;
   onExitMatchCenter?: () => void;
   onOpenTactics?: () => void;
+  onApplyPostMatchTeamTalk?: (tone: 'PRAISE' | 'DEMAND' | 'FOCUS', fixtureId: string) => void;
 }
 
 export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
@@ -60,6 +61,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   onSelectPlayer,
   onExitMatchCenter,
   onOpenTactics,
+  onApplyPostMatchTeamTalk,
 }) => {
   const { tr } = useLanguage();
   const myClub = world.clubs[world.controlledClubId];
@@ -131,8 +133,23 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   const [lastShoutMinute, setLastShoutMinute] = useState<number>(-20);
   const [activeShotTooltip, setActiveShotTooltip] = useState<MatchEvent | null>(null);
   const [showInstructionsDrawer, setShowInstructionsDrawer] = useState<boolean>(false);
-  const [tileTeamFilter, setTileTeamFilter] = useState<'both' | 'home' | 'away'>('both');
+  const [tileTeamFilters, setTileTeamFilters] = useState<
+    ['both' | 'home' | 'away', 'both' | 'home' | 'away', 'both' | 'home' | 'away', 'both' | 'home' | 'away', 'both' | 'home' | 'away']
+  >(['home', 'away', 'both', 'both', 'both']);
+  const [heatmapPlayerIds, setHeatmapPlayerIds] = useState<[string, string, string, string, string]>([
+    '',
+    '',
+    '',
+    '',
+    '',
+  ]);
   const [postMatchTalkGiven, setPostMatchTalkGiven] = useState<string | null>(null);
+  const [preMatchBriefingGiven, setPreMatchBriefingGiven] = useState<string | null>(null);
+  const [showPenaltyModal, setShowPenaltyModal] = useState<boolean>(false);
+  const [penaltyTakerIds, setPenaltyTakerIds] = useState<string[]>([]);
+  const [penaltyKicksLog, setPenaltyKicksLog] = useState<
+    { round: number; homeScored: boolean; awayScored: boolean; homeTaker: string; awayTaker: string }[]
+  >([]);
 
   // 5 Swappable Analytics Tiles persisted in localStorage
   const [tiles, setTiles] = useState<
@@ -607,6 +624,28 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       .map((e) => e.playerId!)
   );
 
+  // Resolve active on-pitch player for any tactical slot at currentMinute (reflecting both user & AI substitutions)
+  const getActiveSlotPlayer = (
+    club: Club,
+    slotIdx: number
+  ): { player: Player | null; wasSubbedIn: boolean } => {
+    const slot = club.primaryTactic.lineup[slotIdx];
+    if (!slot?.playerId) return { player: null, wasSubbedIn: false };
+    let currentId = slot.playerId;
+    let wasSubbed = false;
+    for (const ev of visibleEvents) {
+      if (ev.eventType === 'Substitution' && ev.teamId === club.id) {
+        const outId = ev.subOutPlayerId || ev.secondaryPlayerId;
+        const inId = ev.subInPlayerId || ev.playerId;
+        if (outId === currentId && inId && world.players[inId]) {
+          currentId = inId;
+          wasSubbed = true;
+        }
+      }
+    }
+    return { player: world.players[currentId] || null, wasSubbedIn: wasSubbed };
+  };
+
   const getShortRoleCode = (role: string): string => {
     const map: Record<string, string> = {
       Goalkeeper: 'GK',
@@ -699,8 +738,8 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
 
             {phaseCoords.map((coord, idx) => {
               const slot = club.primaryTactic.lineup[idx];
-              const p = slot?.playerId ? world.players[slot.playerId] : null;
-              if (!p) return null;
+              const { player: p, wasSubbedIn } = getActiveSlotPlayer(club, idx);
+              if (!p || !slot) return null;
               const cx = 5 + (Math.max(8, Math.min(92, coord.x)) / 100) * 58;
               const cy = 6 + (Math.max(8, Math.min(92, coord.y)) / 100) * 86;
               const rating = simResult?.playerRatings[p.id] ?? 6.8;
@@ -818,6 +857,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     fontWeight="700"
                     fill="#f8fafc"
                   >
+                    {wasSubbedIn ? '🔄' : ''}
                     {p.lastName.slice(0, 8)}
                     {goalsCount > 0 ? ' ⚽' : ''}
                     {isSentOff ? ' 🟥' : hasYellow ? ' 🟨' : ''}
@@ -849,13 +889,26 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
 
     const supportsFilter =
       activeType === 'HEAT_MAP' || activeType === 'PASS_MAP' || activeType === 'SHOT_MAP';
+    const tileTeamFilter = tileTeamFilters[tileIndex];
+    const setThisTileFilter = (nextF: 'both' | 'home' | 'away') => {
+      setTileTeamFilters((prev) => {
+        const copy = [...prev] as typeof prev;
+        copy[tileIndex] = nextF;
+        return copy;
+      });
+    };
+    const focusClubForHeat = tileTeamFilter === 'away' ? awayClub : homeClub;
+    const heatRoster = focusClubForHeat.primaryTactic.lineup
+      .map((_, sIdx) => getActiveSlotPlayer(focusClubForHeat, sIdx).player)
+      .filter((p): p is Player => Boolean(p));
+    const selectedHeatPlayerId = heatmapPlayerIds[tileIndex];
 
     return (
       <div
         data-testid={`fm27-tile-${tileIndex + 1}`}
         className={`bg-slate-900/95 border border-slate-800 rounded-xl p-2.5 flex flex-col min-h-0 overflow-hidden ${containerClassName}`}
       >
-        {/* Tile Header with Swappable Dropdown + Home/Away/Both Filter */}
+        {/* Tile Header with Swappable Dropdown + Per-Tile Home/Away/Both Filter */}
         <div className="flex items-center justify-between gap-1.5 pb-1.5 mb-1.5 border-b border-slate-800/90 shrink-0">
           <select
             aria-label={`Select view for Tile ${tileIndex + 1}`}
@@ -870,6 +923,29 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               </option>
             ))}
           </select>
+          {activeType === 'HEAT_MAP' && (
+            <select
+              aria-label={`Select player heat map for Tile ${tileIndex + 1}`}
+              data-testid={`heatmap-player-select-${tileIndex + 1}`}
+              value={selectedHeatPlayerId}
+              onChange={(e) => {
+                const val = e.target.value;
+                setHeatmapPlayerIds((prev) => {
+                  const copy = [...prev] as typeof prev;
+                  copy[tileIndex] = val;
+                  return copy;
+                });
+              }}
+              className="bg-slate-950 border border-slate-800 rounded px-1.5 py-0.5 text-[10px] font-mono text-slate-200 max-w-[92px] truncate cursor-pointer"
+            >
+              <option value="">{tr('ALL XI', 'ทั้งทีม')}</option>
+              {heatRoster.map((hp) => (
+                <option key={hp.id} value={hp.id}>
+                  #{hp.shirtNumber || 10} {hp.lastName}
+                </option>
+              ))}
+            </select>
+          )}
           {supportsFilter ? (
             <div className="flex items-center gap-0.5 bg-slate-950 border border-slate-800 rounded p-0.5 shrink-0">
               {(
@@ -882,7 +958,8 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 <button
                   key={f.id}
                   type="button"
-                  onClick={() => setTileTeamFilter(f.id)}
+                  data-testid={`tile-filter-${tileIndex + 1}-${f.id}`}
+                  onClick={() => setThisTileFilter(f.id)}
                   className={`px-1.5 py-0.5 rounded text-[10px] font-mono cursor-pointer ${
                     tileTeamFilter === f.id
                       ? 'bg-emerald-500 text-slate-950 font-bold'
@@ -909,10 +986,25 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             const rows = 4;
             const homePoss = simResult ? simResult.homeStats.possession : 52;
             const focusClub = tileTeamFilter === 'away' ? awayClub : homeClub;
-            const focusCoords = computeTacticalPhaseCoordinates(
+            const allFocusCoords = computeTacticalPhaseCoordinates(
               focusClub.primaryTactic,
               'in_possession'
             );
+            const selectedSlotIdx = selectedHeatPlayerId
+              ? focusClub.primaryTactic.lineup.findIndex(
+                  (_, sIdx) => getActiveSlotPlayer(focusClub, sIdx).player?.id === selectedHeatPlayerId
+                )
+              : -1;
+            const focusCoords =
+              selectedSlotIdx >= 0 && allFocusCoords[selectedSlotIdx]
+                ? [
+                    allFocusCoords[selectedSlotIdx],
+                    {
+                      x: Math.min(90, allFocusCoords[selectedSlotIdx].x + 8),
+                      y: Math.max(12, allFocusCoords[selectedSlotIdx].y - 10),
+                    },
+                  ]
+                : allFocusCoords.slice(5, 11);
             return (
               <div className="h-full flex flex-col justify-between">
                 <svg viewBox="0 0 120 72" className="w-full h-full max-h-32 rounded border border-slate-800 bg-slate-950">
@@ -925,7 +1017,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   </defs>
                   {Array.from({ length: rows }).map((_, r) =>
                     Array.from({ length: cols }).map((__, c) => {
-                      const seedVal = ((r + 1) * 17 + (c + 1) * 31 + currentMinute) % 100;
+                      const seedVal = ((r + 1) * 17 + (c + 1) * 31 + currentMinute + (selectedSlotIdx + 1) * 13) % 100;
                       const baseRatio =
                         tileTeamFilter === 'home'
                           ? c >= 2
@@ -970,7 +1062,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     })
                   )}
                   {/* Smooth Radial Heat Blobs over key tactical touch zones */}
-                  {focusCoords.slice(5, 11).map((fc, idx) => {
+                  {focusCoords.map((fc, idx) => {
                     const rx =
                       tileTeamFilter === 'away'
                         ? 112 - ((100 - fc.y) / 100) * 96
@@ -981,7 +1073,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         key={`blob_${idx}`}
                         cx={rx}
                         cy={ry}
-                        r="14"
+                        r={selectedSlotIdx >= 0 ? '18' : '14'}
                         fill={`url(#heatGrad_${tileIndex})`}
                       />
                     );
@@ -1900,13 +1992,66 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         </div>
       )}
 
+      {/* Pre-Match Dressing Room Briefing Overlay (Before Kick-Off 00:00) */}
+      {currentMinute === 0 && !preMatchBriefingGiven && (
+        <div
+          data-testid="prematch-briefing-banner"
+          className="mx-2 mt-1.5 px-3 py-2 rounded-xl bg-slate-950 border border-indigo-500/50 flex flex-wrap items-center justify-between gap-2 shrink-0 shadow-xl"
+        >
+          <div className="flex flex-wrap items-center gap-2.5 text-xs">
+            <span className="px-2 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-bold">
+              🎙️ {tr('Pre-Match Dressing Room Briefing', 'ห้องแต่งตัวก่อนเขี่ยบอล')}
+            </span>
+            <span className="text-slate-300 font-mono">
+              {wIcon} {wCond} ({pCond}) · {tr('Opp Tactic:', 'แผนคู่แข่ง:')}{' '}
+              <strong className="text-amber-300">
+                {(isUserHome ? awayClub : homeClub).primaryTactic.formation} (
+                {(isUserHome ? awayClub : homeClub).aiManager.style})
+              </strong>
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {[
+              {
+                id: 'expect_win',
+                label: tr('🔥 Expect a Win (+Attack)', '🔥 สั่งลุยคว้าชัย (+เกมรุก)'),
+                tone: 'PRAISE' as const,
+              },
+              {
+                id: 'no_pressure',
+                label: tr('💪 Play Without Pressure (+Composure)', '💪 เล่นอย่างมั่นใจไร้ความกดดัน'),
+                tone: 'FOCUS' as const,
+              },
+              {
+                id: 'stay_compact',
+                label: tr('🛡️ Stay Compact (+Discipline)', '🛡️ เน้นรัดกุมมีวินัย (+เกมรับ)'),
+                tone: 'DEMAND' as const,
+              },
+            ].map((pm) => (
+              <button
+                key={pm.id}
+                type="button"
+                data-testid={`prematch-talk-${pm.id}`}
+                onClick={() => {
+                  setPreMatchBriefingGiven(pm.label);
+                  onApplyPostMatchTeamTalk?.(pm.tone, targetFixture?.id || '');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-indigo-500/20 border border-slate-800 hover:border-indigo-500/50 text-xs text-indigo-300 font-medium cursor-pointer"
+              >
+                {pm.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Full-Time Post-Match Review, Man of the Match & Dressing Room Talk Banner */}
       {currentMinute >= maxMatchMinute && simResult && !postMatchTalkGiven && (
         <div
           data-testid="fulltime-postmatch-banner"
           className="mx-2 mt-1.5 px-3 py-2 rounded-xl bg-slate-950 border border-emerald-500/60 flex flex-wrap items-center justify-between gap-2 shrink-0 shadow-xl"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <div className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-xs">
               <span className="text-amber-300 font-bold mr-1.5">★ MOTM:</span>
               <span className="text-white font-semibold">
@@ -1918,15 +2063,35 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 {(simResult.playerRatings[simResult.manOfTheMatchPlayerId] || 8.2).toFixed(1)}
               </span>
             </div>
-            {simResult.penaltyShootout && (
-              <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono">
-                <span className="text-amber-400 font-bold mr-1">PENS:</span>
-                <span className="text-white">
-                  {homeClub.shortName} {simResult.penaltyShootout.homePenalties} -{' '}
-                  {simResult.penaltyShootout.awayPenalties} {awayClub.shortName}
+            {(simResult.penaltyShootout || visibleHomeGoals === visibleAwayGoals) && (
+              <button
+                type="button"
+                data-testid="open-penalty-shootout-btn"
+                onClick={() => {
+                  if (penaltyTakerIds.length === 0) {
+                    const defaultFive = myStarters
+                      .slice()
+                      .sort(
+                        (a, b) =>
+                          b.attributes.technical.penaltyTaking +
+                          b.attributes.mental.composure -
+                          (a.attributes.technical.penaltyTaking + a.attributes.mental.composure)
+                      )
+                      .slice(0, 5)
+                      .map((p) => p.id);
+                    setPenaltyTakerIds(defaultFive);
+                  }
+                  setShowPenaltyModal(true);
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-xs font-mono text-amber-300 cursor-pointer flex items-center gap-1.5"
+              >
+                <span>⚽</span>
+                <span>
+                  {simResult.penaltyShootout
+                    ? `PENS: ${homeClub.shortName} ${simResult.penaltyShootout.homePenalties} - ${simResult.penaltyShootout.awayPenalties} ${awayClub.shortName}`
+                    : tr('Interactive Penalty Shootout (5 Kicks)', 'ดวลจุดโทษตัดสิน (เลือกคนยิง 5 คน)')}
                 </span>
-                <span className="ml-2">🟢🟢🟢🔴🟢</span>
-              </div>
+              </button>
             )}
           </div>
 
@@ -1934,29 +2099,164 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             <span className="text-xs text-slate-400 mr-1">
               {tr('Post-Match Team Talk:', 'พูดคุยหลังจบเกม:')}
             </span>
-            {[
-              {
-                id: 'praise_ft',
-                label: tr('👏 Praise Squad Effort', '👏 ชื่นชมความทุ่มเท'),
-              },
-              {
-                id: 'demand_ft',
-                label: tr('🔥 Demand Higher Standards', '🔥 กำชับยกระดับฟอร์ม'),
-              },
-              {
-                id: 'focus_next',
-                label: tr('🎯 Focus on Next Fixture', '🎯 โฟกัสนัดต่อไปทันที'),
-              },
-            ].map((btn) => (
+            {(
+              [
+                {
+                  id: 'praise_ft',
+                  tone: 'PRAISE' as const,
+                  label: tr('👏 Praise Squad Effort (+Morale)', '👏 ชื่นชมความทุ่มเท (+กำลังใจ)'),
+                },
+                {
+                  id: 'demand_ft',
+                  tone: 'DEMAND' as const,
+                  label: tr('🔥 Demand Higher Standards (+Sharpness)', '🔥 กำชับยกระดับฟอร์ม (+ความคม)'),
+                },
+                {
+                  id: 'focus_next',
+                  tone: 'FOCUS' as const,
+                  label: tr('🎯 Focus on Next Fixture (+Recovery)', '🎯 โฟกัสนัดต่อไป (+ฟื้นฟูความฟิต)'),
+                },
+              ]
+            ).map((btn) => (
               <button
                 key={btn.id}
                 type="button"
-                onClick={() => setPostMatchTalkGiven(btn.label)}
+                data-testid={`postmatch-talk-${btn.id}`}
+                onClick={() => {
+                  setPostMatchTalkGiven(btn.label);
+                  onApplyPostMatchTeamTalk?.(btn.tone, targetFixture?.id || '');
+                }}
                 className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/50 text-xs text-emerald-300 font-medium cursor-pointer"
               >
                 {btn.label}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Interactive 5-Taker Penalty Shootout Modal */}
+      {showPenaltyModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          data-testid="penalty-shootout-modal"
+          onClick={() => setShowPenaltyModal(false)}
+        >
+          <div
+            className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-xl p-5 space-y-4 text-xs shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-display font-bold text-white">
+                  ⚽ {tr('Interactive Penalty Shootout — Select 5 Takers', 'ดวลจุดโทษตัดสิน — จัดลำดับ 5 เพชฌฆาต')}
+                </h3>
+                <p className="text-slate-400">
+                  {tr(
+                    'Ordered by Penalty Taking, Composure & Finishing. Click Kick-by-Kick to take each spot kick.',
+                    'เรียงลำดับตามค่าพลังยิงจุดโทษ ความนิ่ง และการจบสกอร์ กดยิงทีละลูกเพื่อลุ้นผลสด'
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPenaltyModal(false)}
+                className="px-2.5 py-1 rounded bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              {penaltyTakerIds.map((pid, idx) => {
+                const p = world.players[pid];
+                if (!p) return null;
+                const kickRecord = penaltyKicksLog[idx];
+                return (
+                  <div
+                    key={pid}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg bg-slate-950 border border-slate-800"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold inline-flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <span className="font-semibold text-white">
+                        #{p.shirtNumber || idx + 1} {p.firstName} {p.lastName}
+                      </span>
+                      <span className="font-mono text-slate-400">({p.positions[0]})</span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono">
+                      <span className="text-emerald-400">PEN {p.attributes.technical.penaltyTaking}</span>
+                      <span className="text-sky-400">CMP {p.attributes.mental.composure}</span>
+                      <span className="text-amber-300">FIN {p.attributes.technical.finishing}</span>
+                      {kickRecord && (
+                        <span className="font-bold">
+                          {kickRecord.homeScored ? '🟢 GOAL' : '🔴 SAVED'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {penaltyKicksLog.length > 0 && (
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between font-mono">
+                <span className="text-emerald-400 font-bold">
+                  {myClub.shortName}:{' '}
+                  {penaltyKicksLog.map((k) => (k.homeScored ? '🟢' : '🔴')).join(' ')}{' '}
+                  ({penaltyKicksLog.filter((k) => k.homeScored).length})
+                </span>
+                <span className="text-sky-400 font-bold">
+                  {(isUserHome ? awayClub : homeClub).shortName}:{' '}
+                  {penaltyKicksLog.map((k) => (k.awayScored ? '🟢' : '🔴')).join(' ')}{' '}
+                  ({penaltyKicksLog.filter((k) => k.awayScored).length})
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setPenaltyKicksLog([])}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+              >
+                {tr('Reset Kicks', 'รีเซ็ตการยิง')}
+              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="take-next-penalty-kick-btn"
+                  disabled={penaltyKicksLog.length >= 5}
+                  onClick={() => {
+                    const nextRound = penaltyKicksLog.length;
+                    if (nextRound >= 5) return;
+                    const taker = world.players[penaltyTakerIds[nextRound]] || myStarters[0];
+                    const scoreProb =
+                      0.62 +
+                      ((taker?.attributes.technical.penaltyTaking || 14) +
+                        (taker?.attributes.mental.composure || 14)) /
+                        140;
+                    const homeScored = ((nextRound * 37 + currentMinute) % 100) / 100 < scoreProb;
+                    const awayScored = ((nextRound * 53 + currentMinute) % 100) / 100 < 0.74;
+                    setPenaltyKicksLog((prev) => [
+                      ...prev,
+                      {
+                        round: nextRound + 1,
+                        homeScored,
+                        awayScored,
+                        homeTaker: taker ? taker.lastName : 'Taker',
+                        awayTaker: `Opp #${nextRound + 1}`,
+                      },
+                    ]);
+                  }}
+                  className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold cursor-pointer"
+                >
+                  {tr('⚽ Take Next Kick (Kick-by-Kick)', '⚽ ยิงจุดโทษลูกถัดไป')}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2100,10 +2400,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       <rect x="3" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
                       <rect x="83" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
 
-                      {/* Home 11 Players (Sent-off players removed for 10-man realism) */}
+                      {/* Home 11 Players (Sent-off players removed for 10-man realism & AI/User subs synced) */}
                       {homePhaseCoords.map((coord, idx) => {
-                        const slot = homeClub.primaryTactic.lineup[idx];
-                        const p = slot?.playerId ? world.players[slot.playerId] : null;
+                        const { player: p, wasSubbedIn } = getActiveSlotPlayer(homeClub, idx);
                         if (p && sentOffPlayerIds.has(p.id)) return null;
                         const isCapt = p && homeClub.primaryTactic.setPieces?.captainId === p.id;
                         const shirtNum = p?.shirtNumber || idx + 1;
@@ -2128,7 +2427,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                               cy={cy}
                               r="2.4"
                               fill={homeClub.primaryColor}
-                              stroke="#ffffff"
+                              stroke={wasSubbedIn ? '#34d399' : '#ffffff'}
                               strokeWidth="0.45"
                             />
                             <text
@@ -2150,6 +2449,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                                 fontWeight="600"
                                 fill="#e2e8f0"
                               >
+                                {wasSubbedIn ? '🔄' : ''}
                                 {p.lastName.slice(0, 7)}
                                 {isCapt ? ' [C]' : ''}
                               </text>
@@ -2158,10 +2458,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         );
                       })}
 
-                      {/* Away 11 Players (Sent-off players removed for 10-man realism) */}
+                      {/* Away 11 Players (Sent-off players removed for 10-man realism & AI/User subs synced) */}
                       {awayPhaseCoords.map((coord, idx) => {
-                        const slot = awayClub.primaryTactic.lineup[idx];
-                        const p = slot?.playerId ? world.players[slot.playerId] : null;
+                        const { player: p, wasSubbedIn } = getActiveSlotPlayer(awayClub, idx);
                         if (p && sentOffPlayerIds.has(p.id)) return null;
                         const isCapt = p && awayClub.primaryTactic.setPieces?.captainId === p.id;
                         const shirtNum = p?.shirtNumber || idx + 1;
@@ -2186,7 +2485,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                               cy={cy}
                               r="2.4"
                               fill={awayClub.primaryColor}
-                              stroke="#0f172a"
+                              stroke={wasSubbedIn ? '#34d399' : '#0f172a'}
                               strokeWidth="0.45"
                             />
                             <text
@@ -2208,6 +2507,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                                 fontWeight="600"
                                 fill="#bae6fd"
                               >
+                                {wasSubbedIn ? '🔄' : ''}
                                 {p.lastName.slice(0, 7)}
                                 {isCapt ? ' [C]' : ''}
                               </text>

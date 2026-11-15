@@ -239,7 +239,13 @@ export function recomputeLeagueStandings(
 }
 
 /**
- * Returns top scorers, top assist providers, and highest rated players in a given league
+ * Returns 6 stat leader categories in a given league:
+ * 1. Golden Boot (topScorers)
+ * 2. Playmaker Award (topAssists)
+ * 3. Highest Average Rating (topRated)
+ * 4. Golden Glove Clean Sheets (topCleanSheets)
+ * 5. xG Overperformers (topXgOverperformers)
+ * 6. Defensive Monsters (topDefensiveMonsters)
  */
 export function getLeaguePlayerLeaders(
   leagueId: LeagueId,
@@ -265,7 +271,74 @@ export function getLeaguePlayerLeaders(
     .sort((a, b) => b.stats.averageRating - a.stats.averageRating)
     .slice(0, 15);
 
-  return { topScorers, topAssists, topRated };
+  const topCleanSheets = [...leaguePlayers]
+    .filter((p) => p.positions[0] === 'GK')
+    .map((p) => {
+      const explicitCS = p.stats.cleanSheets || 0;
+      const estimatedCS =
+        explicitCS > 0
+          ? explicitCS
+          : Math.max(
+              0,
+              Math.round(
+                p.stats.appearances *
+                  Math.min(
+                    0.62,
+                    Math.max(
+                      0.18,
+                      (p.attributes.mental.positioning + p.attributes.physical.agility) / 42
+                    )
+                  )
+              )
+            );
+      return { player: p, value: estimatedCS };
+    })
+    .filter((item) => item.value > 0 || item.player.stats.appearances > 0)
+    .sort((a, b) => b.value - a.value || b.player.currentAbility - a.player.currentAbility)
+    .slice(0, 15);
+
+  const topXgOverperformers = [...leaguePlayers]
+    .filter((p) => p.stats.goals > 0 || p.stats.appearances >= 1)
+    .map((p) => {
+      const expectedXg = Number(
+        (
+          p.stats.goals * 0.78 +
+          p.stats.appearances * ((p.attributes.mental.offTheBall + p.attributes.mental.positioning) / 55)
+        ).toFixed(2)
+      );
+      const diff = Number((p.stats.goals - expectedXg * 0.82).toFixed(2));
+      return { player: p, xg: expectedXg, diff };
+    })
+    .sort((a, b) => b.diff - a.diff || b.player.stats.goals - a.player.stats.goals)
+    .slice(0, 15);
+
+  const topDefensiveMonsters = [...leaguePlayers]
+    .filter((p) => p.positions[0] !== 'GK')
+    .map((p) => {
+      const apps = Math.max(1, p.stats.appearances);
+      const defScore = Number(
+        (
+          ((p.attributes.technical.tackling * 1.25 +
+            p.attributes.mental.positioning * 1.1 +
+            p.attributes.physical.strength * 0.8 +
+            p.attributes.mental.workRate * 0.85) /
+            12) *
+          (0.6 + Math.min(1.4, apps / 5))
+        ).toFixed(1)
+      );
+      return { player: p, actionsPer90: defScore };
+    })
+    .sort((a, b) => b.actionsPer90 - a.actionsPer90 || b.player.currentAbility - a.player.currentAbility)
+    .slice(0, 15);
+
+  return {
+    topScorers,
+    topAssists,
+    topRated,
+    topCleanSheets,
+    topXgOverperformers,
+    topDefensiveMonsters,
+  };
 }
 
 /**

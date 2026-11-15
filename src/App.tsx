@@ -41,6 +41,7 @@ import {
   adjustClubBudgetAllocation,
   advanceWorldOneDay,
   applyForManagerJob,
+  applyPostMatchTeamTalk,
   appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
@@ -49,6 +50,7 @@ import {
   deleteSavedSlot,
   deleteSaveSlotFromFirestore,
   dispatchSouthAmericaWonderkidScout,
+  exerciseBuyBackClause,
   expandClubStadium,
   generateAnnualYouthIntake,
   getClubStaffBonuses,
@@ -59,6 +61,8 @@ import {
   liveEditClubFinancesAndFacilities,
   loadWorldStateFromFirestoreSlot,
   loadWorldStateFromSlot,
+  negotiateIncomingTransferBid,
+  offerPlayerToClubs,
   organizePreSeasonTour,
   prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
@@ -1515,6 +1519,11 @@ function TouchlineShell() {
                 setWorld(res.nextState);
                 showToast(res.message);
               }}
+              onOfferPlayerToClubs={(playerId) => {
+                const res = offerPlayerToClubs(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
             />
           ) : (
             <>
@@ -1806,6 +1815,11 @@ function TouchlineShell() {
                   onSelectPlayer={openFullPlayerProfile}
                   onExitMatchCenter={() => navigateToRoute('#/home/portal')}
                   onOpenTactics={() => navigateToRoute('#/team/tactics')}
+                  onApplyPostMatchTeamTalk={(tone, fixtureId) => {
+                    const res = applyPostMatchTeamTalk(world, tone, fixtureId);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
                 />
               )}
 
@@ -1871,6 +1885,16 @@ function TouchlineShell() {
                   onSelectPlayer={openFullPlayerProfile}
                   onRespondToIncomingOffer={(offerId, decision) => {
                     const res = respondToIncomingTransferOffer(world, offerId, decision);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onNegotiateIncomingOffer={(offerId, params) => {
+                    const res = negotiateIncomingTransferBid(world, offerId, params);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onExerciseBuyBackClause={(clauseId) => {
+                    const res = exerciseBuyBackClause(world, clauseId);
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
