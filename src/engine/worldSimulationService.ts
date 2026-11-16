@@ -971,8 +971,9 @@ export function advanceWorldOneDay(state: WorldState): {
 
       const baseDevChance =
         age <= 21 ? 0.28 : age <= 25 ? 0.18 : age <= 29 ? 0.08 : 0.02;
+      const badgeMod = getCoachingLicenseModifiers(current.manager.coachingBadge);
       const devChance = isUserPlayer
-        ? baseDevChance * userStaffBonuses.trainingDevMultiplier
+        ? baseDevChance * userStaffBonuses.trainingDevMultiplier * badgeMod.trainingGrowthMultiplier
         : baseDevChance * 0.85;
 
       if (currentAbility < p.potentialAbility && rng.chance(devChance)) {
@@ -1061,7 +1062,9 @@ export function advanceWorldOneDay(state: WorldState): {
       ...controlled.finances,
       balance: newBal,
     };
-    const famGain = controlled.trainingFocus === 'Match Preparation' ? 4 : 2;
+    const badgeMod = getCoachingLicenseModifiers(current.manager.coachingBadge);
+    const baseFamGain = controlled.trainingFocus === 'Match Preparation' ? 4 : 2;
+    const famGain = Math.round(baseFamGain * badgeMod.familiarityMultiplier);
     const nextPrimaryFam = Math.min(100, controlled.primaryTactic.familiarity + famGain);
     controlled.primaryTactic = {
       ...controlled.primaryTactic,
@@ -1452,10 +1455,54 @@ export function advanceWorldOneDay(state: WorldState): {
     }
   }
 
+  let updatedManager = current.manager;
+  if (
+    current.manager.studyingBadge &&
+    nextDate >= current.manager.studyingBadge.completionDate
+  ) {
+    const graduatedBadge = current.manager.studyingBadge.targetBadge;
+    updatedManager = {
+      ...current.manager,
+      coachingBadge: graduatedBadge,
+      reputation: Math.min(100, current.manager.reputation + 5),
+      studyingBadge: null,
+    };
+    const myCtrl = updatedClubs[current.controlledClubId];
+    if (myCtrl) {
+      updatedClubs[myCtrl.id] = {
+        ...myCtrl,
+        primaryTactic: {
+          ...myCtrl.primaryTactic,
+          familiarity: Math.min(100, myCtrl.primaryTactic.familiarity + 8),
+        },
+        secondaryTactic: {
+          ...myCtrl.secondaryTactic,
+          familiarity: Math.min(100, myCtrl.secondaryTactic.familiarity + 8),
+        },
+      };
+    }
+    updatedInbox.unshift({
+      id: `news_badge_grad_${nextDate}_${graduatedBadge.replace(/\s+/g, '_')}`,
+      gameDate: nextDate,
+      category: 'Board',
+      title: trText(
+        `UEFA Coaching License Awarded: ${current.manager.name} Graduates with ${graduatedBadge}!`,
+        `สอบผ่านใบอนุญาตโค้ช! ${current.manager.name} จบหลักสูตร ${graduatedBadge} อย่างเป็นทางการ!`
+      ),
+      body: trText(
+        `Congratulations! You have completed your coaching course and been awarded the ${graduatedBadge} License (+8% Tactical Familiarity & permanent training/negotiation bonuses unlocked).`,
+        `ขอแสดงความยินดี! คุณผ่านการอบรมและได้รับใบอนุญาตโค้ชระดับ ${graduatedBadge} เรียบร้อยแล้ว (+8% ความคุ้นเคยแผนการเล่น พร้อมปลดล็อกโบนัสการซ้อมและการเจรจาถาวร)`
+      ),
+      isRead: false,
+      isImportant: true,
+    });
+  }
+
   let nextState: WorldState = {
     ...current,
     gameDate: nextDate,
     processedDates: [...current.processedDates, nextDate],
+    manager: updatedManager,
     players: updatedPlayers,
     clubs: updatedClubs,
     inbox: updatedInbox,
@@ -1757,8 +1804,9 @@ export function submitAndEvaluateTransferOffer(
     };
   }
 
-  // Check Player Wage expectation
-  const minWageAccepted = Math.round(player.wagePerWeek * 0.92);
+  // Check Player Wage expectation (UEFA Pro license grants +15% negotiation patience / -10% minimum wage threshold)
+  const badgeMod = getCoachingLicenseModifiers(state.manager.coachingBadge);
+  const minWageAccepted = Math.round(player.wagePerWeek * 0.92 * badgeMod.wageDemandMultiplier);
   if (params.proposedWagePerWeek < minWageAccepted) {
     return {
       nextState: state,
@@ -1791,6 +1839,10 @@ export function submitAndEvaluateTransferOffer(
     ...player,
     clubId: buyingClub.id,
     loanedFromClubId: params.offerType === 'Loan' ? sellingClub.id : null,
+    loanOptionToBuyFee:
+      params.offerType === 'Loan'
+        ? params.loanOptionToBuyFee || Math.round(player.marketValue * 1.15)
+        : null,
     wagePerWeek: params.proposedWagePerWeek,
     contractEndDate: `${endYear}-06-30`,
     squadStatus: params.proposedSquadStatus,
@@ -3285,6 +3337,8 @@ export interface PlayerDelta {
   playInReserves?: boolean;
   individualTraining?: Player['individualTraining'];
   askingPrice?: number;
+  loanedFromClubId?: string | null;
+  loanOptionToBuyFee?: number | null;
 }
 
 export interface CompactFixtureScore {
@@ -3318,7 +3372,7 @@ export interface CareerStateMap {
   buyBackClauses?: WorldState['buyBackClauses'];
   lastSquadMeetingDate?: string;
   scheduledExtraFixtures?: Fixture[];
-  uefaPots?: Record<UefaCompetitionId, string[][]>;
+  uefaPots?: Record<UefaCompetitionId, string[] | string[][]>;
 }
 
 export interface CareerSaveDocument {
@@ -3615,6 +3669,8 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
         playInReserves: p.playInReserves,
         individualTraining: p.individualTraining,
         askingPrice: p.askingPrice,
+        loanedFromClubId: p.loanedFromClubId,
+        loanOptionToBuyFee: p.loanOptionToBuyFee,
       },
     });
   }
@@ -3630,6 +3686,13 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
   for (const [k, v] of Object.entries(compacted.scoutReports).slice(0, 35)) {
     limitedScoutReports[k] = v;
   }
+
+  // Flatten uefaPots from 2D string[][] to 1D string[] so Cloud Firestore never rejects nested arrays
+  const flatUefaPots: Record<UefaCompetitionId, string[]> = {
+    UEFA_UCL: (activeUefaPots.UEFA_UCL || []).flat(),
+    UEFA_UEL: (activeUefaPots.UEFA_UEL || []).flat(),
+    UEFA_UECL: (activeUefaPots.UEFA_UECL || []).flat(),
+  };
 
   const dehydrated = sanitizeForFirestore<CareerStateMap>({
     processedDates: compacted.processedDates.slice(-60),
@@ -3657,7 +3720,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     buyBackClauses: (compacted.buyBackClauses || []).slice(0, 25),
     lastSquadMeetingDate: compacted.lastSquadMeetingDate || '',
     scheduledExtraFixtures,
-    uefaPots: activeUefaPots,
+    uefaPots: flatUefaPots,
   });
 
   // Safety guard: guarantee JSON payload is under 300KB so Firestore BSON/proto never approaches 1,048,576 bytes
@@ -3731,7 +3794,28 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     rehydratedPlayers[id] = fullPlayer;
   }
 
-  const rehydratedUefaPots = cs.uefaPots || baseline.uefaPots!;
+  const rehydratedUefaPots: Record<UefaCompetitionId, string[][]> = {
+    UEFA_UCL: [],
+    UEFA_UEL: [],
+    UEFA_UECL: [],
+  };
+  for (const compId of ['UEFA_UCL', 'UEFA_UEL', 'UEFA_UECL'] as UefaCompetitionId[]) {
+    const raw = cs.uefaPots?.[compId];
+    if (Array.isArray(raw) && raw.length > 0) {
+      if (Array.isArray(raw[0])) {
+        rehydratedUefaPots[compId] = raw as string[][];
+      } else {
+        const flatList = raw as string[];
+        const chunked: string[][] = [];
+        for (let i = 0; i < flatList.length; i += 9) {
+          chunked.push(flatList.slice(i, i + 9));
+        }
+        rehydratedUefaPots[compId] = chunked;
+      }
+    } else {
+      rehydratedUefaPots[compId] = baseline.uefaPots![compId];
+    }
+  }
   const seasonBaseFixtures =
     docData.season === baseline.currentSeason
       ? baseline.fixtures
@@ -3905,7 +3989,11 @@ export async function saveWorldStateToFirestoreSlot(
       });
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, savePath);
+    try {
+      handleFirestoreError(error, OperationType.WRITE, savePath);
+    } catch {
+      // Never block local save completion when Cloud Firestore write fails
+    }
   }
 
   return updatedMetas;
@@ -3966,7 +4054,16 @@ export async function syncUserSaveSlotsFromFirestore(): Promise<SaveSlotMeta[]> 
     writeLocalSaveMetas(mergedMetas);
     return mergedMetas;
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, savesPath);
+    try {
+      handleFirestoreError(error, OperationType.LIST, savesPath);
+    } catch {
+      // Return merged local slots if Cloud Firestore list fails
+    }
+    const fallbackMetas = Array.from(mergedMap.values()).sort((a, b) =>
+      b.lastSavedAt.localeCompare(a.lastSavedAt)
+    );
+    inMemorySlotMetas = fallbackMetas;
+    return fallbackMetas;
   }
 }
 
@@ -4582,7 +4679,8 @@ export function triggerClubTakeoverEvent(
  */
 export function applyForManagerJob(
   state: WorldState,
-  targetClubId: string
+  targetClubId: string,
+  isHeadhuntedOffer = false
 ): { nextState: WorldState; accepted: boolean; message: string } {
   const targetClub = state.clubs[targetClubId];
   if (!targetClub) {
@@ -4608,9 +4706,9 @@ export function applyForManagerJob(
       : 8;
   const effectiveManagerRep = mgr.reputation + winBonus + mgr.careerStats.trophies.length * 5;
 
-  // Accept if manager effective rep is within 28 points of club reputation or club board confidence is low
+  // Accept if manager effective rep is within 28 points of club reputation, club board confidence is low, or headhunted directly
   const isUnderPressure = targetClub.boardExpectations.confidence.overall <= 55;
-  if (!isUnderPressure && effectiveManagerRep + 28 < targetClub.reputation) {
+  if (!isHeadhuntedOffer && !isUnderPressure && effectiveManagerRep + 28 < targetClub.reputation) {
     return {
       nextState: state,
       accepted: false,
@@ -5486,6 +5584,71 @@ export function triggerAIManagerialCarouselCheck(
           };
         }
       }
+    });
+  }
+
+  // Stage 4 Pillar 4.2: Headhunting Job Offers from Elite Clubs in Inbox
+  const myClub = updatedClubs[state.controlledClubId];
+  const candidateSuitors = Object.values(updatedClubs)
+    .filter(
+      (c) =>
+        c.id !== state.controlledClubId &&
+        c.reputation >= Math.max(76, (myClub?.reputation || 75) - 4)
+    )
+    .sort((a, b) => b.reputation - a.reputation);
+
+  const suitorClub = candidateSuitors[0];
+  const headhuntNewsId = suitorClub ? `news_headhunt_${state.gameDate}_${suitorClub.id}` : '';
+  if (
+    suitorClub &&
+    (state.manager.reputation >= 60 || sackedCount > 0) &&
+    !nextInbox.some((n) => n.id === headhuntNewsId)
+  ) {
+    const budgetM = (suitorClub.finances.transferBudget / 1_000_000).toFixed(1);
+    nextInbox.unshift({
+      id: headhuntNewsId,
+      gameDate: state.gameDate,
+      category: 'Board',
+      title: trText(
+        `Official Headhunting Approach: ${suitorClub.name} Offer You the Manager Job (€${budgetM}M Budget)!`,
+        `ข้อเสนอทาบทามคุมทีม: บอร์ดบริหาร ${suitorClub.name} ยื่นข้อเสนอดึงตัวคุณไปคุมทัพ (งบ €${budgetM}M)!`
+      ),
+      body: trText(
+        `Impressed by your tactical identity and leadership at ${myClub?.name || 'your club'}, the Board of Directors at ${suitorClub.name} (${LEAGUES_CONFIG[suitorClub.leagueId].name}) have formally approached you to take over as their First-Team Manager immediately with a €${budgetM}M transfer warchest.`,
+        `บอร์ดบริหารของสโมสรยักษ์ใหญ่ ${suitorClub.name} (${LEAGUES_CONFIG[suitorClub.leagueId].name}) ประทับใจผลงานและปรัชญาการทำทีมของคุณกับ ${myClub?.name || 'สโมสรปัจจุบัน'} จึงได้ส่งหนังสือทาบทามอย่างเป็นทางการให้คุณย้ายไปรับตำแหน่งผู้จัดการทีมคนใหม่ทันที พร้อมงบซื้อขาย €${budgetM}M`
+      ),
+      isRead: false,
+      isImportant: true,
+      relatedClubId: suitorClub.id,
+      actionType: 'PressConference',
+      pressConferenceOptions: [
+        {
+          id: `headhunt_accept_${suitorClub.id}`,
+          label: trText(
+            `✅ Accept Offer & Take Over as Manager of ${suitorClub.name} Immediately (€${budgetM}M Budget)`,
+            `✅ ตอบรับข้อเสนอและย้ายไปคุมสโมสร ${suitorClub.name} ทันที (งบเสริมทัพ €${budgetM}M)`
+          ),
+          moraleDelta: 0,
+          boardDelta: 0,
+          mediaResponse: trText(
+            `Blockbuster Move! You have signed the contract to become the new Manager of ${suitorClub.name}!`,
+            `ดีลสะเทือนวงการ! คุณตกลงเซ็นสัญญาย้ายไปคุมทัพ ${suitorClub.name} อย่างเป็นทางการ!`
+          ),
+        },
+        {
+          id: `headhunt_loyalty_${suitorClub.id}`,
+          label: trText(
+            `❌ Reject ${suitorClub.name} Approach & Pledge Public Loyalty to ${myClub?.name || 'Current Club'} (+8% Board & Fan Confidence)`,
+            `❌ ปฏิเสธข้อเสนอจาก ${suitorClub.name} และประกาศความจงรักภักดีต่อ ${myClub?.name || 'สโมสรปัจจุบัน'} (+8% ความเชื่อมั่นบอร์ดและแฟนบอล)`
+          ),
+          moraleDelta: 5,
+          boardDelta: 8,
+          mediaResponse: trText(
+            `Supporters and the Board at ${myClub?.name || 'your club'} are thrilled by your public commitment (+8% Board Confidence, +5% Squad Morale)!`,
+            `บอร์ดบริหารและแฟนบอลของ ${myClub?.name || 'สโมสร'} ประทับใจอย่างยิ่งที่คุณปฏิเสธทีมใหญ่เพื่ออยู่สร้างความสำเร็จต่อไป (+8% ความเชื่อมั่นบอร์ด, +5% ขวัญกำลังใจนักเตะ)!`
+          ),
+        },
+      ],
     });
   }
 
@@ -7435,12 +7598,53 @@ export function holdEmergencySquadMeeting(
   };
 }
 
+export function getCoachingLicenseModifiers(
+  badge?: import('../types/game').CoachingLicenseTier
+): {
+  familiarityMultiplier: number;
+  trainingGrowthMultiplier: number;
+  wageDemandMultiplier: number;
+} {
+  const tier = badge || 'National A';
+  if (tier === 'UEFA Pro') {
+    return {
+      familiarityMultiplier: 1.15,
+      trainingGrowthMultiplier: 1.1,
+      wageDemandMultiplier: 0.9,
+    };
+  }
+  if (tier === 'Continental A') {
+    return {
+      familiarityMultiplier: 1.15,
+      trainingGrowthMultiplier: 1.1,
+      wageDemandMultiplier: 1.0,
+    };
+  }
+  if (tier === 'Continental B') {
+    return {
+      familiarityMultiplier: 1.15,
+      trainingGrowthMultiplier: 1.0,
+      wageDemandMultiplier: 1.0,
+    };
+  }
+  return {
+    familiarityMultiplier: 1.0,
+    trainingGrowthMultiplier: 1.0,
+    wageDemandMultiplier: 1.0,
+  };
+}
+
 /**
- * Stage 3 Pillar 4.1: Study & Upgrade Manager Coaching License (National A -> Continental B -> Continental A -> UEFA Pro)
+ * Stage 3 Pillar 4.1 & Stage 4 Hotfix 3: Study & Upgrade Manager Coaching License
+ * Supports 'INSTANT' completion (default for tests & fast-track button) and 'COURSE_21D' 21-day enrollment
  */
-export function studyNextCoachingLicense(state: WorldState): {
+export function studyNextCoachingLicense(
+  state: WorldState,
+  mode: 'INSTANT' | 'COURSE_21D' = 'INSTANT'
+): {
   nextState: WorldState;
   newBadge: import('../types/game').CoachingLicenseTier;
+  enrolledOnly?: boolean;
   message: string;
 } {
   const order: import('../types/game').CoachingLicenseTier[] = [
@@ -7451,8 +7655,36 @@ export function studyNextCoachingLicense(state: WorldState): {
   ];
   const currentBadge = state.manager.coachingBadge || 'National A';
   const curIdx = order.indexOf(currentBadge);
-  const nextBadge = order[Math.min(order.length - 1, curIdx + 1)];
+  const nextBadge =
+    state.manager.studyingBadge?.targetBadge || order[Math.min(order.length - 1, curIdx + 1)];
   const myClub = state.clubs[state.controlledClubId];
+
+  if (mode === 'COURSE_21D' && !state.manager.studyingBadge) {
+    const completionDate = new Date(
+      new Date(`${state.gameDate}T00:00:00Z`).getTime() + 21 * 86_400_000
+    )
+      .toISOString()
+      .slice(0, 10);
+
+    return {
+      nextState: {
+        ...state,
+        manager: {
+          ...state.manager,
+          studyingBadge: {
+            targetBadge: nextBadge,
+            completionDate,
+          },
+        },
+      },
+      newBadge: nextBadge,
+      enrolledOnly: true,
+      message: trText(
+        `Enrolled in ${nextBadge} Coaching License Course! Scheduled graduation date: ${completionDate}.`,
+        `ลงทะเบียนเรียนหลักสูตรใบอนุญาตโค้ช ${nextBadge} สำเร็จ! กำหนดจบหลักสูตรวันที่ ${completionDate}`
+      ),
+    };
+  }
 
   // Apply immediate passive buffs to club tactical familiarity and player training morale
   const updatedClub: Club = {
@@ -7484,10 +7716,449 @@ export function studyNextCoachingLicense(state: WorldState): {
       },
     },
     newBadge: nextBadge,
+    enrolledOnly: false,
     message: trText(
       `Congratulations! You earned the ${nextBadge} Coaching License (+8% Tactical Familiarity & permanent coaching/negotiation buffs unlocked)!`,
       `ขอแสดงความยินดี! คุณสอบผ่านใบอนุญาตโค้ชระดับ ${nextBadge} สำเร็จ (+8% ความคุ้นเคยแผนการเล่น และปลดล็อกบัฟผู้จัดการทีมถาวร)!`
     ),
+  };
+}
+
+/**
+ * Stage 4 Pillar 3.1a: Recall a player currently out on loan back to the user's club immediately
+ */
+export function recallPlayerFromLoan(
+  state: WorldState,
+  playerId: string
+): { nextState: WorldState; success: boolean; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const player = state.players[playerId];
+  if (!player || player.loanedFromClubId !== myClub.id) {
+    return {
+      nextState: state,
+      success: false,
+      message: trText(
+        'This player is not currently out on loan from your club.',
+        'นักเตะรายนี้ไม่ได้อยู่ในสถานะถูกปล่อยยืมตัวจากสโมสรของคุณ'
+      ),
+    };
+  }
+
+  const borrowingClub = state.clubs[player.clubId];
+  const updatedPlayer: Player = {
+    ...player,
+    clubId: myClub.id,
+    loanedFromClubId: null,
+    loanOptionToBuyFee: null,
+    morale: Math.min(100, player.morale + 4),
+    isRegistered: true,
+    transferHistory: [
+      {
+        date: state.gameDate,
+        fromClubId: borrowingClub ? borrowingClub.id : player.clubId,
+        toClubId: myClub.id,
+        fee: 0,
+        type: 'Loan',
+      },
+      ...player.transferHistory,
+    ],
+  };
+
+  const updatedPlayers: Record<string, Player> = {
+    ...state.players,
+    [player.id]: updatedPlayer,
+  };
+
+  const updatedClubs: Record<string, Club> = { ...state.clubs };
+  if (borrowingClub) {
+    const remSquad = Object.values(updatedPlayers).filter((p) => p.clubId === borrowingClub.id);
+    if (remSquad.length >= 11) {
+      updatedClubs[borrowingClub.id] = {
+        ...borrowingClub,
+        primaryTactic: autoPickLineup(
+          borrowingClub.primaryTactic.formation,
+          remSquad,
+          borrowingClub.primaryTactic.instructions,
+          borrowingClub.primaryTactic.id,
+          borrowingClub.primaryTactic.name
+        ),
+      };
+    }
+  }
+
+  if (
+    !myClub.primaryTactic.lineup.some((s) => s.playerId === player.id) &&
+    !myClub.primaryTactic.benchPlayerIds.includes(player.id) &&
+    myClub.primaryTactic.benchPlayerIds.length < 9
+  ) {
+    updatedClubs[myClub.id] = {
+      ...myClub,
+      primaryTactic: {
+        ...myClub.primaryTactic,
+        benchPlayerIds: [...myClub.primaryTactic.benchPlayerIds, player.id],
+      },
+    };
+  }
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      clubs: updatedClubs,
+      inbox: [
+        {
+          id: `news_loan_recall_${state.gameDate}_${player.id}`,
+          gameDate: state.gameDate,
+          category: 'Transfer',
+          title: trText(
+            `Loan Recall Confirmed: ${player.firstName} ${player.lastName} Returns to ${myClub.name}`,
+            `ดึงตัวกลับจากสัญญายืมตัว: ${player.firstName} ${player.lastName} กลับสู่ ${myClub.name} แล้ว`
+          ),
+          body: trText(
+            `${player.firstName} ${player.lastName} has been recalled from his loan spell at ${borrowingClub?.name || 'his loan club'} and is immediately available for selection.`,
+            `${player.firstName} ${player.lastName} ถูกเรียกตัวกลับจากการยืมตัวที่ ${borrowingClub?.name || 'สโมสรยืมตัว'} และพร้อมลงสนามช่วยทีมชุดใหญ่ทันที`
+          ),
+          isRead: false,
+          relatedPlayerId: player.id,
+          relatedClubId: myClub.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    success: true,
+    message: trText(
+      `Recalled ${player.firstName} ${player.lastName} from loan at ${borrowingClub?.name || 'loan club'}!`,
+      `ดึงตัว ${player.firstName} ${player.lastName} กลับจากสัญญายืมตัวที่ ${borrowingClub?.name || 'สโมสรยืมตัว'} เรียบร้อยแล้ว!`
+    ),
+  };
+}
+
+/**
+ * Stage 4 Pillar 3.1b: Trigger Option-to-Buy on a player currently loaned in at the user's club
+ */
+export function triggerLoanOptionToBuy(
+  state: WorldState,
+  playerId: string
+): { nextState: WorldState; success: boolean; feePaid: number; message: string } {
+  const myClub = state.clubs[state.controlledClubId];
+  const player = state.players[playerId];
+  if (!player || player.clubId !== myClub.id || !player.loanedFromClubId) {
+    return {
+      nextState: state,
+      success: false,
+      feePaid: 0,
+      message: trText(
+        'This player is not currently on loan at your club.',
+        'นักเตะรายนี้ไม่ได้อยู่ในสถานะยืมตัวที่สโมสรของคุณ'
+      ),
+    };
+  }
+
+  const parentClub = state.clubs[player.loanedFromClubId];
+  const optionFee =
+    player.loanOptionToBuyFee && player.loanOptionToBuyFee > 0
+      ? player.loanOptionToBuyFee
+      : Math.round((player.marketValue * 1.1) / 100_000) * 100_000;
+
+  if (myClub.finances.transferBudget < optionFee) {
+    return {
+      nextState: state,
+      success: false,
+      feePaid: 0,
+      message: trText(
+        `Insufficient transfer budget to trigger €${(optionFee / 1_000_000).toFixed(2)}M Option-to-Buy.`,
+        `งบซื้อขายไม่เพียงพอสำหรับใช้ออปชันซื้อขาด €${(optionFee / 1_000_000).toFixed(2)}M`
+      ),
+    };
+  }
+
+  const nextYear = (Number(state.gameDate.slice(0, 4)) || 2025) + 4;
+  const updatedPlayer: Player = {
+    ...player,
+    loanedFromClubId: null,
+    loanOptionToBuyFee: null,
+    contractEndDate: `${nextYear}-06-30`,
+    morale: Math.min(100, player.morale + 10),
+    transferHistory: [
+      {
+        date: state.gameDate,
+        fromClubId: parentClub ? parentClub.id : player.loanedFromClubId,
+        toClubId: myClub.id,
+        fee: optionFee,
+        type: 'Transfer',
+      },
+      ...player.transferHistory,
+    ],
+  };
+
+  const newBalance = myClub.finances.balance - optionFee;
+  const updatedMyClub: Club = {
+    ...myClub,
+    finances: {
+      ...myClub.finances,
+      balance: newBalance,
+      transferBudget: myClub.finances.transferBudget - optionFee,
+    },
+  };
+
+  const updatedClubs: Record<string, Club> = {
+    ...state.clubs,
+    [myClub.id]: updatedMyClub,
+  };
+
+  if (parentClub) {
+    updatedClubs[parentClub.id] = {
+      ...parentClub,
+      finances: {
+        ...parentClub.finances,
+        balance: parentClub.finances.balance + optionFee,
+        transferBudget: parentClub.finances.transferBudget + Math.round(optionFee * 0.85),
+      },
+    };
+  }
+
+  const tx: FinanceTransaction = {
+    id: `tx_loan_buy_${Date.now()}_${player.id}`,
+    date: state.gameDate,
+    clubId: myClub.id,
+    category: 'Player Purchase',
+    amount: -optionFee,
+    description: trText(
+      `Triggered Option-to-Buy for ${player.firstName} ${player.lastName} from ${parentClub?.name || 'Parent Club'}`,
+      `ใช้ออปชันซื้อขาด ${player.firstName} ${player.lastName} จาก ${parentClub?.name || 'สโมสรต้นสังกัด'}`
+    ),
+    balanceAfter: newBalance,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [player.id]: updatedPlayer,
+      },
+      clubs: updatedClubs,
+      transactions: [tx, ...state.transactions],
+      inbox: [
+        {
+          id: `news_loan_buy_${state.gameDate}_${player.id}`,
+          gameDate: state.gameDate,
+          category: 'Transfer',
+          title: trText(
+            `Permanent Deal Complete: ${myClub.name} Trigger €${(optionFee / 1_000_000).toFixed(2)}M Option-to-Buy for ${player.firstName} ${player.lastName}!`,
+            `ปิดดีลซื้อขาดถาวร! ${myClub.name} ใช้ออปชัน €${(optionFee / 1_000_000).toFixed(2)}M คว้าตัว ${player.firstName} ${player.lastName} ร่วมทัพถาวร!`
+          ),
+          body: trText(
+            `${myClub.name} have exercised the €${(optionFee / 1_000_000).toFixed(2)}M Option-to-Buy clause to sign ${player.firstName} ${player.lastName} on a permanent contract until ${nextYear}.`,
+            `${myClub.name} ตัดสินใจใช้ออปชันซื้อขาดมูลค่า €${(optionFee / 1_000_000).toFixed(2)}M เซ็นสัญญาคว้าตัว ${player.firstName} ${player.lastName} มาร่วมทีมอย่างถาวรถึงปี ${nextYear}`
+          ),
+          isRead: false,
+          relatedPlayerId: player.id,
+          relatedClubId: myClub.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    success: true,
+    feePaid: optionFee,
+    message: trText(
+      `Triggered €${(optionFee / 1_000_000).toFixed(2)}M Option-to-Buy! ${player.firstName} ${player.lastName} is now permanently a ${myClub.name} player!`,
+      `ใช้ออปชันซื้อขาด €${(optionFee / 1_000_000).toFixed(2)}M สำเร็จ! ${player.firstName} ${player.lastName} ย้ายร่วมทีม ${myClub.name} ถาวรแล้ว!`
+    ),
+  };
+}
+
+/**
+ * Stage 4 Pillar 4.2: Unified handler for Inbox Press Conference & Headhunting Job Offer responses
+ */
+export function respondToPressConferenceOrJobOffer(
+  state: WorldState,
+  newsId: string,
+  optionId: string
+): { nextState: WorldState; switchedClub: boolean; message: string } {
+  const item = state.inbox.find((n) => n.id === newsId);
+  const opt = item?.pressConferenceOptions?.find((o) => o.id === optionId);
+  if (!item || !opt) {
+    return {
+      nextState: state,
+      switchedClub: false,
+      message: trText('Option not found.', 'ไม่พบตัวเลือกที่ระบุ'),
+    };
+  }
+
+  // Case 1: Accepting a Headhunting Job Offer (`headhunt_accept_<clubId>`)
+  if (optionId.startsWith('headhunt_accept_')) {
+    const targetClubId = optionId.replace('headhunt_accept_', '');
+    const markedState: WorldState = {
+      ...state,
+      inbox: state.inbox.map((n) =>
+        n.id === newsId ? { ...n, isRead: true, pressConferenceAnsweredId: optionId } : n
+      ),
+    };
+    const jobRes = applyForManagerJob(markedState, targetClubId, true);
+    return {
+      nextState: jobRes.nextState,
+      switchedClub: jobRes.accepted,
+      message: opt.mediaResponse || jobRes.message,
+    };
+  }
+
+  // Case 2: Standard Press Conference or Rejecting Headhunt with Public Loyalty (`headhunt_loyalty_<clubId>`)
+  const controlledClub = state.clubs[state.controlledClubId];
+  const updatedPlayers = { ...state.players };
+  for (const p of Object.values(updatedPlayers)) {
+    if (p.clubId === controlledClub.id) {
+      updatedPlayers[p.id] = {
+        ...p,
+        morale: Math.max(20, Math.min(100, p.morale + opt.moraleDelta)),
+      };
+    }
+  }
+
+  const updatedClub: Club = {
+    ...controlledClub,
+    boardExpectations: {
+      ...controlledClub.boardExpectations,
+      confidence: {
+        ...controlledClub.boardExpectations.confidence,
+        overall: Math.max(
+          15,
+          Math.min(100, controlledClub.boardExpectations.confidence.overall + opt.boardDelta)
+        ),
+        squadAtmosphere: optionId.startsWith('headhunt_loyalty_')
+          ? Math.min(100, controlledClub.boardExpectations.confidence.squadAtmosphere + 6)
+          : controlledClub.boardExpectations.confidence.squadAtmosphere,
+      },
+    },
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      clubs: { ...state.clubs, [controlledClub.id]: updatedClub },
+      inbox: state.inbox.map((n) =>
+        n.id === newsId ? { ...n, isRead: true, pressConferenceAnsweredId: optionId } : n
+      ),
+    },
+    switchedClub: false,
+    message: opt.mediaResponse,
+  };
+}
+
+/**
+ * Stage 4 Pillar 4.1: Compute Matchday-by-Matchday League Position Worm Chart Data
+ */
+export function computeLeaguePositionWormData(
+  state: WorldState,
+  leagueId: LeagueId
+): {
+  matchdays: number[];
+  totalClubs: number;
+  series: {
+    clubId: string;
+    shortName: string;
+    name: string;
+    color: string;
+    isUserClub: boolean;
+    positions: number[];
+  }[];
+} {
+  const table = state.standings[leagueId] || [];
+  const totalClubs = Math.max(10, table.length || 20);
+  const completedLeagueFixtures = state.fixtures.filter(
+    (f) => f.competitionId === leagueId && f.status === 'Completed' && f.result
+  );
+
+  const maxCompletedMd = completedLeagueFixtures.reduce(
+    (max, f) => Math.max(max, f.matchday || 1),
+    0
+  );
+
+  // Pick User Club (if in this league) + top 2 rivals
+  const trackedClubIds: string[] = [];
+  if (state.clubs[state.controlledClubId]?.leagueId === leagueId) {
+    trackedClubIds.push(state.controlledClubId);
+  }
+  for (const row of table) {
+    if (!trackedClubIds.includes(row.clubId) && trackedClubIds.length < 3) {
+      trackedClubIds.push(row.clubId);
+    }
+  }
+
+  const palette = ['#10b981', '#38bdf8', '#f59e0b'];
+  const totalPointsToPlot = Math.max(8, Math.min(38, maxCompletedMd));
+  const matchdays = Array.from({ length: totalPointsToPlot }, (_, idx) => idx + 1);
+
+  const allLeagueClubIds = table.map((r) => r.clubId);
+  const positionsByMd: Record<number, Record<string, number>> = {};
+
+  for (const md of matchdays) {
+    if (md <= maxCompletedMd) {
+      const ptsMap: Record<string, { pts: number; gd: number; gf: number; rep: number }> = {};
+      for (const cid of allLeagueClubIds) {
+        ptsMap[cid] = {
+          pts: 0,
+          gd: 0,
+          gf: 0,
+          rep: state.clubs[cid]?.reputation || 70,
+        };
+      }
+      for (const fx of completedLeagueFixtures) {
+        if ((fx.matchday || 1) <= md && fx.result) {
+          const h = ptsMap[fx.homeClubId];
+          const a = ptsMap[fx.awayClubId];
+          if (h && a) {
+            h.gf += fx.result.homeGoals;
+            h.gd += fx.result.homeGoals - fx.result.awayGoals;
+            a.gf += fx.result.awayGoals;
+            a.gd += fx.result.awayGoals - fx.result.homeGoals;
+            if (fx.result.homeGoals > fx.result.awayGoals) h.pts += 3;
+            else if (fx.result.homeGoals < fx.result.awayGoals) a.pts += 3;
+            else {
+              h.pts += 1;
+              a.pts += 1;
+            }
+          }
+        }
+      }
+      const sorted = [...allLeagueClubIds].sort((c1, c2) => {
+        const s1 = ptsMap[c1];
+        const s2 = ptsMap[c2];
+        return s2.pts - s1.pts || s2.gd - s1.gd || s2.gf - s1.gf || s2.rep - s1.rep;
+      });
+      positionsByMd[md] = {};
+      sorted.forEach((cid, idx) => {
+        positionsByMd[md][cid] = idx + 1;
+      });
+    } else {
+      // Early season projection based on current table rank + deterministic form wave
+      positionsByMd[md] = {};
+      allLeagueClubIds.forEach((cid, baseIdx) => {
+        const baseRank = baseIdx + 1;
+        const wave = ((cid.charCodeAt(cid.length - 1) + md * 3) % 3) - 1;
+        positionsByMd[md][cid] = Math.max(1, Math.min(totalClubs, baseRank + wave));
+      });
+    }
+  }
+
+  const series = trackedClubIds.map((cid, sIdx) => {
+    const c = state.clubs[cid];
+    const isUserClub = cid === state.controlledClubId;
+    return {
+      clubId: cid,
+      shortName: c?.shortName || 'CLB',
+      name: c?.name || 'Club',
+      color: isUserClub ? '#10b981' : palette[(sIdx + 1) % palette.length],
+      isUserClub,
+      positions: matchdays.map((md) => positionsByMd[md]?.[cid] || sIdx + 1),
+    };
+  });
+
+  return {
+    matchdays,
+    totalClubs,
+    series,
   };
 }
 
@@ -7652,5 +8323,6 @@ export function buildSevenDayCalendarStrip(state: WorldState): {
 
   return result;
 }
+
 
 

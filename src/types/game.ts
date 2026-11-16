@@ -266,6 +266,7 @@ export interface Player {
   professionalism: number; // 1-20
   clubId: string;
   loanedFromClubId?: string | null;
+  loanOptionToBuyFee?: number | null;
   wagePerWeek: number; // in EUR
   contractEndDate: string;
   releaseClause?: number | null;

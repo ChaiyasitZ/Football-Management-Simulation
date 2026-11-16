@@ -24,6 +24,7 @@ import {
   buildScoutReportForPlayer,
   buildSevenDayCalendarStrip,
   computeHallOfFameLeaderboard,
+  computeLeaguePositionWormData,
   conductOneOnOnePlayerChat,
   createCustomPlayerInWorld,
   dehydrateWorldStateToCareerMap,
@@ -36,6 +37,7 @@ import {
   generateAnnualYouthIntake,
   getClubStaffBonuses,
   getClubSupporterConfidence,
+  getCoachingLicenseModifiers,
   getDeadlineDayBargains,
   getFanSocialFeed,
   getNextAvailableManualSaveSlot,
@@ -51,11 +53,13 @@ import {
   prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
+  recallPlayerFromLoan,
   rehydrateWorldStateFromCareerDoc,
   releaseYouthProspect,
   removeMentoringGroup,
   renewPlayerContract,
   requestAffiliateFeederClub,
+  respondToPressConferenceOrJobOffer,
   saveMentoringGroup,
   saveWorldStateToSlot,
   sendPlayerToAffiliateLoan,
@@ -63,6 +67,7 @@ import {
   signPlayerOnBosmanFree,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
+  triggerLoanOptionToBuy,
   simulateExhibitionClash,
   studyNextCoachingLicense,
   submitAndEvaluateTransferOffer,
@@ -1740,3 +1745,127 @@ test('Phase 1 Save System Overhaul (5 Critical Save Bug Fixes) & FotMob League L
     'Season 2 scheduled fixtures must be 100% restored upon loading save'
   );
 });
+
+test('Stage 4 Hotfixes (1D Firestore uefaPots, Coaching License Buffs) & Loan/Worm/Headhunting Systems', () => {
+  let world = createInitialWorldState(50505);
+  const myClubId = world.controlledClubId;
+
+  // 1. Hotfix 1: uefaPots must be flattened to 1D string[] in dehydrateWorldStateToCareerMap (no nested arrays)
+  const careerMap = dehydrateWorldStateToCareerMap(world);
+  assert.ok(careerMap.uefaPots, 'careerMap must contain uefaPots');
+  assert.equal(Array.isArray(careerMap.uefaPots?.UEFA_UCL), true);
+  assert.equal(careerMap.uefaPots?.UEFA_UCL.length, 36, 'Flattened UEFA_UCL pot list must have 36 club IDs');
+  assert.equal(
+    typeof careerMap.uefaPots?.UEFA_UCL[0],
+    'string',
+    'Each element of flattened uefaPots must be a string (no nested arrays for Cloud Firestore)'
+  );
+
+  const rehydrated = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'u_test',
+    slotId: 'slot_1',
+    saveName: 'Flat Pots Check',
+    clubName: world.clubs[myClubId].name,
+    managerName: world.manager.name,
+    gameDate: world.gameDate,
+    season: world.currentSeason,
+    lastSavedAtIso: '2026-11-16T00:00:00Z',
+    randomSeed: world.randomSeed,
+    controlledClubId: myClubId,
+    careerState: careerMap,
+  });
+  assert.equal(rehydrated.uefaPots!.UEFA_UCL.length, 4, 'Rehydrated UEFA_UCL must have 4 pots');
+  assert.equal(rehydrated.uefaPots!.UEFA_UCL[0].length, 9, 'Each rehydrated pot must have 9 clubs');
+  assert.deepEqual(rehydrated.uefaPots!.UEFA_UCL, world.uefaPots!.UEFA_UCL);
+
+  // 2. Hotfix 3: Coaching License 21-day course + active modifiers
+  const proMods = getCoachingLicenseModifiers('UEFA Pro');
+  assert.equal(proMods.familiarityMultiplier, 1.15);
+  assert.equal(proMods.trainingGrowthMultiplier, 1.1);
+  assert.equal(proMods.wageDemandMultiplier, 0.9);
+
+  const courseRes = studyNextCoachingLicense(world, 'COURSE_21D');
+  world = courseRes.nextState;
+  assert.equal(world.manager.studyingBadge?.targetBadge, 'Continental B');
+  // Fast-forward gameDate to completionDate and advance 1 day
+  world = {
+    ...world,
+    gameDate: world.manager.studyingBadge!.completionDate,
+  };
+  world = advanceWorldOneDay(world).nextState;
+  assert.equal(world.manager.coachingBadge, 'Continental B', 'Manager must auto-graduate on completionDate');
+  assert.equal(world.manager.studyingBadge, null);
+
+  // 3. Phase 3: Loan Tracker Hub (Send on loan -> Recall from loan, and Loan in -> Trigger Option-to-Buy)
+  const affRes = requestAffiliateFeederClub(world);
+  world = affRes.nextState;
+  const youngPlayer = Object.values(world.players).find((p) => p.clubId === myClubId)!;
+  const loanOutRes = sendPlayerToAffiliateLoan(world, youngPlayer.id);
+  world = loanOutRes.nextState;
+  assert.equal(world.players[youngPlayer.id].loanedFromClubId, myClubId);
+  assert.notEqual(world.players[youngPlayer.id].clubId, myClubId);
+
+  const recallRes = recallPlayerFromLoan(world, youngPlayer.id);
+  assert.equal(recallRes.success, true, 'Must recall loaned-out player back to parent club');
+  world = recallRes.nextState;
+  assert.equal(world.players[youngPlayer.id].clubId, myClubId);
+  assert.equal(world.players[youngPlayer.id].loanedFromClubId, null);
+
+  // Loan in a player with Option-to-Buy and trigger permanent signing
+  const externalLoanTarget = Object.values(world.players).find(
+    (p) => p.clubId !== myClubId && p.marketValue < 15_000_000
+  )!;
+  const parentClubId = externalLoanTarget.clubId;
+  world = {
+    ...world,
+    players: {
+      ...world.players,
+      [externalLoanTarget.id]: {
+        ...externalLoanTarget,
+        clubId: myClubId,
+        loanedFromClubId: parentClubId,
+        loanOptionToBuyFee: 5_000_000,
+      },
+    },
+  };
+  const buyRes = triggerLoanOptionToBuy(world, externalLoanTarget.id);
+  assert.equal(buyRes.success, true, 'Must trigger Option-to-Buy and complete permanent transfer');
+  world = buyRes.nextState;
+  assert.equal(world.players[externalLoanTarget.id].clubId, myClubId);
+  assert.equal(world.players[externalLoanTarget.id].loanedFromClubId, null);
+
+  // 4. Phase 4: League Position Worm Chart & Headhunting Job Offers
+  const wormData = computeLeaguePositionWormData(world, world.clubs[myClubId].leagueId);
+  assert.equal(wormData.totalClubs, 20, 'Premier League Worm Chart must track 20 clubs');
+  assert.ok(wormData.series.length >= 3, 'Worm Chart must return user club + top rival series');
+  assert.ok(wormData.series[0].positions.length >= 8, 'Each series must have matchday rank points');
+
+  const carouselRes = triggerAIManagerialCarouselCheck(world);
+  world = carouselRes.nextState;
+  const jobOfferItem = world.inbox.find((n) =>
+    n.pressConferenceOptions?.some((o) => o.id.startsWith('headhunt_accept_'))
+  );
+  assert.ok(jobOfferItem, 'AI Managerial Carousel must include a Headhunting Job Offer in Inbox');
+
+  const loyaltyOpt = jobOfferItem!.pressConferenceOptions!.find((o) =>
+    o.id.startsWith('headhunt_loyalty_')
+  )!;
+  const acceptOpt = jobOfferItem!.pressConferenceOptions!.find((o) =>
+    o.id.startsWith('headhunt_accept_')
+  )!;
+
+  const loyaltyRes = respondToPressConferenceOrJobOffer(world, jobOfferItem!.id, loyaltyOpt.id);
+  assert.equal(
+    loyaltyRes.nextState.controlledClubId,
+    myClubId,
+    'Rejecting job offer must keep manager at current club and boost board confidence'
+  );
+
+  const acceptRes = respondToPressConferenceOrJobOffer(world, jobOfferItem!.id, acceptOpt.id);
+  assert.equal(
+    acceptRes.nextState.controlledClubId,
+    jobOfferItem!.relatedClubId,
+    'Accepting headhunting job offer must switch controlledClubId to the approaching club'
+  );
+});
+

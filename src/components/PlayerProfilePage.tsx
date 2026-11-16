@@ -464,71 +464,149 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               <h2 className="text-sm font-display font-bold text-white">
                 {tr('Attributes Breakdown (1–20 Scale)', 'ตารางค่าพลังนักเตะ (สเกล 1–20)')}
               </h2>
-              <div className="flex items-center gap-3 text-xs font-mono">
+              <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
+                <span className="text-emerald-400 font-bold" data-testid="attr-growth-legend">
+                  ↑ {tr('Recent Gain / Focus', 'กำลังพุ่งขึ้น / โฟกัสซ้อม')}
+                </span>
+                <span className="text-sky-400 font-bold">
+                  ↗ {tr('Developing', 'กำลังพัฒนา')}
+                </span>
                 <span className="text-amber-400">■ 16–20 Elite</span>
                 <span className="text-emerald-400">■ 11–15 Good</span>
                 <span className="text-slate-300">■ 6–10 Average</span>
-                <span className="text-slate-500">■ 1–5 Low</span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Column 1: Technical or Goalkeeping */}
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
-                <div className="text-xs font-display font-bold text-emerald-400 border-b border-slate-800 pb-1.5 mb-2">
-                  {player.positions[0] === 'GK'
-                    ? tr('GOALKEEPING', 'ผู้รักษาประตู (Goalkeeping)')
-                    : tr('TECHNICAL', 'เทคนิค (Technical)')}
-                </div>
-                {Object.entries(player.attributes.technical).map(([k, val]) => (
-                  <div
-                    key={k}
-                    className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
-                  >
-                    <span className="text-slate-300 capitalize">
-                      {k.replace(/([A-Z])/g, ' $1')}
-                    </span>
-                    <AttrBadge value={Number(val)} />
-                  </div>
-                ))}
-              </div>
+            {(() => {
+              const devHistory = player.developmentHistory || [];
+              const hasRecentCAGain =
+                (devHistory.length >= 2 &&
+                  devHistory[devHistory.length - 1].ca > devHistory[0].ca) ||
+                player.morale >= 75;
+              const hasPotentialUpside =
+                player.potentialAbility > player.currentAbility || age <= 29;
+              const focusAttr = player.individualTraining?.attributeFocus;
+              const roleFocusMap: Record<string, string[]> = {
+                GK: ['reflexes', 'handling', 'positioning', 'concentration', 'agility'],
+                DEF: ['tackling', 'marking', 'heading', 'positioning', 'anticipation', 'strength'],
+                MID: ['passing', 'technique', 'firstTouch', 'vision', 'decisions', 'stamina'],
+                FWD: ['finishing', 'dribbling', 'firstTouch', 'offTheBall', 'composure', 'pace', 'acceleration'],
+              };
+              const primaryPos = player.positions[0] || 'MID';
+              const posKey =
+                primaryPos === 'GK'
+                  ? 'GK'
+                  : ['CB', 'LB', 'RB', 'LWB', 'RWB', 'DC', 'DL', 'DR', 'WBL', 'WBR'].includes(primaryPos)
+                    ? 'DEF'
+                    : ['ST', 'LW', 'RW', 'AML', 'AMR'].includes(primaryPos)
+                      ? 'FWD'
+                      : 'MID';
+              const keyRoleAttrs = roleFocusMap[posKey] || roleFocusMap.MID;
 
-              {/* Column 2: Mental */}
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
-                <div className="text-xs font-display font-bold text-sky-400 border-b border-slate-800 pb-1.5 mb-2">
-                  {tr('MENTAL', 'จิตใจและไหวพริบ (Mental)')}
-                </div>
-                {Object.entries(player.attributes.mental).map(([k, val]) => (
-                  <div
-                    key={k}
-                    className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
-                  >
-                    <span className="text-slate-300 capitalize">
-                      {k.replace(/([A-Z])/g, ' $1')}
+              const renderGrowthArrow = (attrKey: string, val: number) => {
+                if (val >= 20) return null;
+                const isDirectFocus = focusAttr === attrKey;
+                const isKeyRoleAttr = keyRoleAttrs.includes(attrKey);
+                if (isDirectFocus || (hasRecentCAGain && isKeyRoleAttr)) {
+                  return (
+                    <span
+                      data-testid={`attr-growth-arrow-${attrKey}`}
+                      title={tr(
+                        'Rapid Growth (+0.2 to +0.5/mo from Individual Focus & Match XP)',
+                        'พัฒนาการก้าวกระโดด (จากการฝึกซ้อมเฉพาะจุดและประสบการณ์ลงสนาม)'
+                      )}
+                      className="text-[11px] font-mono font-bold text-emerald-400 leading-none select-none"
+                    >
+                      ↑
                     </span>
-                    <AttrBadge value={val} />
-                  </div>
-                ))}
-              </div>
+                  );
+                }
+                if (hasPotentialUpside && (isKeyRoleAttr || (val >= 12 && val <= 18))) {
+                  return (
+                    <span
+                      data-testid={`attr-growth-arrow-${attrKey}`}
+                      title={tr(
+                        'Steady Upward Trend (Training & Potential Upside)',
+                        'แนวโน้มพัฒนาต่อเนื่องตามศักยภาพ (PA)'
+                      )}
+                      className="text-[11px] font-mono font-bold text-sky-400 leading-none select-none"
+                    >
+                      ↗
+                    </span>
+                  );
+                }
+                return null;
+              };
 
-              {/* Column 3: Physical */}
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
-                <div className="text-xs font-display font-bold text-amber-400 border-b border-slate-800 pb-1.5 mb-2">
-                  {tr('PHYSICAL', 'ร่างกาย (Physical)')}
-                </div>
-                {Object.entries(player.attributes.physical).map(([k, val]) => (
-                  <div
-                    key={k}
-                    className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
-                  >
-                    <span className="text-slate-300 capitalize">
-                      {k.replace(/([A-Z])/g, ' $1')}
-                    </span>
-                    <AttrBadge value={val} />
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Column 1: Technical or Goalkeeping */}
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
+                    <div className="text-xs font-display font-bold text-emerald-400 border-b border-slate-800 pb-1.5 mb-2">
+                      {player.positions[0] === 'GK'
+                        ? tr('GOALKEEPING', 'ผู้รักษาประตู (Goalkeeping)')
+                        : tr('TECHNICAL', 'เทคนิค (Technical)')}
+                    </div>
+                    {Object.entries(player.attributes.technical).map(([k, val]) => (
+                      <div
+                        key={k}
+                        className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
+                      >
+                        <span className="text-slate-300 capitalize">
+                          {k.replace(/([A-Z])/g, ' $1')}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {renderGrowthArrow(k, Number(val))}
+                          <AttrBadge value={Number(val)} />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+
+                  {/* Column 2: Mental */}
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
+                    <div className="text-xs font-display font-bold text-sky-400 border-b border-slate-800 pb-1.5 mb-2">
+                      {tr('MENTAL', 'จิตใจและไหวพริบ (Mental)')}
+                    </div>
+                    {Object.entries(player.attributes.mental).map(([k, val]) => (
+                      <div
+                        key={k}
+                        className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
+                      >
+                        <span className="text-slate-300 capitalize">
+                          {k.replace(/([A-Z])/g, ' $1')}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {renderGrowthArrow(k, Number(val))}
+                          <AttrBadge value={val} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Column 3: Physical */}
+                  <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1.5">
+                    <div className="text-xs font-display font-bold text-amber-400 border-b border-slate-800 pb-1.5 mb-2">
+                      {tr('PHYSICAL', 'ร่างกาย (Physical)')}
+                    </div>
+                    {Object.entries(player.attributes.physical).map(([k, val]) => (
+                      <div
+                        key={k}
+                        className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
+                      >
+                        <span className="text-slate-300 capitalize">
+                          {k.replace(/([A-Z])/g, ' $1')}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          {renderGrowthArrow(k, Number(val))}
+                          <AttrBadge value={val} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Player Traits / Preferred Moves */}
             <div className="pt-2 border-t border-slate-800 space-y-2">

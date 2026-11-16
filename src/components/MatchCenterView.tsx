@@ -153,6 +153,12 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   const [highlightMode, setHighlightMode] = useState<'FULL' | 'KEY' | 'DATA'>('KEY');
   const [replayGoalEvent, setReplayGoalEvent] = useState<MatchEvent | null>(null);
   const [emergencyInjuryPlayerId, setEmergencyInjuryPlayerId] = useState<string | null>(null);
+  const [varReviewState, setVarReviewState] = useState<{
+    status: 'CHECKING' | 'AWARDED' | 'DISALLOWED';
+    minute: number;
+    textEn: string;
+    textTh: string;
+  } | null>(null);
 
   // 5 Swappable Analytics Tiles persisted in localStorage
   const [tiles, setTiles] = useState<
@@ -291,6 +297,41 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         const ev = simResult.events.find((e) => e.minute === nextMin);
         if (ev && ev.eventType === 'Goal') {
           soundService.playGoalCheer();
+          setVarReviewState({
+            status: 'CHECKING',
+            minute: nextMin,
+            textEn: `VAR CHECKING: Possible Offside / Build-Up Infringement (${ev.playerName || 'Scorer'})...`,
+            textTh: `📺 VAR กำลังเช็กจังหวะล้ำหน้า/ฟาวล์ก่อนทำประตู (${ev.playerName || 'ผู้ทำประตู'})...`,
+          });
+          setTimeout(() => {
+            setVarReviewState({
+              status: 'AWARDED',
+              minute: nextMin,
+              textEn: `✅ VAR DECISION: GOAL AWARDED — ONSIDE (${ev.playerName || 'Scorer'} ${nextMin}')!`,
+              textTh: `✅ ผลตัดสิน VAR: ยืนยันให้เป็นประตู (ไม่ล้ำหน้า — ${ev.playerName || 'ผู้ทำประตู'} ${nextMin}')!`,
+            });
+          }, 950);
+          setTimeout(() => {
+            setVarReviewState(null);
+          }, 2700);
+        } else if (ev && ev.eventType === 'PenaltyMissed') {
+          setVarReviewState({
+            status: 'CHECKING',
+            minute: nextMin,
+            textEn: `VAR CHECKING: Penalty Box Incident & Goalkeeper Encroachment (${nextMin}')...`,
+            textTh: `📺 VAR กำลังเช็กจังหวะจุดโทษในกรอบเขตโทษ (${nextMin}')...`,
+          });
+          setTimeout(() => {
+            setVarReviewState({
+              status: 'DISALLOWED',
+              minute: nextMin,
+              textEn: `❌ VAR DECISION: NO GOAL — PENALTY SAVED / CLEARED (${nextMin}')`,
+              textTh: `❌ ผลตัดสิน VAR: ไม่ได้ประตู — ผู้รักษาประตูเซฟถูกต้องตามกติกา (${nextMin}')`,
+            });
+          }, 950);
+          setTimeout(() => {
+            setVarReviewState(null);
+          }, 2700);
         }
         if (
           ev &&
@@ -499,13 +540,80 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     }
   };
 
+  const computeLivePlayerStamina = (
+    p: Player,
+    minute: number,
+    pressingIntensity?: string
+  ): number => {
+    const pressMult =
+      pressingIntensity === 'Extreme'
+        ? 1.22
+        : pressingIntensity === 'High'
+          ? 1.12
+          : pressingIntensity === 'Low'
+            ? 0.86
+            : 1.0;
+    const drain =
+      (minute / 90) * Math.max(8, 25 - p.attributes.physical.stamina * 0.55) * pressMult;
+    return Math.max(32, Math.min(100, Math.round(p.fitness - drain)));
+  };
+
+  const visibleEvents = simResult
+    ? simResult.events.filter((e) => e.minute <= currentMinute)
+    : [];
+
+  // Track sent-off players up to currentMinute so 10-man impact is reflected on pitch and formations
+  const sentOffPlayerIds = new Set(
+    visibleEvents
+      .filter((e) => e.eventType === 'RedCard' && e.playerId)
+      .map((e) => e.playerId!)
+  );
+
+  // Resolve active on-pitch player for any tactical slot at currentMinute (reflecting both user & AI substitutions)
+  const getActiveSlotPlayer = (
+    club: Club,
+    slotIdx: number
+  ): { player: Player | null; wasSubbedIn: boolean } => {
+    const slot = club.primaryTactic.lineup[slotIdx];
+    if (!slot?.playerId) return { player: null, wasSubbedIn: false };
+    let currentId = slot.playerId;
+    let wasSubbed = false;
+    for (const ev of visibleEvents) {
+      if (ev.eventType === 'Substitution' && ev.teamId === club.id) {
+        const outId = ev.subOutPlayerId || ev.secondaryPlayerId;
+        const inId = ev.subInPlayerId || ev.playerId;
+        if (outId === currentId && inId && world.players[inId]) {
+          currentId = inId;
+          wasSubbed = true;
+        }
+      }
+    }
+    if (club.id === myClub.id) {
+      for (const ls of liveSubstitutions) {
+        if (ls.minute <= Math.max(1, currentMinute) && ls.playerOutId === currentId) {
+          currentId = ls.playerInId;
+          wasSubbed = true;
+        }
+      }
+    }
+    return { player: world.players[currentId] || null, wasSubbedIn: wasSubbed };
+  };
+
   const handleMakeSubstitution = (playerOutId: string, playerInId: string) => {
     if (liveSubstitutions.length >= 5 || currentMinute >= maxMatchMinute) return;
     const pOut = world.players[playerOutId];
     const pIn = world.players[playerInId];
     if (!pOut || !pIn) return;
 
+    if (!simResult) {
+      ensureSimulationComputed();
+    }
+
     const subMinute = Math.max(1, currentMinute);
+    if (currentMinute === 0) {
+      setCurrentMinute(1);
+    }
+
     const newSub = {
       minute: subMinute,
       teamId: myClub.id,
@@ -516,19 +624,17 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     setLiveSubstitutions(nextSubs);
     setSelectedSubOutId(null);
 
-    const updatedTactic: TacticalSystem = {
+    // Build in-match tactic without overwriting myClub.primaryTactic permanently in WorldState
+    const inMatchTactic: TacticalSystem = {
       ...myClub.primaryTactic,
-      lineup: myClub.primaryTactic.lineup.map((s) =>
-        s.playerId === playerOutId ? { ...s, playerId: playerInId } : s
-      ),
-      benchPlayerIds: myClub.primaryTactic.benchPlayerIds.map((bId) =>
-        bId === playerInId ? playerOutId : bId
-      ),
+      lineup: myClub.primaryTactic.lineup.map((s, sIdx) => {
+        const activeId = getActiveSlotPlayer(myClub, sIdx).player?.id || s.playerId;
+        return activeId === playerOutId ? { ...s, playerId: playerInId } : { ...s, playerId: activeId };
+      }),
     };
-    onUpdateClubTactic(updatedTactic);
 
-    if (targetFixture && currentMinute > 0) {
-      reSimulateRemainingMinutes(updatedTactic, nextSubs, {
+    if (targetFixture) {
+      reSimulateRemainingMinutes(inMatchTactic, nextSubs, {
         id: `sub_${subMinute}_${playerInId}`,
         fixtureId: targetFixture.id,
         minute: subMinute,
@@ -538,6 +644,8 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         playerName: `${pIn.firstName} ${pIn.lastName}`,
         secondaryPlayerId: pOut.id,
         secondaryPlayerName: `${pOut.firstName} ${pOut.lastName}`,
+        subOutPlayerId: pOut.id,
+        subInPlayerId: pIn.id,
         text: tr(
           `Min ${subMinute}': Substitution (${myClub.shortName}) — ${pIn.firstName} ${pIn.lastName} comes on for ${pOut.firstName} ${pOut.lastName}.`,
           `นาที ${subMinute}': เปลี่ยนตัว (${myClub.shortName}) — ส่ง ${pIn.firstName} ${pIn.lastName} ลงสนามแทน ${pOut.firstName} ${pOut.lastName}`
@@ -547,10 +655,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       });
     }
   };
-
-  const visibleEvents = simResult
-    ? simResult.events.filter((e) => e.minute <= currentMinute)
-    : [];
 
   const visibleHomeGoals = visibleEvents.filter(
     (e) => e.eventType === 'Goal' && e.teamId === homeClub.id
@@ -587,10 +691,12 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   };
 
   const myStarters: Player[] = myClub.primaryTactic.lineup
-    .map((s) => (s.playerId ? world.players[s.playerId] : null))
-    .filter((p): p is Player => Boolean(p));
+    .map((_, sIdx) => getActiveSlotPlayer(myClub, sIdx).player)
+    .filter((p): p is Player => p !== null && !sentOffPlayerIds.has(p.id));
 
+  const subbedInIds = new Set(liveSubstitutions.map((s) => s.playerInId));
   const myBench: Player[] = myClub.primaryTactic.benchPlayerIds
+    .filter((id) => !subbedInIds.has(id))
     .map((id) => world.players[id])
     .filter(
       (p): p is Player =>
@@ -600,20 +706,50 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   // Assistant Manager Co-Pilot calculations
   const myGoals = isUserHome ? visibleHomeGoals : visibleAwayGoals;
   const oppGoals = isUserHome ? visibleAwayGoals : visibleHomeGoals;
-  const mostFatiguedStarter = [...myStarters].sort((a, b) => a.fitness - b.fitness)[0];
+  const myPressing = myClub.primaryTactic.instructions.pressingIntensity;
+  const mostFatiguedStarter = [...myStarters].sort(
+    (a, b) =>
+      computeLivePlayerStamina(a, currentMinute, myPressing) -
+      computeLivePlayerStamina(b, currentMinute, myPressing)
+  )[0];
   const liveConditionLow = mostFatiguedStarter
-    ? Math.max(
-        35,
-        Math.round(
-          mostFatiguedStarter.fitness -
-            (currentMinute / 90) * (24 - mostFatiguedStarter.attributes.physical.stamina * 0.5)
-        )
-      )
+    ? computeLivePlayerStamina(mostFatiguedStarter, currentMinute, myPressing)
     : 90;
   const bestBenchReplacement =
     mostFatiguedStarter && myBench.length > 0
       ? myBench.find((b) => b.positions[0] === mostFatiguedStarter.positions[0]) || myBench[0]
-      : null;
+    : null;
+
+  const handleAssManAutoSub = () => {
+    if (liveSubstitutions.length >= 5 || currentMinute >= maxMatchMinute || myBench.length === 0) {
+      return;
+    }
+    const yellowPlayerIds = new Set(
+      visibleEvents
+        .filter((e) => e.eventType === 'YellowCard' && e.teamId === myClub.id && e.playerId)
+        .map((e) => e.playerId!)
+    );
+    const rankedStarters = [...myStarters]
+      .filter((p) => p.positions[0] !== 'GK')
+      .sort((a, b) => {
+        const scoreA =
+          computeLivePlayerStamina(a, currentMinute, myPressing) -
+          (yellowPlayerIds.has(a.id) ? 14 : 0);
+        const scoreB =
+          computeLivePlayerStamina(b, currentMinute, myPressing) -
+          (yellowPlayerIds.has(b.id) ? 14 : 0);
+        return scoreA - scoreB;
+      });
+
+    const targetOut = rankedStarters[0] || mostFatiguedStarter;
+    if (!targetOut) return;
+    const replacement =
+      myBench.find((b) => b.positions.some((pos) => targetOut.positions.includes(pos))) ||
+      myBench[0];
+    if (replacement) {
+      handleMakeSubstitution(targetOut.id, replacement.id);
+    }
+  };
 
   const shouldSub =
     currentMinute >= 55 &&
@@ -661,35 +797,6 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         myGoals < oppGoals ? 'Demand More' : myGoals > oppGoals ? 'Focus' : 'Encourage'
       );
     }
-  };
-
-  // Track sent-off players up to currentMinute so 10-man impact is reflected on pitch and formations
-  const sentOffPlayerIds = new Set(
-    visibleEvents
-      .filter((e) => e.eventType === 'RedCard' && e.playerId)
-      .map((e) => e.playerId!)
-  );
-
-  // Resolve active on-pitch player for any tactical slot at currentMinute (reflecting both user & AI substitutions)
-  const getActiveSlotPlayer = (
-    club: Club,
-    slotIdx: number
-  ): { player: Player | null; wasSubbedIn: boolean } => {
-    const slot = club.primaryTactic.lineup[slotIdx];
-    if (!slot?.playerId) return { player: null, wasSubbedIn: false };
-    let currentId = slot.playerId;
-    let wasSubbed = false;
-    for (const ev of visibleEvents) {
-      if (ev.eventType === 'Substitution' && ev.teamId === club.id) {
-        const outId = ev.subOutPlayerId || ev.secondaryPlayerId;
-        const inId = ev.subInPlayerId || ev.playerId;
-        if (outId === currentId && inId && world.players[inId]) {
-          currentId = inId;
-          wasSubbed = true;
-        }
-      }
-    }
-    return { player: world.players[currentId] || null, wasSubbedIn: wasSubbed };
   };
 
   const getShortRoleCode = (role: string): string => {
@@ -789,11 +896,10 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               const cx = 5 + (Math.max(8, Math.min(92, coord.x)) / 100) * 58;
               const cy = 6 + (Math.max(8, Math.min(92, coord.y)) / 100) * 86;
               const rating = simResult?.playerRatings[p.id] ?? 6.8;
-              const liveCond = Math.max(
-                35,
-                Math.round(
-                  p.fitness - (currentMinute / 90) * (24 - p.attributes.physical.stamina * 0.5)
-                )
+              const liveCond = computeLivePlayerStamina(
+                p,
+                currentMinute,
+                club.primaryTactic.instructions.pressingIntensity
               );
               const goalsCount = visibleEvents.filter(
                 (e) => e.eventType === 'Goal' && e.playerId === p.id
@@ -884,15 +990,21 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   >
                     {isSentOff ? 'RED' : currentMinute === 0 ? '6.8' : rating.toFixed(1)}
                   </text>
-                  {/* Condition Bar */}
-                  <rect x={cx - 4} y={cy + 4.2} width="8" height="1.1" rx="0.5" fill="#0f172a" />
+                  {/* Live Stamina Bar (3-Tier Color: >70% Green, 55-70% Amber, <55% Rose) */}
+                  <rect x={cx - 4.4} y={cy + 4.1} width="8.8" height="1.35" rx="0.6" fill="#0f172a" stroke="#1e293b" strokeWidth="0.25" />
                   <rect
-                    x={cx - 4}
-                    y={cy + 4.2}
-                    width={(liveCond / 100) * 8}
-                    height="1.1"
-                    rx="0.5"
-                    fill={liveCond < 65 ? '#f43f5e' : '#34d399'}
+                    x={cx - 4.4}
+                    y={cy + 4.1}
+                    width={(liveCond / 100) * 8.8}
+                    height="1.35"
+                    rx="0.6"
+                    fill={
+                      liveCond > 70
+                        ? '#10b981'
+                        : liveCond >= 55
+                          ? '#f59e0b'
+                          : '#f43f5e'
+                    }
                   />
                   {/* Player Surname */}
                   <text
@@ -2424,6 +2536,36 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
+                    data-testid="trigger-var-check-btn"
+                    onClick={() => {
+                      const goals = visibleEvents.filter((e) => e.eventType === 'Goal');
+                      const latestGoal = goals[goals.length - 1];
+                      const min = latestGoal?.minute || Math.max(1, currentMinute || 34);
+                      const scorer = latestGoal?.playerName || myStarters[myStarters.length - 1]?.lastName || myClub.shortName;
+                      setVarReviewState({
+                        status: 'CHECKING',
+                        minute: min,
+                        textEn: `📺 VAR CHECKING: POSSIBLE OFFSIDE / PENALTY (${scorer} ${min}')...`,
+                        textTh: `📺 VAR กำลังเช็กจังหวะล้ำหน้า/จุดโทษ (${scorer} ${min}')...`,
+                      });
+                      setTimeout(() => {
+                        setVarReviewState({
+                          status: 'AWARDED',
+                          minute: min,
+                          textEn: `✅ VAR DECISION: GOAL AWARDED — ONSIDE (${scorer} ${min}')!`,
+                          textTh: `✅ ผลตัดสิน VAR: ยืนยันให้เป็นประตู (ไม่ล้ำหน้า — ${scorer} ${min}')!`,
+                        });
+                      }, 1100);
+                      setTimeout(() => {
+                        setVarReviewState(null);
+                      }, 3200);
+                    }}
+                    className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 text-[10px] font-mono font-bold cursor-pointer transition-colors"
+                  >
+                    📺 {tr('VAR Check', 'เช็ก VAR')}
+                  </button>
+                  <button
+                    type="button"
                     data-testid="watch-goal-replay-btn"
                     onClick={() => {
                       const goals = visibleEvents.filter((e) => e.eventType === 'Goal');
@@ -2465,6 +2607,29 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   </span>
                 </div>
               </div>
+
+              {/* VAR Review In Progress Overlay Banner */}
+              {varReviewState && (
+                <div
+                  data-testid="var-review-banner"
+                  className={`mb-1 px-3 py-1 rounded-lg border text-xs font-mono font-bold flex items-center justify-between shrink-0 ${
+                    varReviewState.status === 'CHECKING'
+                      ? 'bg-amber-950/80 border-amber-400 text-amber-200 animate-pulse'
+                      : varReviewState.status === 'AWARDED'
+                        ? 'bg-emerald-950/80 border-emerald-400 text-emerald-200'
+                        : 'bg-rose-950/80 border-rose-400 text-rose-200'
+                  }`}
+                >
+                  <span>{tr(varReviewState.textEn, varReviewState.textTh)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setVarReviewState(null)}
+                    className="ml-2 text-[10px] opacity-75 hover:opacity-100 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {/* Interactive 22-Player SVG Pitch */}
               <div className="flex-1 min-h-0 flex items-center justify-center overflow-hidden">
@@ -3036,22 +3201,29 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           </span>
         </div>
 
-        {/* 11 On-Pitch Starters Strip + Quick Sub Button */}
+        {/* 11 On-Pitch Starters Strip + AssMan Auto-Sub & Quick Sub Buttons */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto pb-0.5">
             {myStarters.map((p) => {
               const rating = simResult?.playerRatings[p.id] ?? 6.8;
-              const liveCondition = Math.max(
-                35,
-                Math.round(
-                  p.fitness - (currentMinute / 90) * (24 - p.attributes.physical.stamina * 0.5)
-                )
+              const liveCondition = computeLivePlayerStamina(
+                p,
+                currentMinute,
+                myClub.primaryTactic.instructions.pressingIntensity
               );
               const isSelectedForSub = selectedSubOutId === p.id;
+              const wasSubbedIn = subbedInIds.has(p.id);
+              const barColor =
+                liveCondition > 70
+                  ? 'bg-emerald-500'
+                  : liveCondition >= 55
+                    ? 'bg-amber-400'
+                    : 'bg-rose-500 animate-pulse';
               return (
                 <button
                   key={p.id}
                   type="button"
+                  data-testid={`starter-chip-${p.id}`}
                   onClick={() => {
                     if (liveSubstitutions.length < 5 && currentMinute < maxMatchMinute) {
                       setSelectedSubOutId(isSelectedForSub ? null : p.id);
@@ -3066,10 +3238,32 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   }`}
                 >
                   <span className="text-slate-400 font-bold">{p.positions[0]}</span>
-                  <span className="font-sans truncate max-w-[68px]">{p.lastName}</span>
-                  <span className={liveCondition < 65 ? 'text-rose-400' : 'text-emerald-400'}>
-                    ♥{liveCondition}%
+                  <span className="font-sans truncate max-w-[68px]">
+                    {wasSubbedIn ? '🔄' : ''}
+                    {p.lastName}
                   </span>
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span
+                      className={`text-[10px] leading-none ${
+                        liveCondition > 70
+                          ? 'text-emerald-400'
+                          : liveCondition >= 55
+                            ? 'text-amber-300'
+                            : 'text-rose-400 font-bold'
+                      }`}
+                    >
+                      ♥{liveCondition}%
+                    </span>
+                    <div
+                      data-testid="live-stamina-bar"
+                      className="w-8 h-1 rounded-full bg-slate-800 overflow-hidden"
+                    >
+                      <div
+                        className={`h-full ${barColor}`}
+                        style={{ width: `${liveCondition}%` }}
+                      />
+                    </div>
+                  </div>
                   <span
                     className={`px-1 rounded font-bold ${
                       rating >= 7.2
@@ -3087,15 +3281,29 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           </div>
 
           {liveSubstitutions.length < 5 && currentMinute < maxMatchMinute && myStarters.length > 0 && (
-            <button
-              type="button"
-              onClick={() =>
-                setSelectedSubOutId(selectedSubOutId ? null : mostFatiguedStarter?.id || myStarters[0].id)
-              }
-              className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 text-xs font-semibold shrink-0 cursor-pointer"
-            >
-              {tr('⇄ Quick Sub ▾', '⇄ เปลี่ยนตัว ▾')}
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                data-testid="assman-auto-sub-btn"
+                onClick={handleAssManAutoSub}
+                title={tr(
+                  'Automatically substitute your most fatigued or yellow-carded player with a fresh bench replacement',
+                  'ให้ผู้ช่วยโค้ชเปลี่ยนตัวนักเตะที่อ่อนล้าที่สุดหรือติดใบเหลืองออกอัตโนมัติ'
+                )}
+                className="px-2.5 py-1 rounded-lg bg-indigo-500/25 hover:bg-indigo-500 text-indigo-200 hover:text-slate-950 border border-indigo-400/50 text-xs font-semibold shrink-0 cursor-pointer"
+              >
+                {tr('⚡ AssMan Auto-Sub', '⚡ ผู้ช่วยเปลี่ยนตัว')}
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSelectedSubOutId(selectedSubOutId ? null : mostFatiguedStarter?.id || myStarters[0].id)
+                }
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 text-xs font-semibold shrink-0 cursor-pointer"
+              >
+                {tr('⇄ Quick Sub ▾', '⇄ เปลี่ยนตัว ▾')}
+              </button>
+            </div>
           )}
         </div>
       </div>

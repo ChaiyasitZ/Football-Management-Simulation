@@ -22,6 +22,7 @@ import {
 } from '../engine/uefaEngine';
 import {
   computeHallOfFameLeaderboard,
+  computeLeaguePositionWormData,
   evaluateClubFFPStatus,
   evaluateSquadMedicalRisk,
   exportWorldDatabaseJson,
@@ -1697,6 +1698,10 @@ export const TransfersView: React.FC<{
   onExerciseBuyBackClause?: (clauseId: string) => void;
   onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
   onTriggerGlobalSuperBid?: () => void;
+  onRecallFromLoan?: (playerId: string) => void;
+  onTriggerLoanOptionToBuy?: (playerId: string) => void;
+  onSendToAffiliateLoan?: (playerId: string) => void;
+  onQuickLoanInPlayer?: (playerId: string) => void;
 }> = ({
   world,
   onSelectPlayer,
@@ -1705,10 +1710,16 @@ export const TransfersView: React.FC<{
   onExerciseBuyBackClause,
   onActivateReleaseClause,
   onTriggerGlobalSuperBid,
+  onRecallFromLoan,
+  onTriggerLoanOptionToBuy,
+  onSendToAffiliateLoan,
+  onQuickLoanInPlayer,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
-  const [tab, setTab] = useState<'market' | 'deadline' | 'bosman' | 'incoming' | 'shortlist' | 'history'>('market');
+  const [tab, setTab] = useState<
+    'market' | 'deadline' | 'bosman' | 'incoming' | 'loans' | 'shortlist' | 'history'
+  >('market');
   const [negotiatingOfferId, setNegotiatingOfferId] = useState<string | null>(null);
   const [counterUpfrontM, setCounterUpfrontM] = useState<number>(20);
   const [counterInstallmentsM, setCounterInstallmentsM] = useState<number>(5);
@@ -1762,6 +1773,45 @@ export const TransfersView: React.FC<{
         .map((id) => world.players[id])
         .filter((p): p is Player => Boolean(p)),
     [world.shortlistPlayerIds, world.players]
+  );
+
+  const playersOutOnLoan = useMemo(
+    () =>
+      Object.values(world.players).filter(
+        (p) => p.loanedFromClubId === club.id && p.clubId !== club.id
+      ),
+    [world.players, club.id]
+  );
+
+  const playersLoanedIn = useMemo(
+    () =>
+      Object.values(world.players).filter(
+        (p) => p.clubId === club.id && Boolean(p.loanedFromClubId) && p.loanedFromClubId !== club.id
+      ),
+    [world.players, club.id]
+  );
+
+  const youngLoanOutCandidates = useMemo(
+    () =>
+      Object.values(world.players)
+        .filter(
+          (p) =>
+            p.clubId === club.id &&
+            !p.loanedFromClubId &&
+            getAgeAtDate(p.dateOfBirth, world.gameDate) <= 23
+        )
+        .sort((a, b) => b.potentialAbility - a.potentialAbility)
+        .slice(0, 4),
+    [world.players, club.id, world.gameDate]
+  );
+
+  const marketLoanInTargets = useMemo(
+    () =>
+      Object.values(world.players)
+        .filter((p) => p.clubId !== club.id && p.loanListed && !p.loanedFromClubId)
+        .sort((a, b) => b.currentAbility - a.currentAbility)
+        .slice(0, 4),
+    [world.players, club.id]
   );
 
   return (
@@ -1868,6 +1918,13 @@ export const TransfersView: React.FC<{
               ),
             },
             {
+              id: 'loans',
+              label: tr(
+                `🔄 Loan Tracker (${playersOutOnLoan.length + playersLoanedIn.length})`,
+                `🔄 ศูนย์ติดตามสัญญายืมตัว (${playersOutOnLoan.length + playersLoanedIn.length})`
+              ),
+            },
+            {
               id: 'shortlist',
               label: tr(
                 `Target Shortlist (${shortlistedPlayers.length})`,
@@ -1885,6 +1942,7 @@ export const TransfersView: React.FC<{
             <button
               key={t.id}
               type="button"
+              data-testid={t.id === 'loans' ? 'loan-tracker-tab' : `transfers-tab-${t.id}`}
               onClick={() => setTab(t.id as typeof tab)}
               className={`px-3.5 py-1.5 text-xs font-medium rounded-lg cursor-pointer ${
                 tab === t.id
@@ -2427,6 +2485,237 @@ export const TransfersView: React.FC<{
               );
             })()}
         </div>
+      ) : tab === 'loans' ? (
+        <div
+          data-testid="loan-tracker-panel"
+          className="grid grid-cols-1 lg:grid-cols-2 gap-4"
+        >
+          {/* Left: Players Out on Loan */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-display font-bold text-emerald-400">
+                  {tr(
+                    `📤 Players Out on Loan (${playersOutOnLoan.length})`,
+                    `📤 นักเตะที่เราปล่อยยืมตัว (${playersOutOnLoan.length} คน)`
+                  )}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    'Monitor appearances, goals, ratings, and recall prospects to your first team at any time.',
+                    'ติดตามสถิติการลงสนาม ประตู เรตติ้ง และสามารถดึงตัวกลับสู่ทีมชุดใหญ่ได้ทุกเมื่อ'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {playersOutOnLoan.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                <div className="text-slate-400">
+                  {tr(
+                    'No players are currently out on loan. Dispatch a young prospect to an affiliate/loan club below to accelerate their CA growth:',
+                    'ยังไม่มีนักเตะถูกปล่อยยืมตัวในขณะนี้ สามารถส่งดาวรุ่งออกไปเก็บเกี่ยวประสบการณ์ยืมตัวได้ทันทีด้านล่าง:'
+                  )}
+                </div>
+                {onSendToAffiliateLoan && youngLoanOutCandidates.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {youngLoanOutCandidates.map((cand) => (
+                      <div
+                        key={cand.id}
+                        className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="truncate">
+                          <div className="font-semibold text-white truncate">
+                            {cand.firstName} {cand.lastName}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400">
+                            {cand.positions[0]} · CA {(cand.currentAbility / 10).toFixed(1)} → PA{' '}
+                            {(cand.potentialAbility / 10).toFixed(1)}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid={`quick-loan-out-btn-${cand.id}`}
+                          onClick={() => onSendToAffiliateLoan(cand.id)}
+                          className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
+                        >
+                          {tr('Send on Loan', 'ปล่อยยืมตัว')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {playersOutOnLoan.map((p) => {
+                  const hostClub = world.clubs[p.clubId];
+                  const avgRat =
+                    p.stats.appearances > 0
+                      ? p.stats.averageRating.toFixed(2)
+                      : '6.85';
+                  return (
+                    <div
+                      key={p.id}
+                      data-testid={`loan-out-row-${p.id}`}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <PlayerAvatar player={p} club={hostClub} size="sm" />
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => onSelectPlayer(p.id)}
+                            className="font-bold text-white hover:text-emerald-400 cursor-pointer truncate block text-left"
+                          >
+                            {p.firstName} {p.lastName}{' '}
+                            <span className="font-mono text-emerald-400">
+                              ({p.positions[0]} · CA {(p.currentAbility / 10).toFixed(1)})
+                            </span>
+                          </button>
+                          <div className="text-[11px] text-slate-400 flex items-center gap-2 font-mono">
+                            <span>
+                              {tr('Host Club:', 'สโมสรที่ยืม:')} <strong className="text-sky-300">{hostClub?.name}</strong>
+                            </span>
+                            <span>·</span>
+                            <span>
+                              {p.stats.appearances} Apps · {p.stats.goals}G / {p.stats.assists}A · ★ {avgRat}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {onRecallFromLoan && (
+                          <button
+                            type="button"
+                            data-testid={`recall-loan-btn-${p.id}`}
+                            onClick={() => onRecallFromLoan(p.id)}
+                            className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
+                          >
+                            🔙 {tr('Recall from Loan', 'ดึงตัวกลับจากการยืม')}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Right: Players Loaned In (with Option-to-Buy) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-display font-bold text-sky-400">
+                  {tr(
+                    `📥 Players Loaned In & Option-to-Buy Clauses (${playersLoanedIn.length})`,
+                    `📥 นักเตะที่เรายืมตัวเข้ามา & ออปชันซื้อขาด (${playersLoanedIn.length} คน)`
+                  )}
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    'Trigger pre-agreed Option-to-Buy clauses to sign loaned-in players permanently without bidding wars.',
+                    'กดใช้ออปชันซื้อขาด (Option-to-Buy) ตามราคาที่ตกลงไว้ล่วงหน้าเพื่อเซ็นสัญญาถาวรทันที'
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {playersLoanedIn.length === 0 ? (
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3 text-xs">
+                <div className="text-slate-400">
+                  {tr(
+                    'No players are currently loaned into your squad. Sign a loan-listed market target with a pre-agreed Option-to-Buy below:',
+                    'ยังไม่มีนักเตะที่ยืมตัวเข้ามาในทีมชุดใหญ่ สามารถดึงนักเตะในตลาดยืมตัวพร้อมพ่วงออปชันซื้อขาดได้ทันที:'
+                  )}
+                </div>
+                {onQuickLoanInPlayer && marketLoanInTargets.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {marketLoanInTargets.map((target) => {
+                      const parentClub = world.clubs[target.clubId];
+                      const optionFeeM = (
+                        Math.max(1_500_000, Math.round(target.marketValue * 0.9)) / 1_000_000
+                      ).toFixed(2);
+                      return (
+                        <div
+                          key={target.id}
+                          className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between gap-2"
+                        >
+                          <div className="truncate">
+                            <div className="font-semibold text-white truncate">
+                              {target.firstName} {target.lastName}
+                            </div>
+                            <div className="text-[11px] font-mono text-slate-400 truncate">
+                              {parentClub?.shortName} · Opt €{optionFeeM}M
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            data-testid={`quick-loan-in-btn-${target.id}`}
+                            onClick={() => onQuickLoanInPlayer(target.id)}
+                            className="px-2.5 py-1 rounded bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-[11px] cursor-pointer shrink-0"
+                          >
+                            {tr('Loan In + Opt', 'ยืมตัว + ออปชัน')}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {playersLoanedIn.map((p) => {
+                  const parentClub = p.loanedFromClubId ? world.clubs[p.loanedFromClubId] : undefined;
+                  const optionFee =
+                    p.loanOptionToBuyFee && p.loanOptionToBuyFee > 0
+                      ? p.loanOptionToBuyFee
+                      : Math.max(1_000_000, Math.round(p.marketValue * 0.9));
+                  return (
+                    <div
+                      key={p.id}
+                      data-testid={`loan-in-row-${p.id}`}
+                      className="p-3.5 rounded-xl bg-slate-950 border border-sky-500/30 flex flex-wrap items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <PlayerAvatar player={p} club={club} size="sm" />
+                        <div className="min-w-0">
+                          <button
+                            type="button"
+                            onClick={() => onSelectPlayer(p.id)}
+                            className="font-bold text-white hover:text-sky-400 cursor-pointer truncate block text-left"
+                          >
+                            {p.firstName} {p.lastName}{' '}
+                            <span className="font-mono text-emerald-400">
+                              ({p.positions[0]} · CA {(p.currentAbility / 10).toFixed(1)})
+                            </span>
+                          </button>
+                          <div className="text-[11px] text-slate-400 font-mono">
+                            {tr('Parent Club:', 'ต้นสังกัดจริง:')}{' '}
+                            <strong className="text-slate-200">{parentClub?.name || 'Parent Club'}</strong> ·{' '}
+                            {tr('Agreed Option-to-Buy:', 'ราคาซื้อขาดที่ตกลงไว้:')}{' '}
+                            <strong className="text-sky-300">€{(optionFee / 1_000_000).toFixed(2)}M</strong>
+                          </div>
+                        </div>
+                      </div>
+                      {onTriggerLoanOptionToBuy && (
+                        <button
+                          type="button"
+                          data-testid={`trigger-loan-buy-btn-${p.id}`}
+                          onClick={() => onTriggerLoanOptionToBuy(p.id)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          💶 {tr('Trigger Option-to-Buy', 'ใช้ออปชันซื้อขาด')} (€{(optionFee / 1_000_000).toFixed(2)}M)
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       ) : tab === 'history' ? (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
           {world.transferOffers.length === 0 ? (
@@ -2908,6 +3197,143 @@ export const CompetitionsAndScheduleView: React.FC<{
               </svg>
             </div>
           </div>
+
+          {/* 2B. Season Position Worm Graph (Matchday-by-Matchday League Trajectory) */}
+          {(() => {
+            const wormData = computeLeaguePositionWormData(world, selectedLeague);
+            const totalTeams = wormData.totalClubs;
+            const highlightedSeries = wormData.series;
+            const maxMd = Math.max(6, wormData.matchdays.length);
+
+            return (
+              <div
+                data-testid="league-worm-chart"
+                className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-display font-bold text-white">
+                      📈{' '}
+                      {tr(
+                        'Season Position Worm Graph (Matchday-by-Matchday Rank Trajectory)',
+                        'กราฟเส้นไส้เดือนแสดงอันดับตารางคะแนนรายสัปดาห์ (Season Position Worm Graph)'
+                      )}
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      {tr(
+                        'Tracks league table progression from Matchday 1 to current round (Rank #1 at top → Rank #' +
+                          totalTeams +
+                          ' at bottom).',
+                        `เปรียบเทียบเส้นทางการไต่อันดับตั้งแต่นัดที่ 1 ถึงปัจจุบัน (อันดับ #1 อยู่ด้านบนสุด → อันดับ #${totalTeams} อยู่ด้านล่าง)`
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
+                    {highlightedSeries.map((ser) => {
+                      const isMine = ser.isUserClub;
+                      const strokeColor = ser.color;
+                      const latestRank = ser.positions[ser.positions.length - 1] || 1;
+                      return (
+                        <span
+                          key={ser.clubId}
+                          className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950 border border-slate-800"
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full inline-block"
+                            style={{ backgroundColor: strokeColor }}
+                          />
+                          <strong className={isMine ? 'text-emerald-400' : 'text-slate-200'}>
+                            {ser.shortName}
+                          </strong>
+                          <span className="text-slate-400">#{latestRank}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <svg viewBox="0 0 720 220" className="w-full h-52 bg-slate-950 rounded-xl border border-slate-800">
+                  {/* Horizontal Rank Guide Lines (#1, #4 UCL, Mid-table, Relegation) */}
+                  {[1, 4, Math.round(totalTeams / 2), totalTeams - 2, totalTeams].map((rk) => {
+                    const y = 24 + ((rk - 1) / Math.max(1, totalTeams - 1)) * 170;
+                    return (
+                      <g key={rk}>
+                        <line
+                          x1="48"
+                          y1={y}
+                          x2="685"
+                          y2={y}
+                          stroke={rk === 4 ? '#0284c7' : rk === totalTeams - 2 ? '#dc2626' : '#1e293b'}
+                          strokeDasharray={rk === 4 || rk === totalTeams - 2 ? '4 4' : undefined}
+                          strokeWidth="1"
+                        />
+                        <text
+                          x="14"
+                          y={y + 3}
+                          fill={rk === 1 ? '#10b981' : rk === 4 ? '#38bdf8' : '#64748b'}
+                          fontSize="9"
+                          fontFamily="monospace"
+                        >
+                          #{rk}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Polylines for Top Rivals + User Club */}
+                  {highlightedSeries.map((ser) => {
+                    const isMine = ser.isUserClub;
+                    const strokeColor = ser.color;
+                    const pts = ser.positions.map((rk, mIdx) => {
+                      const x =
+                        ser.positions.length === 1
+                          ? 120
+                          : 55 + (mIdx / Math.max(1, maxMd - 1)) * 615;
+                      const y = 24 + ((rk - 1) / Math.max(1, totalTeams - 1)) * 170;
+                      return { x, y, rk, md: mIdx + 1 };
+                    });
+                    const polyPoints = pts.map((pt) => `${pt.x},${pt.y}`).join(' ');
+                    const lastPt = pts[pts.length - 1];
+
+                    return (
+                      <g key={ser.clubId}>
+                        {pts.length > 1 && (
+                          <polyline
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth={isMine ? '3' : '1.75'}
+                            strokeOpacity={isMine ? '1' : '0.78'}
+                            points={polyPoints}
+                          />
+                        )}
+                        {pts.map((pt) => (
+                          <circle
+                            key={`${ser.clubId}_${pt.md}`}
+                            cx={pt.x}
+                            cy={pt.y}
+                            r={isMine ? 4 : 2.5}
+                            fill={strokeColor}
+                          />
+                        ))}
+                        {lastPt && (
+                          <text
+                            x={Math.min(668, lastPt.x + 7)}
+                            y={lastPt.y + 3}
+                            fill={strokeColor}
+                            fontSize={isMine ? '10' : '8.5'}
+                            fontWeight={isMine ? 'bold' : 'normal'}
+                            fontFamily="monospace"
+                          >
+                            {ser.shortName} (#{lastPt.rk})
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+            );
+          })()}
 
           {/* 3. Next Opponent Chief Analyst Report */}
           {(() => {
@@ -4121,7 +4547,7 @@ export const ClubStaffYouthWorldView: React.FC<{
     reputation?: number;
   }) => void;
   onImportDatabaseJson?: (rawJson: string) => void;
-  onStudyCoachingLicense?: () => void;
+  onStudyCoachingLicense?: (mode?: 'INSTANT' | 'COURSE_21D') => void;
   onNegotiateBoardAmbition?: (ambition: 'Conservative' | 'Balanced' | 'Ambitious') => void;
 }> = ({
   mode,
@@ -4424,7 +4850,7 @@ export const ClubStaffYouthWorldView: React.FC<{
                     {currentBadge !== 'UEFA Pro' && !studying && (
                       <button
                         type="button"
-                        onClick={onStudyCoachingLicense}
+                        onClick={() => onStudyCoachingLicense?.('COURSE_21D')}
                         className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold cursor-pointer"
                       >
                         🎓 {tr('Study Next Coaching Badge', 'ลงเรียนไลเซนส์โค้ชขั้นถัดไป')}
@@ -6168,25 +6594,59 @@ export const ClubStaffYouthWorldView: React.FC<{
               </div>
 
               {mgr.studyingBadge ? (
-                <div className="p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-200 font-mono flex items-center justify-between">
+                <div
+                  data-testid="studying-coaching-badge-banner"
+                  className="p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-200 font-mono flex flex-wrap items-center justify-between gap-2"
+                >
                   <span>
-                    📚 {tr('Currently Studying:', 'กำลังอบรมหลักสูตร:')} <strong>{mgr.studyingBadge.targetBadge}</strong>
+                    📚 {tr('Currently Studying:', 'กำลังอบรมหลักสูตร:')}{' '}
+                    <strong>{mgr.studyingBadge.targetBadge}</strong>
                   </span>
-                  <span>
-                    {tr('Completes:', 'จบหลักสูตร:')} {mgr.studyingBadge.completionDate}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {tr('Graduates:', 'จบหลักสูตร:')} {mgr.studyingBadge.completionDate}
+                    </span>
+                    {onStudyCoachingLicense && (
+                      <button
+                        type="button"
+                        data-testid="study-coaching-badge-btn"
+                        onClick={() => onStudyCoachingLicense('INSTANT')}
+                        className="px-2.5 py-1 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+                      >
+                        {tr('Pass Final Exam Now', 'สอบผ่านรับใบอนุญาตทันที')}
+                      </button>
+                    )}
+                  </div>
                 </div>
               ) : (
                 (mgr.coachingBadge || 'National A') !== 'UEFA Pro' &&
                 onStudyCoachingLicense && (
-                  <button
-                    type="button"
-                    data-testid="study-coaching-badge-btn"
-                    onClick={onStudyCoachingLicense}
-                    className="w-full py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold cursor-pointer transition-colors"
-                  >
-                    🎓 {tr('Enroll in Next UEFA Coaching License Course (Club Sponsored)', 'ลงทะเบียนเรียนใบอนุญาตโค้ชระดับถัดไป (สโมสรออกค่าใช้จ่าย)')}
-                  </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      data-testid="enroll-coaching-course-21d-btn"
+                      onClick={() => onStudyCoachingLicense('COURSE_21D')}
+                      className="py-2 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 font-bold cursor-pointer transition-colors text-xs"
+                    >
+                      📚{' '}
+                      {tr(
+                        'Enroll in 21-Day UEFA Course (Auto-Graduates)',
+                        'ลงทะเบียนอบรมหลักสูตร 21 วัน (จบอัตโนมัติตามปฏิทิน)'
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="study-coaching-badge-btn"
+                      onClick={() => onStudyCoachingLicense('INSTANT')}
+                      className="py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold cursor-pointer transition-colors text-xs"
+                    >
+                      🎓{' '}
+                      {tr(
+                        'Fast-Track UEFA License Exam (Club Sponsored)',
+                        'สอบวัดระดับใบอนุญาตโค้ชทันที (สโมสรออกค่าใช้จ่าย)'
+                      )}
+                    </button>
+                  </div>
                 )
               )}
             </div>

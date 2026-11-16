@@ -71,12 +71,14 @@ import {
   prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
+  recallPlayerFromLoan,
   recruitYouthAcademyProspect,
   releaseYouthProspect,
   removeMentoringGroup,
   renewPlayerContract,
   requestAffiliateFeederClub,
   respondToIncomingTransferOffer,
+  respondToPressConferenceOrJobOffer,
   saveMentoringGroup,
   SaveSlotMeta,
   saveWorldStateToFirestoreSlot,
@@ -93,6 +95,7 @@ import {
   triggerClubTakeoverEvent,
   triggerFifaInternationalBreak,
   triggerGlobalSuperClubBid,
+  triggerLoanOptionToBuy,
   updatePlayerSquadAndTransferStatus,
   upgradeJuniorOrRecruitmentFacility,
 } from './engine/worldSimulationService';
@@ -1639,48 +1642,9 @@ function TouchlineShell() {
                     });
                   }}
                   onAnswerPressConference={(newsId, optionId) => {
-                    const item = world.inbox.find((n) => n.id === newsId);
-                    const opt = item?.pressConferenceOptions?.find((o) => o.id === optionId);
-                    if (!item || !opt) return;
-
-                    const updatedPlayers = { ...world.players };
-                    for (const p of Object.values(updatedPlayers)) {
-                      if (p.clubId === controlledClub.id) {
-                        updatedPlayers[p.id] = {
-                          ...p,
-                          morale: Math.max(20, Math.min(100, p.morale + opt.moraleDelta)),
-                        };
-                      }
-                    }
-
-                    const updatedClub: Club = {
-                      ...controlledClub,
-                      boardExpectations: {
-                        ...controlledClub.boardExpectations,
-                        confidence: {
-                          ...controlledClub.boardExpectations.confidence,
-                          overall: Math.max(
-                            15,
-                            Math.min(
-                              100,
-                              controlledClub.boardExpectations.confidence.overall + opt.boardDelta
-                            )
-                          ),
-                        },
-                      },
-                    };
-
-                    setWorld({
-                      ...world,
-                      players: updatedPlayers,
-                      clubs: { ...world.clubs, [controlledClub.id]: updatedClub },
-                      inbox: world.inbox.map((n) =>
-                        n.id === newsId
-                          ? { ...n, isRead: true, pressConferenceAnsweredId: optionId }
-                          : n
-                      ),
-                    });
-                    showToast(opt.mediaResponse);
+                    const res = respondToPressConferenceOrJobOffer(world, newsId, optionId);
+                    setWorld(res.nextState);
+                    showToast(res.message);
                   }}
                   onAddAiNewsItem={(title, body) => {
                     setWorld({
@@ -1987,6 +1951,40 @@ function TouchlineShell() {
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
+                  onRecallFromLoan={(playerId) => {
+                    const res = recallPlayerFromLoan(world, playerId);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onTriggerLoanOptionToBuy={(playerId) => {
+                    const res = triggerLoanOptionToBuy(world, playerId);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onSendToAffiliateLoan={(playerId) => {
+                    const res = sendPlayerToAffiliateLoan(world, playerId);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onQuickLoanInPlayer={(playerId) => {
+                    const target = world.players[playerId];
+                    if (!target) return;
+                    const optFee = Math.max(1_500_000, Math.round(target.marketValue * 0.9));
+                    const res = submitAndEvaluateTransferOffer(world, {
+                      playerId,
+                      offerType: 'Loan',
+                      upfrontFee: 250_000,
+                      installmentsFee: 0,
+                      sellOnPercentage: 0,
+                      loanOptionToBuyFee: optFee,
+                      proposedWagePerWeek: Math.max(15_000, Math.round(target.wagePerWeek * 1.05)),
+                      proposedContractYears: 1,
+                      proposedSquadStatus: 'Squad Player',
+                      signingBonus: 50_000,
+                    });
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
                 />
               )}
 
@@ -2163,8 +2161,8 @@ function TouchlineShell() {
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
-                  onStudyCoachingLicense={() => {
-                    const res = studyNextCoachingLicense(world);
+                  onStudyCoachingLicense={(mode) => {
+                    const res = studyNextCoachingLicense(world, mode || 'INSTANT');
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
