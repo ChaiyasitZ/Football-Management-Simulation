@@ -71,6 +71,99 @@ function getMentalityMultipliers(mentality: Mentality): { atk: number; def: numb
   }
 }
 
+export function computeSetPieceThreatScore(
+  tactic: TacticalSystem,
+  playersById: Record<string, Player>,
+  fallbackPlayers?: Player[]
+): number {
+  const sp = tactic.setPieces;
+  const activeList =
+    fallbackPlayers && fallbackPlayers.length > 0
+      ? fallbackPlayers
+      : tactic.lineup
+          .map((s) => (s.playerId ? playersById[s.playerId] : undefined))
+          .filter((p): p is Player => Boolean(p));
+
+  if (activeList.length === 0) return 55;
+
+  const taker =
+    (sp?.cornerTakerId ? playersById[sp.cornerTakerId] : undefined) ||
+    (sp?.freeKickTakerId ? playersById[sp.freeKickTakerId] : undefined) ||
+    [...activeList].sort(
+      (a, b) =>
+        b.attributes.technical.corners +
+        b.attributes.technical.crossing -
+        (a.attributes.technical.corners + a.attributes.technical.crossing)
+    )[0];
+
+  const deliveryScore = taker
+    ? ((taker.attributes.technical.corners +
+        taker.attributes.technical.crossing +
+        taker.attributes.technical.freeKickTaking) /
+        60) *
+      32
+    : 18;
+
+  const boxMap = sp?.boxAssignments || {};
+  const nearP = boxMap.near_post ? playersById[boxMap.near_post] : undefined;
+  const farP = boxMap.far_post ? playersById[boxMap.far_post] : undefined;
+  const gkChallengeP = boxMap.challenge_keeper ? playersById[boxMap.challenge_keeper] : undefined;
+  const lurkP = boxMap.lurk_edge ? playersById[boxMap.lurk_edge] : undefined;
+  const back1P = boxMap.stay_back_1 ? playersById[boxMap.stay_back_1] : undefined;
+  const back2P = boxMap.stay_back_2 ? playersById[boxMap.stay_back_2] : undefined;
+
+  const sortedAerial = [...activeList].sort(
+    (a, b) =>
+      b.attributes.technical.heading +
+      b.attributes.physical.jumpingReach -
+      (a.attributes.technical.heading + a.attributes.physical.jumpingReach)
+  );
+  const aerialTargets = [
+    nearP || sortedAerial[0],
+    farP || sortedAerial[1],
+    gkChallengeP || sortedAerial[2],
+  ].filter((p): p is Player => Boolean(p));
+
+  const avgAerial =
+    aerialTargets.length > 0
+      ? aerialTargets.reduce(
+          (sum, p) =>
+            sum +
+            (p.attributes.technical.heading +
+              p.attributes.physical.jumpingReach +
+              p.attributes.physical.strength) /
+              60,
+          0
+        ) / aerialTargets.length
+      : 0.58;
+  const aerialScore = avgAerial * 38;
+
+  const lurker =
+    lurkP ||
+    [...activeList].sort(
+      (a, b) => b.attributes.technical.longShots - a.attributes.technical.longShots
+    )[0];
+  const edgeScore = lurker
+    ? ((lurker.attributes.technical.longShots + lurker.attributes.mental.anticipation) / 40) * 14
+    : 8;
+
+  const recoveryDefenders = [back1P, back2P].filter((p): p is Player => Boolean(p));
+  const recoveryScore =
+    recoveryDefenders.length > 0
+      ? (recoveryDefenders.reduce(
+          (sum, p) =>
+            sum + (p.attributes.physical.pace + p.attributes.physical.acceleration) / 40,
+          0
+        ) /
+          recoveryDefenders.length) *
+        16
+      : 9.5;
+
+  const assignedBonus = Object.values(boxMap).filter(Boolean).length * 1.2;
+
+  return Math.max(35, Math.min(99, Math.round(deliveryScore + aerialScore + edgeScore + recoveryScore + assignedBonus)));
+}
+
 export function evaluateTeamMatchStrength(
   club: Club,
   tactic: TacticalSystem,
@@ -375,10 +468,19 @@ export function evaluateTeamMatchStrength(
   const highLineVulnerability =
     baseHighLineVulnerability + synergy.defensiveLineSynergy.weakLinks.length * 0.11;
 
+  // Stage 3 Pillar 2: Set-Piece Threat Score modifier (from 2D Penalty Box Designer)
+  const spThreat = computeSetPieceThreatScore(tactic, playersById, activePlayers);
+  const setPieceAtkMultiplier = 1 + Math.max(0, (spThreat - 60) * 0.0025);
+
   return {
     attack: Math.max(
       25,
-      (atkSum / Math.max(1, attackers.length)) * 5.2 * mentAtk * directnessAtkMult * homeBoost
+      (atkSum / Math.max(1, attackers.length)) *
+        5.2 *
+        mentAtk *
+        directnessAtkMult *
+        setPieceAtkMultiplier *
+        homeBoost
     ),
     midfield: Math.max(
       25,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Club, CupId, LeagueId, UefaCompetitionId } from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { UEFA_COMPETITIONS_CONFIG } from '../engine/uefaEngine';
@@ -23,6 +23,7 @@ interface CompStyleMeta {
   secondary: string;
   accent: string;
   motif: 'crown_lion' | 'starball' | 'uel_wave' | 'uecl_spire' | 'laliga' | 'bundesliga' | 'serie_a' | 'ligue_1' | 'cup_shield' | 'globe_crown' | 'heraldic';
+  fotmobLogoUrl?: string;
 }
 
 const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
@@ -35,6 +36,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#1d4ed8',
     accent: '#e2e8f0',
     motif: 'starball',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/42.png',
   },
   UEFA_UEL: {
     shortCode: 'UEL',
@@ -44,6 +46,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ea580c',
     accent: '#fb923c',
     motif: 'uel_wave',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/73.png',
   },
   UEFA_UECL: {
     shortCode: 'UECL',
@@ -53,6 +56,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#16a34a',
     accent: '#4ade80',
     motif: 'uecl_spire',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/10216.png',
   },
   // Top 5 Leagues
   ENG_PL: {
@@ -63,6 +67,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#9333ea',
     accent: '#00ff85',
     motif: 'crown_lion',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/47.png',
   },
   ESP_LL: {
     shortCode: 'LALIGA',
@@ -72,6 +77,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ff4b44',
     accent: '#ffffff',
     motif: 'laliga',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/87.png',
   },
   GER_BL: {
     shortCode: 'BUNDESLIGA',
@@ -81,6 +87,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#ffffff',
     motif: 'bundesliga',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/54.png',
   },
   ITA_SA: {
     shortCode: 'SERIE A',
@@ -90,6 +97,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#0284c7',
     accent: '#38bdf8',
     motif: 'serie_a',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/55.png',
   },
   FRA_L1: {
     shortCode: 'L1',
@@ -99,6 +107,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#1e3a8a',
     accent: '#bef264',
     motif: 'ligue_1',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/53.png',
   },
   // European Tier 1 Leagues
   POR_LP: {
@@ -109,6 +118,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#facc15',
     motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/61.png',
   },
   NED_ED: {
     shortCode: 'EREDIVISIE',
@@ -118,6 +128,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ea580c',
     accent: '#ffffff',
     motif: 'crown_lion',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/57.png',
   },
   BEL_PL: {
     shortCode: 'JPL',
@@ -127,6 +138,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#facc15',
     motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/40.png',
   },
   TUR_SL: {
     shortCode: 'SÜPER LİG',
@@ -136,6 +148,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ef4444',
     accent: '#ffffff',
     motif: 'starball',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/71.png',
   },
   SCO_PR: {
     shortCode: 'SPFL',
@@ -145,6 +158,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#2563eb',
     accent: '#ffffff',
     motif: 'crown_lion',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/64.png',
   },
   // Second Divisions
   ENG_CH: {
@@ -155,6 +169,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#b45309',
     accent: '#facc15',
     motif: 'crown_lion',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/48.png',
   },
   ESP_SD: {
     shortCode: 'LALIGA 2',
@@ -164,6 +179,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#e11d48',
     accent: '#38bdf8',
     motif: 'laliga',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/140.png',
   },
   GER_2B: {
     shortCode: '2. BL',
@@ -173,6 +189,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#e5e7eb',
     motif: 'bundesliga',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/146.png',
   },
   ITA_SB: {
     shortCode: 'SERIE B',
@@ -182,6 +199,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#10b981',
     accent: '#facc15',
     motif: 'serie_a',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/86.png',
   },
   FRA_L2: {
     shortCode: 'L2',
@@ -191,6 +209,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#0284c7',
     accent: '#2dd4bf',
     motif: 'ligue_1',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/110.png',
   },
   // Domestic Cups
   ENG_CUP: {
@@ -201,6 +220,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#ffffff',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/132.png',
   },
   ESP_CUP: {
     shortCode: 'COPA',
@@ -210,6 +230,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#d97706',
     accent: '#fef08a',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/138.png',
   },
   GER_CUP: {
     shortCode: 'DFB-POKAL',
@@ -219,6 +240,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ca8a04',
     accent: '#fde047',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/209.png',
   },
   ITA_CUP: {
     shortCode: 'COPPA',
@@ -228,6 +250,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#22c55e',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/141.png',
   },
   FRA_CUP: {
     shortCode: 'CDF',
@@ -237,6 +260,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#2563eb',
     accent: '#ef4444',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/134.png',
   },
   POR_CUP: {
     shortCode: 'TAÇA',
@@ -246,6 +270,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#16a34a',
     accent: '#facc15',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/186.png',
   },
   NED_CUP: {
     shortCode: 'KNVB',
@@ -255,6 +280,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ea580c',
     accent: '#ffffff',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/212.png',
   },
   BEL_CUP: {
     shortCode: 'CROKY',
@@ -264,6 +290,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#eab308',
     accent: '#ffffff',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/171.png',
   },
   TUR_CUP: {
     shortCode: 'ZTK',
@@ -273,6 +300,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#dc2626',
     accent: '#facc15',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/206.png',
   },
   SCO_CUP: {
     shortCode: 'SCO CUP',
@@ -282,6 +310,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#38bdf8',
     accent: '#ffffff',
     motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/189.png',
   },
   // Global / International
   FIFA_CWC: {
@@ -292,6 +321,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#d97706',
     accent: '#fde047',
     motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/78.png',
   },
   EURO_NATIONS: {
     shortCode: 'EURO',
@@ -301,6 +331,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#2563eb',
     accent: '#facc15',
     motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/50.png',
   },
   WORLD_CUP: {
     shortCode: 'WORLD CUP',
@@ -310,6 +341,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     secondary: '#ca8a04',
     accent: '#fde047',
     motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/77.png',
   },
 };
 
@@ -318,15 +350,24 @@ export const CompetitionBadge: React.FC<{
   size?: 'xs' | 'sm' | 'md' | 'lg';
   className?: string;
 }> = ({ competitionId, size = 'md', className = '' }) => {
+  const [imgError, setImgError] = useState(false);
+  const leagueCfg = LEAGUES_CONFIG[competitionId as LeagueId];
   const meta: CompStyleMeta = COMPETITION_STYLE_MAP[competitionId] || {
     shortCode: competitionId.slice(0, 4).toUpperCase(),
-    title: LEAGUES_CONFIG[competitionId as LeagueId]?.name || UEFA_COMPETITIONS_CONFIG[competitionId as UefaCompetitionId]?.name || competitionId,
+    title: leagueCfg?.name || UEFA_COMPETITIONS_CONFIG[competitionId as UefaCompetitionId]?.name || competitionId,
     subtitle: 'Official Competition',
     primary: '#0f172a',
     secondary: '#10b981',
     accent: '#ffffff',
     motif: 'heraldic',
+    fotmobLogoUrl: leagueCfg?.logoUrl,
   };
+
+  const resolvedLogoUrl = meta.fotmobLogoUrl || leagueCfg?.logoUrl;
+
+  useEffect(() => {
+    setImgError(false);
+  }, [resolvedLogoUrl]);
 
   const dims =
     size === 'xs'
@@ -336,6 +377,36 @@ export const CompetitionBadge: React.FC<{
         : size === 'lg'
           ? 'w-12 h-12'
           : 'w-9 h-9';
+
+  const pixelSizeMap = {
+    xs: 20,
+    sm: 28,
+    md: 36,
+    lg: 48,
+  };
+
+  if (resolvedLogoUrl && !imgError) {
+    const px = pixelSizeMap[size];
+    return (
+      <div
+        className={`inline-flex items-center justify-center shrink-0 select-none ${dims} ${className}`}
+        title={meta.title}
+        data-testid={`comp-badge-${competitionId}`}
+      >
+        <img
+          src={resolvedLogoUrl}
+          alt={meta.title}
+          width={px}
+          height={px}
+          loading="lazy"
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setImgError(true)}
+          className="w-full h-full object-contain drop-shadow-sm select-none"
+        />
+      </div>
+    );
+  }
 
   const gradId = `comp-grad-${competitionId.replace(/[^a-zA-Z0-9]/g, '')}-${size}`;
   const isCircular =

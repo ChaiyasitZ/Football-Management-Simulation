@@ -330,6 +330,14 @@ export interface TeamInstructions {
   tackling: TacklingStyle;
 }
 
+export type SetPieceBoxRole =
+  | 'near_post'
+  | 'far_post'
+  | 'challenge_keeper'
+  | 'lurk_edge'
+  | 'stay_back_1'
+  | 'stay_back_2';
+
 export interface SetPieceSetup {
   captainId?: string | null;
   penaltyTakerId?: string | null;
@@ -337,6 +345,8 @@ export interface SetPieceSetup {
   cornerTakerId?: string | null;
   cornerRoutine: CornerRoutineType;
   freeKickRoutine: FreeKickRoutineType;
+  cornerDeliverySwing?: 'inswinger' | 'outswinger';
+  boxAssignments?: Partial<Record<SetPieceBoxRole, string | null>>;
 }
 
 export interface OppositionPlayerInstruction {
@@ -458,6 +468,7 @@ export interface Club {
     targetLeaguePosition: number;
     cupTarget: 'Winner' | 'Final' | 'Semi-Final' | 'Quarter-Final' | 'Compete';
     clubVision: string;
+    seasonAmbition?: 'Conservative' | 'Balanced' | 'Ambitious';
     confidence: {
       overall: number; // 1-100
       leaguePerformance: number;
@@ -507,6 +518,7 @@ export interface LeagueConfig {
   prizePoolTotal: number;
   tvRevenuePerClub: number;
   tier?: 1 | 2;
+  logoUrl?: string;
 }
 
 export type MatchEventType =
@@ -716,6 +728,12 @@ export interface NewsItem {
   pressConferenceAnsweredId?: string;
 }
 
+export type CoachingLicenseTier =
+  | 'National A'
+  | 'Continental B'
+  | 'Continental A'
+  | 'UEFA Pro';
+
 export interface ManagerProfile {
   id: string;
   name: string;
@@ -724,6 +742,11 @@ export interface ManagerProfile {
   coachingStyle: 'Tactician' | 'Motivator' | 'Youth Developer' | 'Tracksuit Coach';
   tacticalStyle: AIManagerStyle;
   reputation: number; // 1-100
+  coachingBadge?: CoachingLicenseTier;
+  studyingBadge?: {
+    targetBadge: CoachingLicenseTier;
+    completionDate: string;
+  } | null;
   careerStats: {
     matchesManaged: number;
     won: number;
@@ -858,4 +881,5 @@ export interface WorldState {
   lastMindGameMatchday?: number;
   socialFeed?: FanSocialPost[];
   buyBackClauses?: BuyBackClauseRecord[];
+  lastSquadMeetingDate?: string | null;
 }

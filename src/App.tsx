@@ -45,7 +45,9 @@ import {
   appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
+  buildSevenDayCalendarStrip,
   completeUserMatchdayAndSyncWorld,
+  conductOneOnOnePlayerChat,
   createCustomPlayerInWorld,
   deleteSavedSlot,
   deleteSaveSlotFromFirestore,
@@ -57,10 +59,12 @@ import {
   getPendingUrgentInboxItem,
   getSavedSlotsList,
   hireStaffMember,
+  holdEmergencySquadMeeting,
   importWorldDatabaseJson,
   liveEditClubFinancesAndFacilities,
   loadWorldStateFromFirestoreSlot,
   loadWorldStateFromSlot,
+  negotiateBoardSeasonAmbition,
   negotiateIncomingTransferBid,
   offerPlayerToClubs,
   organizePreSeasonTour,
@@ -82,6 +86,7 @@ import {
   signPlayerOnBosmanFree,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
+  studyNextCoachingLicense,
   submitAndEvaluateTransferOffer,
   syncUserSaveSlotsFromFirestore,
   triggerAIManagerialCarouselCheck,
@@ -437,7 +442,7 @@ function TouchlineShell() {
 
   const navigateToRoute = (nextRoute: string) => {
     const normalized = nextRoute.startsWith('#/') ? nextRoute : `#/${nextRoute}`;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && window.location.hash !== normalized) {
       window.history.replaceState(null, '', normalized);
     }
     setRouteHistory((prev) => {
@@ -448,6 +453,17 @@ function TouchlineShell() {
       return next;
     });
   };
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const h = window.location.hash;
+      if (h && h.startsWith('#/')) {
+        navigateToRoute(h);
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [historyIdx]);
 
   const navigateLegacyTab = (tab: NavTab) => {
     navigateToRoute(LEGACY_TAB_TO_ROUTE[tab] || '#/home/portal');
@@ -1425,13 +1441,14 @@ function TouchlineShell() {
 
             <button
               type="button"
+              data-testid="sim-to-matchday-btn"
               disabled={isSimulatingDay}
               onClick={handleAdvanceToNextMatchday}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-slate-200 font-medium text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
             >
               {isSimulatingDay
                 ? tr('Simulating...', 'กำลังจำลอง...')
-                : tr('Skip to Matchday', 'ข้ามไปวันแข่ง')}
+                : tr('⏩ Skip to Matchday', '⏩ ข้ามไปวันแข่ง')}
             </button>
 
             <button
@@ -1467,14 +1484,62 @@ function TouchlineShell() {
 
         {/* Contextual Sub-Tab Bar inside Category Page Header (Hidden when viewing Full Player Profile or Full-Screen Match) */}
         {!activePlayerProfile && !isFullScreenMatch && (
-          <SubTabBar
-            tabs={subTabsWithBadges}
-            activeSubTab={activeSubTab}
-            onSelect={(subId) => {
-              soundService.playClick();
-              navigateToRoute(`#/${activeCategory}/${subId}`);
-            }}
-          />
+          <>
+            <SubTabBar
+              tabs={subTabsWithBadges}
+              activeSubTab={activeSubTab}
+              onSelect={(subId) => {
+                soundService.playClick();
+                navigateToRoute(`#/${activeCategory}/${subId}`);
+              }}
+            />
+
+            {/* Stage 3 Pillar 5: 7-Day Interactive Calendar Ribbon */}
+            <div
+              data-testid="calendar-7day-ribbon"
+              className="px-4 py-1.5 bg-slate-950/90 border-b border-slate-800/80 flex items-center justify-between gap-2 overflow-x-auto shrink-0"
+            >
+              <div className="flex items-center gap-1.5 min-w-max">
+                {buildSevenDayCalendarStrip(world).map((dayItem, idx) => (
+                  <button
+                    key={dayItem.date}
+                    type="button"
+                    onClick={() => {
+                      if (dayItem.eventType === 'MATCHDAY') {
+                        navigateToRoute('#/match/center');
+                      } else if (dayItem.eventType === 'DEADLINE') {
+                        navigateToRoute('#/recruitment/transfers');
+                      } else {
+                        navigateToRoute('#/team/training');
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      idx === 0
+                        ? 'bg-emerald-500/15 border-emerald-500/50 text-white font-semibold'
+                        : dayItem.eventType === 'MATCHDAY'
+                          ? 'bg-amber-500/15 border-amber-500/40 text-amber-300 font-semibold'
+                          : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className="text-slate-400">
+                      {dayItem.dayName} {dayItem.date.slice(5)}
+                    </span>
+                    <span
+                      className={
+                        dayItem.eventType === 'MATCHDAY'
+                          ? 'text-amber-300 font-bold'
+                          : dayItem.eventType === 'DEADLINE'
+                            ? 'text-rose-300 font-bold'
+                            : 'text-emerald-400'
+                      }
+                    >
+                      {tr(dayItem.labelEn, dayItem.labelTh)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
         )}
 
         {/* Scrollable Workspace Viewport */}
@@ -1521,6 +1586,11 @@ function TouchlineShell() {
               }}
               onOfferPlayerToClubs={(playerId) => {
                 const res = offerPlayerToClubs(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onPlayerChat={(playerId, topic) => {
+                const res = conductOneOnOnePlayerChat(world, playerId, topic);
                 setWorld(res.nextState);
                 showToast(res.message);
               }}
@@ -1751,6 +1821,11 @@ function TouchlineShell() {
                           `กำหนดเบอร์เสื้อ #${shirtNumber} ให้กับ ${p.firstName} ${p.lastName} เรียบร้อยแล้ว`
                         )
                       );
+                    }}
+                    onHoldSquadMeeting={(tone) => {
+                      const res = holdEmergencySquadMeeting(world, tone);
+                      setWorld(res.nextState);
+                      showToast(res.message);
                     }}
                   />
                 )}
@@ -2088,19 +2163,40 @@ function TouchlineShell() {
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
+                  onStudyCoachingLicense={() => {
+                    const res = studyNextCoachingLicense(world);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onNegotiateBoardAmbition={(ambition) => {
+                    const res = negotiateBoardSeasonAmbition(world, ambition);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
                   onSaveToSlot={async (slotId) => {
-                    const slots = authUser
-                      ? await saveWorldStateToFirestoreSlot(slotId, world)
-                      : saveWorldStateToSlot(slotId, world);
-                    setSaveSlots(slots);
-                    showToast(
-                      authUser
-                        ? tr(
-                            `Saved career to Cloud Firestore (${slotId})!`,
-                            `บันทึกเกมลง Cloud Firestore (${slotId}) สำเร็จ!`
-                          )
-                        : tr(`Saved career to ${slotId}!`, `บันทึกเกมลงช่อง ${slotId} สำเร็จ!`)
-                    );
+                    try {
+                      const slots = authUser
+                        ? await saveWorldStateToFirestoreSlot(slotId, world)
+                        : saveWorldStateToSlot(slotId, world);
+                      setSaveSlots(slots);
+                      showToast(
+                        authUser
+                          ? tr(
+                              `Saved career to Local & Cloud Firestore (${slotId})!`,
+                              `บันทึกเซฟลงเครื่องและ Cloud Firestore (${slotId}) สำเร็จ!`
+                            )
+                          : tr(`Saved career to ${slotId}!`, `บันทึกเกมลงช่อง ${slotId} สำเร็จ!`)
+                      );
+                    } catch {
+                      const fallbackSlots = getSavedSlotsList();
+                      setSaveSlots(fallbackSlots);
+                      showToast(
+                        tr(
+                          `Saved career locally to ${slotId} (Cloud sync pending).`,
+                          `บันทึกเซฟลงเครื่องช่อง ${slotId} สำเร็จ (รอซิงก์ Cloud)`
+                        )
+                      );
+                    }
                   }}
                   onLoadSlot={async (slotId) => {
                     const loaded = authUser
@@ -2112,6 +2208,15 @@ function TouchlineShell() {
                         tr(`Loaded career from ${slotId}!`, `โหลดเซฟเกมจาก ${slotId} เรียบร้อยแล้ว!`)
                       );
                     }
+                  }}
+                  onDeleteSlot={async (slotId) => {
+                    const updated = authUser
+                      ? await deleteSaveSlotFromFirestore(slotId)
+                      : deleteSavedSlot(slotId);
+                    setSaveSlots(updated);
+                    showToast(
+                      tr(`Deleted save slot ${slotId}.`, `ลบข้อมูลช่องเซฟ ${slotId} เรียบร้อยแล้ว`)
+                    );
                   }}
                 />
               )}

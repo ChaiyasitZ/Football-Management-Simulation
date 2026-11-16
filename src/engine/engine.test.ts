@@ -8,6 +8,7 @@ import {
   recomputeLeagueStandings,
 } from './leagueEngine';
 import {
+  computeSetPieceThreatScore,
   reconcileMatchResultEventsAndStats,
   simulateMatch,
 } from './matchEngine';
@@ -21,7 +22,9 @@ import {
   appointNationalTeamManager,
   assignYouthMentor,
   buildScoutReportForPlayer,
+  buildSevenDayCalendarStrip,
   computeHallOfFameLeaderboard,
+  conductOneOnOnePlayerChat,
   createCustomPlayerInWorld,
   dehydrateWorldStateToCareerMap,
   dispatchSouthAmericaWonderkidScout,
@@ -35,10 +38,13 @@ import {
   getClubSupporterConfidence,
   getDeadlineDayBargains,
   getFanSocialFeed,
+  getNextAvailableManualSaveSlot,
+  holdEmergencySquadMeeting,
   importWorldDatabaseJson,
   isTransferDeadlineWindow,
   liveEditClubFinancesAndFacilities,
   loadWorldStateFromSlot,
+  negotiateBoardSeasonAmbition,
   negotiateIncomingTransferBid,
   offerPlayerToClubs,
   organizePreSeasonTour,
@@ -58,6 +64,7 @@ import {
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
   simulateExhibitionClash,
+  studyNextCoachingLicense,
   submitAndEvaluateTransferOffer,
   triggerAIManagerialCarouselCheck,
   triggerClubTakeoverEvent,
@@ -1526,5 +1533,210 @@ test('Next-Stage Master Plan: Team Talk Morale Persistence, Opposition Instructi
   assert.ok(leaders.topDefensiveMonsters.length > 0, 'Defensive Monsters leaderboard must be populated');
 });
 
+test('Stage 3 Complete Edition: Set-Piece Threat Score, 1-on-1 Player Chat, Squad Meeting, Coaching License RPG, Board Ambition & 7-Day Calendar Strip', () => {
+  let world = createInitialWorldState(30303);
+  const myClubId = world.controlledClubId;
+  const myClub = world.clubs[myClubId];
+  const squad = Object.values(world.players).filter((p) => p.clubId === myClubId);
 
+  // 1. Set-Piece Threat Score
+  const baseThreat = computeSetPieceThreatScore(myClub.primaryTactic, world.players, squad);
+  assert.ok(baseThreat >= 35 && baseThreat <= 99, `Set-piece threat score must be between 35 and 99 (got ${baseThreat})`);
 
+  const customTactic = {
+    ...myClub.primaryTactic,
+    setPieces: {
+      ...myClub.primaryTactic.setPieces!,
+      cornerDeliverySwing: 'inswinger' as const,
+      boxAssignments: {
+        near_post: squad[0].id,
+        far_post: squad[1].id,
+        challenge_keeper: squad[2].id,
+        lurk_edge: squad[3].id,
+        stay_back_1: squad[4].id,
+        stay_back_2: squad[5].id,
+      },
+    },
+  };
+  const assignedThreat = computeSetPieceThreatScore(customTactic, world.players, squad);
+  assert.ok(assignedThreat >= baseThreat, 'Assigning 6 box roles must boost or maintain Set-Piece Threat Score');
+
+  // 2. 1-on-1 Player Chat (EXPLAIN_ROTATION clears unhappyReason & consecutiveBenched)
+  const targetPlayer = squad[0];
+  world = {
+    ...world,
+    players: {
+      ...world.players,
+      [targetPlayer.id]: {
+        ...targetPlayer,
+        morale: 52,
+        consecutiveBenched: 4,
+        unhappyReason: 'Frustrated by lack of starts',
+      },
+    },
+  };
+  const chatRes = conductOneOnOnePlayerChat(world, targetPlayer.id, 'EXPLAIN_ROTATION');
+  world = chatRes.nextState;
+  assert.ok(chatRes.moraleDelta > 0, 'Explaining rotation must increase player morale');
+  assert.equal(world.players[targetPlayer.id].consecutiveBenched, 0);
+  assert.equal(world.players[targetPlayer.id].unhappyReason, null);
+
+  // 3. Emergency Squad Meeting
+  const meetRes = holdEmergencySquadMeeting(world, 'RALLY_MORALE');
+  assert.equal(meetRes.boostedCount > 0, true, 'Squad meeting must boost dressing-room players');
+  assert.equal(meetRes.avgMoraleDelta > 0, true, 'Squad meeting must provide positive morale delta');
+  world = meetRes.nextState;
+  const repeatMeet = holdEmergencySquadMeeting(world, 'RALLY_MORALE');
+  assert.equal(repeatMeet.boostedCount, 0, 'Squad meeting must enforce 21-day cooldown');
+
+  // 4. Coaching License RPG Progression
+  const studyRes = studyNextCoachingLicense(world);
+  assert.equal(studyRes.newBadge, 'Continental B', 'Manager must upgrade to Continental B coaching license');
+  world = studyRes.nextState;
+  assert.equal(world.manager.coachingBadge, 'Continental B');
+
+  // 5. Board Season Vision & Ambition Negotiation (+20% Transfer Budget for Ambitious)
+  const budgetBefore = world.clubs[myClubId].finances.transferBudget;
+  const ambRes = negotiateBoardSeasonAmbition(world, 'Ambitious');
+  world = ambRes.nextState;
+  assert.equal(world.clubs[myClubId].boardExpectations.seasonAmbition, 'Ambitious');
+  assert.ok(
+    world.clubs[myClubId].finances.transferBudget > budgetBefore,
+    'Ambitious board vision must increase transfer budget by 20%'
+  );
+
+  // 6. 7-Day Interactive Calendar Strip
+  const calendar7 = buildSevenDayCalendarStrip(world);
+  assert.equal(calendar7.length, 7, '7-Day Calendar Strip must return 7 days');
+  assert.equal(calendar7[0].date, world.gameDate);
+});
+
+test('Phase 1 Save System Overhaul (5 Critical Save Bug Fixes) & FotMob League Logos', () => {
+  // 1. Verify FotMob league logos exist on all 15 leagues
+  for (const league of Object.values(LEAGUES_CONFIG)) {
+    assert.ok(
+      league.logoUrl && league.logoUrl.includes('images.fotmob.com/image_resources/logo/leaguelogo/dark/'),
+      `League ${league.id} must have an official FotMob dark logoUrl`
+    );
+  }
+
+  // 2. Verify getNextAvailableManualSaveSlot cycles through slot_1..slot_4 without creating invisible slots
+  assert.equal(getNextAvailableManualSaveSlot([]), 'slot_1');
+  assert.equal(
+    getNextAvailableManualSaveSlot([
+      {
+        slotId: 'slot_1',
+        saveName: 'S1',
+        clubName: 'Arsenal',
+        managerName: 'M',
+        gameDate: '2025-08-01',
+        season: '2025/26',
+        lastSavedAt: '2026-01-01T00:00:00Z',
+      },
+    ]),
+    'slot_2'
+  );
+
+  // 3. Verify extra Scheduled cup knockout fixtures + buyBackClauses + playerDiff fields survive save/load
+  let world = createInitialWorldState(40404);
+  const myClubId = world.controlledClubId;
+  const aiPlayer = Object.values(world.players).find(
+    (p) => p.clubId !== myClubId && world.clubs[p.clubId]?.leagueId === world.clubs[myClubId]?.leagueId
+  )!;
+
+  const customCupFixtureId = 'cup_qf_extra_tie_1';
+  world = {
+    ...world,
+    lastSquadMeetingDate: '2025-09-10',
+    buyBackClauses: [
+      {
+        id: 'bb_test_1',
+        playerId: aiPlayer.id,
+        playerName: `${aiPlayer.firstName} ${aiPlayer.lastName}`,
+        soldToClubId: aiPlayer.clubId,
+        soldToClubName: world.clubs[aiPlayer.clubId].name,
+        buyBackFee: 28_000_000,
+        expiresSeason: '2027/28',
+        createdDate: '2025-08-20',
+      },
+    ],
+    players: {
+      ...world.players,
+      [aiPlayer.id]: {
+        ...aiPlayer,
+        shirtNumber: 99,
+        squadStatus: 'Star Player',
+        consecutiveBenched: 3,
+        stats: {
+          ...aiPlayer.stats,
+          appearances: 5,
+          goals: 3,
+        },
+      },
+    },
+    fixtures: [
+      ...world.fixtures,
+      {
+        id: customCupFixtureId,
+        competitionId: 'ENG_CUP',
+        seasonId: world.currentSeason,
+        matchday: 3,
+        kickoffDate: '2026-02-14',
+        homeClubId: myClubId,
+        awayClubId: aiPlayer.clubId,
+        status: 'Scheduled',
+      },
+    ],
+  };
+
+  const careerStateS1 = dehydrateWorldStateToCareerMap(world);
+  const rehydratedS1 = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'u1',
+    slotId: 'slot_1',
+    saveName: 'Test S1',
+    clubName: world.clubs[myClubId].name,
+    managerName: world.manager.name,
+    gameDate: world.gameDate,
+    season: world.currentSeason,
+    lastSavedAtIso: '2026-11-16T00:00:00Z',
+    randomSeed: world.randomSeed,
+    controlledClubId: myClubId,
+    careerState: careerStateS1,
+  });
+
+  assert.equal(rehydratedS1.buyBackClauses?.length, 1, 'buyBackClauses must be preserved on load');
+  assert.equal(rehydratedS1.lastSquadMeetingDate, '2025-09-10', 'lastSquadMeetingDate must be preserved');
+  assert.equal(rehydratedS1.players[aiPlayer.id].shirtNumber, 99, 'AI player shirtNumber must be preserved in playerDiffs');
+  assert.equal(rehydratedS1.players[aiPlayer.id].consecutiveBenched, 3, 'AI player consecutiveBenched must be preserved');
+  assert.ok(
+    rehydratedS1.fixtures.some((f) => f.id === customCupFixtureId && f.status === 'Scheduled'),
+    'Scheduled cup knockout tie must be preserved on load'
+  );
+
+  // 4. Verify Season 2+ (2026/27) scheduled fixtures survive save/load after processEndOfSeasonRollover
+  const rolled = processEndOfSeasonRollover(world).nextState;
+  const s2ScheduledCountBefore = rolled.fixtures.filter((f) => f.status === 'Scheduled').length;
+  assert.ok(s2ScheduledCountBefore > 200, 'Season 2 must have scheduled league and cup fixtures');
+
+  const careerStateS2 = dehydrateWorldStateToCareerMap(rolled);
+  const rehydratedS2 = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'u1',
+    slotId: 'slot_2',
+    saveName: 'Test S2',
+    clubName: rolled.clubs[myClubId].name,
+    managerName: rolled.manager.name,
+    gameDate: rolled.gameDate,
+    season: rolled.currentSeason,
+    lastSavedAtIso: '2026-11-16T01:00:00Z',
+    randomSeed: rolled.randomSeed,
+    controlledClubId: myClubId,
+    careerState: careerStateS2,
+  });
+
+  const s2ScheduledCountAfter = rehydratedS2.fixtures.filter((f) => f.status === 'Scheduled').length;
+  assert.equal(
+    s2ScheduledCountAfter,
+    s2ScheduledCountBefore,
+    'Season 2 scheduled fixtures must be 100% restored upon loading save'
+  );
+});

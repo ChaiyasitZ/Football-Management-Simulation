@@ -30,11 +30,13 @@ import {
   getClubSupporterConfidence,
   getDeadlineDayBargains,
   getFanSocialFeed,
+  getNextAvailableManualSaveSlot,
   isTransferDeadlineWindow,
   NATION_YOUTH_RATINGS,
   NATIONAL_TEAMS_CATALOG,
   SaveSlotMeta,
   simulateExhibitionClash,
+  STANDARD_SAVE_SLOTS,
 } from '../engine/worldSimulationService';
 import {
   derivePlayerTraitsFromAttributes,
@@ -4081,6 +4083,7 @@ export const ClubStaffYouthWorldView: React.FC<{
   onPromoteYouth: (playerId: string) => void;
   onSaveToSlot: (slotId: string) => void;
   onLoadSlot: (slotId: string) => void;
+  onDeleteSlot?: (slotId: string) => void;
   onAdjustBudgetSplit?: (transferSharePct: number) => void;
   onUpgradeAcademyFacility?: (
     facilityType: 'juniorCoaching' | 'youthRecruitment' | 'trainingFacilities' | 'youthFacilities'
@@ -4118,6 +4121,8 @@ export const ClubStaffYouthWorldView: React.FC<{
     reputation?: number;
   }) => void;
   onImportDatabaseJson?: (rawJson: string) => void;
+  onStudyCoachingLicense?: () => void;
+  onNegotiateBoardAmbition?: (ambition: 'Conservative' | 'Balanced' | 'Ambitious') => void;
 }> = ({
   mode,
   subView = 'all',
@@ -4142,6 +4147,7 @@ export const ClubStaffYouthWorldView: React.FC<{
   onPromoteYouth,
   onSaveToSlot,
   onLoadSlot,
+  onDeleteSlot,
   onAdjustBudgetSplit,
   onUpgradeAcademyFacility,
   onAssignMentor,
@@ -4161,6 +4167,8 @@ export const ClubStaffYouthWorldView: React.FC<{
   onCreateCustomPlayer,
   onLiveEditClub,
   onImportDatabaseJson,
+  onStudyCoachingLicense,
+  onNegotiateBoardAmbition,
 }) => {
   const { lang, setLang, tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -4330,6 +4338,101 @@ export const ClubStaffYouthWorldView: React.FC<{
                   </button>
                 )}
               </div>
+
+              {/* Stage 3 Pillar 4: Board Season Vision & Ambition Negotiation Card */}
+              {onNegotiateBoardAmbition && (
+                <div
+                  data-testid="board-vision-negotiation-card"
+                  className="mt-3 p-3.5 rounded-xl bg-slate-950 border border-emerald-500/40 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-emerald-400">
+                      🎯 {tr('Board Season Vision & Budget Ambition Negotiation', 'เจรจาเป้าหมายฤดูกาลกับบอร์ดบริหารเพื่อแลกงบซื้อขายเพิ่ม')}
+                    </span>
+                    <span className="text-[11px] font-mono text-amber-300">
+                      {tr('Current:', 'เป้าหมายปัจจุบัน:')} {club.boardExpectations.seasonAmbition || 'Balanced'} (Top {club.boardExpectations.targetLeaguePosition})
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    {(
+                      [
+                        {
+                          id: 'Conservative',
+                          title: tr('🛡️ Conservative', '🛡️ เป้าหมายปลอดภัย'),
+                          desc: tr('-8% Budget · High Job Security', 'ลดงบ -8% · ความกดดันต่ำ'),
+                        },
+                        {
+                          id: 'Balanced',
+                          title: tr('⚖️ Balanced Vision', '⚖️ เป้าหมายมาตรฐาน'),
+                          desc: tr('Standard Budget & Target', 'งบประมาณและอันดับตามเกณฑ์'),
+                        },
+                        {
+                          id: 'Ambitious',
+                          title: tr('🔥 Ambitious Title Push', '🔥 เดิมพันเป้าหมายสูง (+20% งบ)'),
+                          desc: tr('+20% Transfer & +12% Wage Budget', 'รับงบซื้อขายเพิ่ม +20% และเพดานค่าเหนื่อย +12%'),
+                        },
+                      ] as const
+                    ).map((amb) => {
+                      const isCurrent = (club.boardExpectations.seasonAmbition || 'Balanced') === amb.id;
+                      return (
+                        <button
+                          key={amb.id}
+                          type="button"
+                          data-testid={`board-ambition-${amb.id.toLowerCase()}-btn`}
+                          onClick={() => onNegotiateBoardAmbition(amb.id)}
+                          className={`p-2.5 rounded-lg border text-left cursor-pointer transition-colors ${
+                            isCurrent
+                              ? 'bg-emerald-500/20 border-emerald-400 text-white font-semibold'
+                              : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
+                          }`}
+                        >
+                          <div className="font-bold">{amb.title}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{amb.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Stage 3 Pillar 4: Manager RPG Coaching License Progression Card (also accessible in Club Boardroom) */}
+              {onStudyCoachingLicense && (() => {
+                const currentBadge = world.manager.coachingBadge || 'National A';
+                const studying = world.manager.studyingBadge;
+                return (
+                  <div
+                    data-testid="club-coaching-badge-card"
+                    className="mt-3 p-3.5 rounded-xl bg-slate-950 border border-sky-500/40 flex flex-wrap items-center justify-between gap-3 text-xs"
+                  >
+                    <div>
+                      <div className="font-semibold text-sky-400">
+                        🎓 {tr('Manager Coaching License:', 'ใบอนุญาตโค้ช (Coaching Badge):')}{' '}
+                        <span className="text-white font-bold">{currentBadge}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {studying
+                          ? tr(
+                              `Studying ${studying.targetBadge} (Completes ${studying.completionDate})`,
+                              `กำลังอบรม ${studying.targetBadge} (จบหลักสูตร ${studying.completionDate})`
+                            )
+                          : tr(
+                              'Continental B (+15% Tactical Familiarity) · Continental A (+10% Training) · UEFA Pro (+15% Star Patience)',
+                              'อัปเกรดไลเซนส์โค้ชเพื่อปลดล็อกโบนัสความเข้าใจแผน การฝึกซ้อม และการเจรจาซูเปอร์สตาร์'
+                            )}
+                      </div>
+                    </div>
+                    {currentBadge !== 'UEFA Pro' && !studying && (
+                      <button
+                        type="button"
+                        onClick={onStudyCoachingLicense}
+                        className="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold cursor-pointer"
+                      >
+                        🎓 {tr('Study Next Coaching Badge', 'ลงเรียนไลเซนส์โค้ชขั้นถัดไป')}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Checkpoint 14A: Pre-Season Commercial Tours (Asia / USA / Middle East) */}
               {onOrganizePreSeasonTour && (
@@ -5998,30 +6101,126 @@ export const ClubStaffYouthWorldView: React.FC<{
                 <span className="font-mono tabular-nums text-emerald-400 font-bold">{winRate}%</span>
               </div>
             </div>
+
+            {/* Stage 3 Pillar 4: Manager RPG Coaching License Progression Tree */}
+            <div
+              data-testid="coaching-badge-progression-card"
+              className="pt-3 border-t border-slate-800 space-y-3 text-xs"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-amber-400">
+                    🎓 {tr('UEFA Coaching License RPG Progression', 'สายพัฒนาใบอนุญาตโค้ช (Coaching Badges RPG)')}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    {tr(
+                      'Club-sponsored coaching courses unlock permanent tactical, training, and negotiation bonuses.',
+                      'การสอบเลื่อนขั้นใบอนุญาตโค้ชช่วยปลดล็อกโบนัสถาวรด้านแท็กติก การซ้อมดาวรุ่ง และการเจรจาสัญญา'
+                    )}
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono font-bold">
+                  {mgr.coachingBadge || 'National A'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(
+                  [
+                    {
+                      tier: 'National A',
+                      perk: tr('Base License', 'ระดับเริ่มต้น'),
+                    },
+                    {
+                      tier: 'Continental B',
+                      perk: tr('+15% Tactical Familiarity', '+15% ความเข้าใจแผน'),
+                    },
+                    {
+                      tier: 'Continental A',
+                      perk: tr('+10% Youth/Training Growth', '+10% พัฒนาการฝึกซ้อม'),
+                    },
+                    {
+                      tier: 'UEFA Pro',
+                      perk: tr('+15% Star Patience & Rep', '+15% บารมีเจรจาสตาร์'),
+                    },
+                  ] as const
+                ).map((b, idx) => {
+                  const tiers = ['National A', 'Continental B', 'Continental A', 'UEFA Pro'];
+                  const curIdx = tiers.indexOf(mgr.coachingBadge || 'National A');
+                  const unlocked = idx <= curIdx;
+                  return (
+                    <div
+                      key={b.tier}
+                      className={`p-2.5 rounded-xl border ${
+                        unlocked
+                          ? 'bg-emerald-500/15 border-emerald-500/50 text-white'
+                          : 'bg-slate-950 border-slate-800 text-slate-400'
+                      }`}
+                    >
+                      <div className="font-mono font-bold text-[11px] flex items-center justify-between">
+                        <span>{b.tier}</span>
+                        <span>{unlocked ? '✓' : '🔒'}</span>
+                      </div>
+                      <div className="text-[10px] text-emerald-300 mt-1">{b.perk}</div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {mgr.studyingBadge ? (
+                <div className="p-2.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-200 font-mono flex items-center justify-between">
+                  <span>
+                    📚 {tr('Currently Studying:', 'กำลังอบรมหลักสูตร:')} <strong>{mgr.studyingBadge.targetBadge}</strong>
+                  </span>
+                  <span>
+                    {tr('Completes:', 'จบหลักสูตร:')} {mgr.studyingBadge.completionDate}
+                  </span>
+                </div>
+              ) : (
+                (mgr.coachingBadge || 'National A') !== 'UEFA Pro' &&
+                onStudyCoachingLicense && (
+                  <button
+                    type="button"
+                    data-testid="study-coaching-badge-btn"
+                    onClick={onStudyCoachingLicense}
+                    className="w-full py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold cursor-pointer transition-colors"
+                  >
+                    🎓 {tr('Enroll in Next UEFA Coaching License Course (Club Sponsored)', 'ลงทะเบียนเรียนใบอนุญาตโค้ชระดับถัดไป (สโมสรออกค่าใช้จ่าย)')}
+                  </button>
+                )
+              )}
+            </div>
           </div>
         </div>
         )}
 
         {showSaves && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
+        <div
+          data-testid="cloud-saves-panel"
+          className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="text-base font-display font-bold text-white">
-                {tr('Google / Gmail Cloud Saves', 'จัดการเซฟเกมบนคลาวด์ (Google / Gmail Cloud Saves)')}
+                {tr(
+                  'Career Save Slots (Local + Google Cloud Sync)',
+                  'จัดการเซฟเกม (บันทึกในเครื่อง + ซิงก์ Google Cloud Firestore)'
+                )}
               </h3>
               <p className="text-[11px] text-slate-400">
                 {tr(
-                  'Save and sync your career progress via Cloud Firestore.',
-                  'บันทึกและซิงก์ข้อมูลเซฟเกมผ่าน Cloud Firestore โดยไม่ใช้ localStorage'
+                  'Instant local persistence with automatic Cloud Firestore sync when signed in.',
+                  'บันทึกข้อมูลลงเครื่องทันที พร้อมซิงก์ขึ้น Cloud Firestore อัตโนมัติเมื่อล็อกอิน Gmail'
                 )}
               </p>
             </div>
             <button
               type="button"
-              onClick={() => onSaveToSlot(`slot_${Date.now()}`)}
+              data-testid="save-new-slot-btn"
+              onClick={() => onSaveToSlot(getNextAvailableManualSaveSlot(saveSlots))}
               className="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
             >
-              {tr('+ Save New Slot', '+ บันทึกเซฟเกมใหม่ (Save Career)')}
+              {tr('+ Save New Slot', '+ บันทึกเซฟเกมลงช่องถัดไป (Save Career)')}
             </button>
           </div>
 
@@ -6032,8 +6231,8 @@ export const ClubStaffYouthWorldView: React.FC<{
                 <div>
                   <div className="text-emerald-400 font-semibold">
                     {tr(
-                      'Google / Gmail Connected (Cloud Firestore Active)',
-                      'เชื่อมต่อบัญชี Google / Gmail แล้ว (Cloud Firestore Active)'
+                      'Google / Gmail Connected (Hybrid Local + Cloud Sync Active)',
+                      'เชื่อมต่อบัญชี Google / Gmail แล้ว (ซิงก์ Local + Cloud อัตโนมัติ)'
                     )}
                   </div>
                   <div className="text-slate-300 font-mono mt-0.5">
@@ -6052,12 +6251,12 @@ export const ClubStaffYouthWorldView: React.FC<{
               <>
                 <div>
                   <div className="text-amber-300 font-semibold">
-                    {tr('Not Signed in with Google / Gmail', 'ยังไม่ได้เข้าสู่ระบบด้วย Google / Gmail')}
+                    {tr('Local Save Mode Active (Not Signed in with Gmail)', 'โหมดเซฟในเครื่อง (ยังไม่ได้เชื่อมต่อ Gmail Cloud)')}
                   </div>
                   <div className="text-slate-400 mt-0.5">
                     {tr(
-                      'Sign in with Gmail to save and load your careers across devices on Cloud Firestore.',
-                      'เข้าสู่ระบบด้วย Gmail เพื่อบันทึกและโหลดเซฟเกมของคุณข้ามอุปกรณ์บน Cloud Firestore'
+                      'Your saves are stored safely in this browser. Sign in with Gmail to sync across devices.',
+                      'เซฟเกมถูกบันทึกไว้ในเบราว์เซอร์นี้แล้ว สามารถเข้าสู่ระบบด้วย Gmail เพื่อซิงก์ข้ามอุปกรณ์ได้'
                     )}
                   </div>
                 </div>
@@ -6073,41 +6272,81 @@ export const ClubStaffYouthWorldView: React.FC<{
           </div>
 
           <div className="space-y-2">
-            {['slot_autosave', 'slot_1', 'slot_2'].map((slotKey) => {
+            {[
+              ...STANDARD_SAVE_SLOTS,
+              ...saveSlots
+                .map((s) => s.slotId)
+                .filter(
+                  (id) => !(STANDARD_SAVE_SLOTS as readonly string[]).includes(id)
+                ),
+            ].map((slotKey) => {
               const existing = saveSlots.find((s) => s.slotId === slotKey);
+              const slotTitle =
+                slotKey === 'slot_autosave'
+                  ? tr('Auto-Save Slot', 'ช่องเซฟอัตโนมัติ (Auto-Save)')
+                  : slotKey.startsWith('slot_') && slotKey.length <= 7
+                    ? tr(
+                        `Save Slot #${slotKey.replace('slot_', '')}`,
+                        `ช่องเซฟที่ #${slotKey.replace('slot_', '')}`
+                      )
+                    : `${tr('Custom Save', 'เซฟเพิ่มเติม')} (${slotKey})`;
               return (
                 <div
                   key={slotKey}
-                  className="flex items-center justify-between p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+                  data-testid={`save-slot-row-${slotKey}`}
+                  className={`flex flex-wrap items-center justify-between gap-2 p-3 rounded-lg border text-xs ${
+                    existing
+                      ? 'bg-slate-950 border-emerald-500/30'
+                      : 'bg-slate-950/60 border-slate-800'
+                  }`}
                 >
                   <div>
-                    <div className="font-semibold text-white">
-                      {slotKey === 'slot_autosave'
-                        ? 'Auto-Save Slot (Cloud)'
-                        : `Save Slot ${slotKey.replace('slot_', '#')} (Cloud)`}
+                    <div className="font-semibold text-white flex items-center gap-2">
+                      <span>{slotTitle}</span>
+                      {existing && (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 font-mono text-[10px]">
+                          {existing.season}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-slate-400 font-mono tabular-nums">
+                    <div className="text-slate-400 font-mono tabular-nums mt-0.5">
                       {existing
-                        ? `${existing.clubName} · ${existing.gameDate}`
-                        : tr('Empty Slot', 'ช่องว่าง (Empty Slot)')}
+                        ? `${existing.clubName} · ${existing.managerName} · ${existing.gameDate}`
+                        : tr('Empty Slot — Click Save to store current career', 'ช่องว่าง — กดปุ่มบันทึกเพื่อเซฟเกมปัจจุบันลงช่องนี้')}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      data-testid={`save-slot-btn-${slotKey}`}
                       onClick={() => onSaveToSlot(slotKey)}
                       className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded cursor-pointer"
                     >
-                      {tr('Overwrite', 'บันทึกทับ')}
+                      {existing
+                        ? tr('Overwrite', 'บันทึกทับ')
+                        : tr('Save Here', 'บันทึกลงช่องนี้')}
                     </button>
                     {existing && (
-                      <button
-                        type="button"
-                        onClick={() => onLoadSlot(slotKey)}
-                        className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 rounded cursor-pointer"
-                      >
-                        {tr('Load', 'โหลด')}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          data-testid={`load-slot-btn-${slotKey}`}
+                          onClick={() => onLoadSlot(slotKey)}
+                          className="px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 font-semibold rounded cursor-pointer"
+                        >
+                          {tr('Load', 'โหลดเซฟ')}
+                        </button>
+                        {onDeleteSlot && (
+                          <button
+                            type="button"
+                            data-testid={`delete-slot-btn-${slotKey}`}
+                            onClick={() => onDeleteSlot(slotKey)}
+                            className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500 text-rose-300 hover:text-slate-950 rounded cursor-pointer"
+                          >
+                            {tr('Delete', 'ลบ')}
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

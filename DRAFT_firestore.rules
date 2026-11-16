@@ -114,7 +114,19 @@ service cloud.firestore {
           'scoutAssignments',
           'scoutReports',
           'transactions',
-          'inbox'
+          'inbox',
+          'mentoringGroups',
+          'trophyHistory',
+          'seasonAwardsHistory',
+          'controlledNationalTeamCode',
+          'scenarioChallenge',
+          'customClubConfig',
+          'lastMindGameMatchday',
+          'socialFeed',
+          'buyBackClauses',
+          'lastSquadMeetingDate',
+          'scheduledExtraFixtures',
+          'uefaPots'
         ]) &&
         cs.processedDates is list &&
         cs.processedDates.size() <= 400 &&

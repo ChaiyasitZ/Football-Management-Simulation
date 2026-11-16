@@ -29,6 +29,7 @@ interface SquadViewProps {
   onTogglePlayInReserves?: (playerId: string) => void;
   onUpdateSquadStatus?: (playerId: string, status: Player['squadStatus']) => void;
   onChangeShirtNumber?: (playerId: string, shirtNumber: number) => void;
+  onHoldSquadMeeting?: (tone: 'RALLY_MORALE' | 'DEMAND_STANDARDS' | 'CALM_PRESSURE') => void;
 }
 
 export function getPositionGroup(pos: string): PositionGroup {
@@ -48,6 +49,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
   onTogglePlayInReserves,
   onUpdateSquadStatus,
   onChangeShirtNumber,
+  onHoldSquadMeeting,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -57,6 +59,8 @@ export const SquadView: React.FC<SquadViewProps> = ({
   const [sortBy, setSortBy] = useState<'ca' | 'fitness' | 'sharpness' | 'morale' | 'age' | 'wage' | 'value' | 'rating'>('ca');
   const [viewMode, setViewMode] = useState<'table' | 'planner' | 'dynamics'>(initialViewMode);
   const [tablePreset, setTablePreset] = useState<'ALL' | 'OVERVIEW' | 'CONDITION' | 'CONTRACT' | 'STATS'>('ALL');
+  const [squadMeetingOpen, setSquadMeetingOpen] = useState<boolean>(false);
+  const [meetingOutcome, setMeetingOutcome] = useState<string | null>(null);
 
   React.useEffect(() => {
     setViewMode(initialViewMode);
@@ -306,6 +310,20 @@ export const SquadView: React.FC<SquadViewProps> = ({
               {tr('🤝 Squad Dynamics & Hierarchy', '🤝 ห้องแต่งตัว & อิทธิพล (Dynamics)')}
             </button>
           </div>
+
+          {onHoldSquadMeeting && (
+            <button
+              type="button"
+              data-testid="hold-squad-meeting-btn"
+              onClick={() => {
+                setMeetingOutcome(null);
+                setSquadMeetingOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-semibold text-xs cursor-pointer"
+            >
+              {tr('📢 Hold Squad Meeting', '📢 เรียกประชุมทีมชุดใหญ่')}
+            </button>
+          )}
 
           <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
             {(['ALL', 'GK', 'DEF', 'MID', 'ATT'] as const).map((grp) => (
@@ -1236,6 +1254,113 @@ export const SquadView: React.FC<SquadViewProps> = ({
           </table>
         </div>
       </div>
+      )}
+
+      {/* Emergency Squad Team Meeting Modal (Stage 3 Pillar 3) */}
+      {squadMeetingOpen && onHoldSquadMeeting && (
+        <div
+          data-testid="squad-meeting-modal"
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-amber-500/50 shadow-2xl p-5 space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-display font-bold text-white">
+                  📢 {tr('Emergency First-Team Squad Meeting', 'เรียกประชุมใหญ่นักเตะทั้งสโมสร')}
+                </h3>
+                <p className="text-slate-400">
+                  {tr(
+                    `Address the entire ${club.name} dressing room. Can be called once every 21 days.`,
+                    `พูดคุยปลุกใจหรือตั้งมาตรฐานกับห้องแต่งตัว ${club.name} (จัดได้ทุกๆ 21 วัน)`
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="close-squad-meeting-btn"
+                onClick={() => setSquadMeetingOpen(false)}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(
+                [
+                  {
+                    id: 'RALLY_MORALE',
+                    title: tr(
+                      '🔥 Rally Belief & Unite Dressing Room ("We fight together!")',
+                      '🔥 ปลุกขวัญกำลังใจทั้งทีม ("เราจะสู้ไปด้วยกันและกลับมาแข็งแกร่งกว่าเดิม!")'
+                    ),
+                    desc: tr(
+                      'Boosts squad-wide Morale (+10 to +12) and clears minor dressing-room doubts.',
+                      'เพิ่มขวัญกำลังใจนักเตะชุดใหญ่ทุกคน (+10 ถึง +12) และปลุกสปิริตในทีม'
+                    ),
+                    feedback: tr(
+                      `The ${club.shortName} captain and senior leaders applauded your speech. Squad morale has surged across the dressing room!`,
+                      `กัปตันทีมและกลุ่มแกนนำปรบมือขานรับคำพูดของคุณ ขวัญกำลังใจของนักเตะทั้งทีมพุ่งสูงขึ้นทันที!`
+                    ),
+                  },
+                  {
+                    id: 'DEMAND_STANDARDS',
+                    title: tr(
+                      '⚡ Demand Elite Championship Standards ("No excuses!")',
+                      '⚡ เรียกร้องมาตรฐานระดับแชมป์ ("สโมสรแห่งนี้ไม่ยอมรับความเหยาะแหยะ!")'
+                    ),
+                    desc: tr(
+                      'Increases Match Sharpness (+5%) & Morale (+8) for determined players.',
+                      'เพิ่มความฟิตแมตช์ (+5%) และความมุ่งมั่นให้กับขุมกำลังชุดใหญ่'
+                    ),
+                    feedback: tr(
+                      `Players nodded with fierce focus. Training intensity and match sharpness have stepped up across the squad.`,
+                      `นักเตะทุกคนพยักหน้ารับด้วยแววตามุ่งมั่น ความตื่นตัวและความเฉียบคมในการซ้อมเพิ่มขึ้นทั้งทีม`
+                    ),
+                  },
+                  {
+                    id: 'CALM_PRESSURE',
+                    title: tr(
+                      '🛡️ Remove Media Pressure ("Play your natural game, pressure is on me")',
+                      '🛡️ ลดความกดดันจากสื่อ ("ลงไปเล่นให้เป็นธรรมชาติ ความกดดันทั้งหมดบอสรับไว้เอง")'
+                    ),
+                    desc: tr(
+                      'Steadies nerves before big title or knockout fixtures (+9 Morale).',
+                      'ช่วยให้นักเตะผ่อนคลายก่อนเกมใหญ่หรือศึกชี้ชะตา (+9 ขวัญกำลังใจ)'
+                    ),
+                    feedback: tr(
+                      `A visible weight lifted off the players' shoulders. The squad feels composed and ready.`,
+                      `ความตึงเครียดในห้องแต่งตัวผ่อนคลายลงอย่างเห็นได้ชัด นักเตะพร้อมลงสนามด้วยความมั่นใจ`
+                    ),
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  data-testid={`squad-meeting-tone-${opt.id.toLowerCase()}`}
+                  onClick={() => {
+                    onHoldSquadMeeting(opt.id);
+                    setMeetingOutcome(opt.feedback);
+                  }}
+                  className="w-full p-3 rounded-xl bg-slate-950 hover:bg-amber-500/15 border border-slate-800 hover:border-amber-500/40 text-left space-y-1 cursor-pointer transition-colors"
+                >
+                  <div className="font-semibold text-white">{opt.title}</div>
+                  <div className="text-[11px] text-slate-400">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            {meetingOutcome && (
+              <div
+                data-testid="squad-meeting-outcome"
+                className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 font-medium"
+              >
+                📢 {meetingOutcome}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

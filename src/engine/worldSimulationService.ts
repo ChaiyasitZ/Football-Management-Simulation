@@ -3228,10 +3228,18 @@ export function processEndOfSeasonRollover(
 }
 
 /**
- * Multi-Slot SaveGame Service (Google / Gmail Auth + Cloud Firestore Native Maps, Zero localStorage)
+ * Multi-Slot SaveGame Service (Hybrid LocalStorage + Google/Gmail Cloud Firestore Sync)
  */
 const inMemorySaveSlots: Record<string, WorldState> = {};
 let inMemorySlotMetas: SaveSlotMeta[] = [];
+
+export const STANDARD_SAVE_SLOTS = [
+  'slot_autosave',
+  'slot_1',
+  'slot_2',
+  'slot_3',
+  'slot_4',
+] as const;
 
 export interface SaveSlotMeta {
   slotId: string;
@@ -3241,6 +3249,21 @@ export interface SaveSlotMeta {
   gameDate: string;
   season: string;
   lastSavedAt: string;
+}
+
+export function getNextAvailableManualSaveSlot(metas?: SaveSlotMeta[]): string {
+  const list = metas ?? getSavedSlotsList();
+  const manualSlots = ['slot_1', 'slot_2', 'slot_3', 'slot_4'];
+  const usedIds = new Set(list.map((m) => m.slotId));
+  for (const slotId of manualSlots) {
+    if (!usedIds.has(slotId)) {
+      return slotId;
+    }
+  }
+  const manualMetas = list
+    .filter((m) => manualSlots.includes(m.slotId))
+    .sort((a, b) => a.lastSavedAt.localeCompare(b.lastSavedAt));
+  return manualMetas[0]?.slotId || 'slot_1';
 }
 
 export interface PlayerDelta {
@@ -3255,6 +3278,13 @@ export interface PlayerDelta {
   loanListed: boolean;
   injuryStatus: Player['injuryStatus'];
   stats: Player['stats'];
+  shirtNumber?: number;
+  squadStatus?: Player['squadStatus'];
+  consecutiveBenched?: number;
+  isRegistered?: boolean;
+  playInReserves?: boolean;
+  individualTraining?: Player['individualTraining'];
+  askingPrice?: number;
 }
 
 export interface CompactFixtureScore {
@@ -3285,6 +3315,10 @@ export interface CareerStateMap {
   customClubConfig?: CustomClubConfig | null;
   lastMindGameMatchday?: number;
   socialFeed?: FanSocialPost[];
+  buyBackClauses?: WorldState['buyBackClauses'];
+  lastSquadMeetingDate?: string;
+  scheduledExtraFixtures?: Fixture[];
+  uefaPots?: Record<UefaCompetitionId, string[][]>;
 }
 
 export interface CareerSaveDocument {
@@ -3318,6 +3352,56 @@ function sanitizeForFirestore<T>(value: T): T {
     }
   }
   return result as T;
+}
+
+function buildSeasonBaseFixturesForRehydration(
+  randomSeed: number,
+  seasonStr: string,
+  clubs: Record<string, Club>,
+  uefaPots: Record<UefaCompetitionId, string[][]>
+): Fixture[] {
+  const startYear = Number(seasonStr.slice(0, 4)) || 2025;
+  const rng = new SeededRNG(randomSeed + startYear);
+  let nextFixtures: Fixture[] = [];
+
+  for (const league of Object.values(LEAGUES_CONFIG)) {
+    const clubsInLeague = Object.values(clubs).filter((c) => c.leagueId === league.id);
+    const clubIds = clubsInLeague.map((c) => c.id);
+    const sched = generateLeagueSchedule(
+      league,
+      clubIds,
+      seasonStr,
+      `${startYear}-08-15`,
+      rng
+    );
+    nextFixtures = [...nextFixtures, ...sched];
+
+    if (league.tier !== 2) {
+      const cupFixtures = generateInitialDomesticCupFixtures(
+        league.cupId,
+        clubsInLeague,
+        seasonStr,
+        `${startYear}-10-28`
+      );
+      nextFixtures = [...nextFixtures, ...cupFixtures];
+    }
+  }
+
+  for (const compId of ['UEFA_UCL', 'UEFA_UEL', 'UEFA_UECL'] as UefaCompetitionId[]) {
+    if (uefaPots[compId] && uefaPots[compId].length > 0) {
+      const swissFixtures = generateUefaSwissSchedule(compId, uefaPots[compId], seasonStr, rng);
+      nextFixtures = [...nextFixtures, ...swissFixtures];
+    }
+  }
+
+  const nextEuroFixtures = generateEuropeanNationsCupFixtures(
+    seasonStr,
+    startYear + 1,
+    clubs
+  );
+  nextFixtures = [...nextFixtures, ...nextEuroFixtures];
+  nextFixtures.sort((a, b) => a.kickoffDate.localeCompare(b.kickoffDate));
+  return nextFixtures;
 }
 
 export function compactWorldStateForStorage(state: WorldState): WorldState {
@@ -3366,10 +3450,12 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
   const baseline = createInitialWorldState(
     compacted.randomSeed,
     compacted.manager,
-    controlledId
+    controlledId,
+    compacted.scenarioChallenge || 'STANDARD',
+    compacted.customClubConfig || null
   );
 
-  // 1. Only store controlledClub + clubs whose leagueId or facilities changed (cap non-controlled at 10)
+  // 1. Store controlledClub + clubs whose leagueId, pointsDeduction, or facilities changed
   const modifiedClubs: Record<string, Club> = {};
   if (userClub) {
     modifiedClubs[controlledId] = userClub;
@@ -3379,14 +3465,15 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     if (id === controlledId) continue;
     const baseClub = baseline.clubs[id];
     const leagueChanged = !baseClub || club.leagueId !== baseClub.leagueId;
+    const deductionChanged = (club.pointsDeduction || 0) !== (baseClub?.pointsDeduction || 0);
     const facilityChanged =
       !baseClub ||
       club.trainingFacilities !== baseClub.trainingFacilities ||
       club.youthFacilities !== baseClub.youthFacilities ||
       club.finances.transferBudget !== baseClub.finances.transferBudget;
-    if (leagueChanged || (facilityChanged && extraClubsCount < 10)) {
+    if (leagueChanged || deductionChanged || (facilityChanged && extraClubsCount < 10)) {
       modifiedClubs[id] = club;
-      if (!leagueChanged) extraClubsCount++;
+      if (!leagueChanged && !deductionChanged) extraClubsCount++;
     }
   }
 
@@ -3405,21 +3492,40 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     }
   }
 
-  // 3. Completed fixtures: full Fixture for user matches, compact {h, a} for completed AI matches
-  const baselineFixtureIds = new Set(baseline.fixtures.map((bf) => bf.id));
+  // 3. Determine base fixtures for the active season (Season 1 vs Season 2+)
+  const activeUefaPots = compacted.uefaPots || baseline.uefaPots!;
+  const seasonBaseFixtures =
+    compacted.currentSeason === baseline.currentSeason
+      ? baseline.fixtures
+      : buildSeasonBaseFixturesForRehydration(
+          compacted.randomSeed,
+          compacted.currentSeason,
+          compacted.clubs,
+          activeUefaPots
+        );
+  const seasonBaseFixtureIds = new Set(seasonBaseFixtures.map((bf) => bf.id));
+
+  // Completed fixtures + Scheduled extra/knockout fixtures
   const completedFixtures: Record<string, Fixture | CompactFixtureScore> = {};
+  const scheduledExtraFixtures: Fixture[] = [];
+
   for (const f of compacted.fixtures) {
+    if (f.status === 'Scheduled') {
+      if (!seasonBaseFixtureIds.has(f.id) && scheduledExtraFixtures.length < 120) {
+        scheduledExtraFixtures.push(f);
+      }
+      continue;
+    }
     if (f.status !== 'Completed' || !f.result) continue;
     const isUserMatch =
       f.homeClubId === controlledId || f.awayClubId === controlledId;
     if (isUserMatch) {
       completedFixtures[f.id] = f;
-    } else if (baselineFixtureIds.has(f.id)) {
-      // Store compact 2-field score for user's league or cup matches (or up to 600 fixtures total)
+    } else if (seasonBaseFixtureIds.has(f.id)) {
       if (
         f.competitionId === userLeagueId ||
         String(f.competitionId).endsWith('_CUP') ||
-        String(f.competitionId) === 'EUR_CL' ||
+        String(f.competitionId).startsWith('UEFA_') ||
         Object.keys(completedFixtures).length < 600
       ) {
         completedFixtures[f.id] = {
@@ -3432,7 +3538,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     }
   }
 
-  // 4. Modified players & bounded playerDiffs (stay well below Firestore 1MB limit across 15 leagues)
+  // 4. Modified players & bounded playerDiffs (including shirtNumber, squadStatus, consecutiveBenched, etc.)
   const modifiedPlayers: Record<string, Player> = {};
   const diffCandidates: Array<{ id: string; priority: number; delta: PlayerDelta }> = [];
   const shortlistSet = new Set(compacted.shortlistPlayerIds);
@@ -3462,10 +3568,21 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
       p.injuryStatus.isInjured !== basePlayer.injuryStatus.isInjured ||
       p.transferListed !== basePlayer.transferListed ||
       p.loanListed !== basePlayer.loanListed ||
+      p.shirtNumber !== basePlayer.shirtNumber ||
+      p.squadStatus !== basePlayer.squadStatus ||
+      (p.consecutiveBenched || 0) > 0 ||
       (inUserLeague && p.stats.appearances > 0);
 
     if (!hasNotableChange && !isTracked) continue;
-    if (!inUserLeague && !isTracked && p.stats.goals < 2 && p.stats.assists < 2 && !p.transferListed) {
+    if (
+      !inUserLeague &&
+      !isTracked &&
+      p.stats.goals < 2 &&
+      p.stats.assists < 2 &&
+      !p.transferListed &&
+      p.shirtNumber === basePlayer.shirtNumber &&
+      p.squadStatus === basePlayer.squadStatus
+    ) {
       continue;
     }
 
@@ -3491,6 +3608,13 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
         loanListed: p.loanListed,
         injuryStatus: p.injuryStatus,
         stats: p.stats,
+        shirtNumber: p.shirtNumber,
+        squadStatus: p.squadStatus,
+        consecutiveBenched: p.consecutiveBenched,
+        isRegistered: p.isRegistered,
+        playInReserves: p.playInReserves,
+        individualTraining: p.individualTraining,
+        askingPrice: p.askingPrice,
       },
     });
   }
@@ -3507,7 +3631,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     limitedScoutReports[k] = v;
   }
 
-  const dehydrated = sanitizeForFirestore({
+  const dehydrated = sanitizeForFirestore<CareerStateMap>({
     processedDates: compacted.processedDates.slice(-60),
     manager: compacted.manager,
     standings: compacted.standings,
@@ -3530,6 +3654,10 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     customClubConfig: compacted.customClubConfig || null,
     lastMindGameMatchday: compacted.lastMindGameMatchday || 0,
     socialFeed: (compacted.socialFeed || []).slice(0, 15),
+    buyBackClauses: (compacted.buyBackClauses || []).slice(0, 25),
+    lastSquadMeetingDate: compacted.lastSquadMeetingDate || '',
+    scheduledExtraFixtures,
+    uefaPots: activeUefaPots,
   });
 
   // Safety guard: guarantee JSON payload is under 300KB so Firestore BSON/proto never approaches 1,048,576 bytes
@@ -3603,10 +3731,21 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     rehydratedPlayers[id] = fullPlayer;
   }
 
+  const rehydratedUefaPots = cs.uefaPots || baseline.uefaPots!;
+  const seasonBaseFixtures =
+    docData.season === baseline.currentSeason
+      ? baseline.fixtures
+      : buildSeasonBaseFixturesForRehydration(
+          docData.randomSeed,
+          docData.season,
+          rehydratedClubs,
+          rehydratedUefaPots
+        );
+
   const completedFixturesMap = cs.completedFixtures || {};
-  const baselineFixtureIds = new Set<string>();
-  const rehydratedFixtures: Fixture[] = baseline.fixtures.map((f): Fixture => {
-    baselineFixtureIds.add(f.id);
+  const baseFixtureIds = new Set<string>();
+  const rehydratedFixtures: Fixture[] = seasonBaseFixtures.map((f): Fixture => {
+    baseFixtureIds.add(f.id);
     const saved = completedFixturesMap[f.id];
     if (!saved) return f;
     if ('h' in saved && typeof saved.h === 'number') {
@@ -3629,10 +3768,20 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
   });
 
   for (const [fid, saved] of Object.entries(completedFixturesMap)) {
-    if (!baselineFixtureIds.has(fid) && 'status' in saved) {
+    if (!baseFixtureIds.has(fid) && 'status' in saved) {
       rehydratedFixtures.push(saved as Fixture);
+      baseFixtureIds.add(fid);
     }
   }
+
+  for (const extraSched of cs.scheduledExtraFixtures || []) {
+    if (extraSched && extraSched.id && !baseFixtureIds.has(extraSched.id)) {
+      rehydratedFixtures.push(extraSched);
+      baseFixtureIds.add(extraSched.id);
+    }
+  }
+
+  rehydratedFixtures.sort((a, b) => a.kickoffDate.localeCompare(b.kickoffDate));
 
   const rehydratedUefaStandings: Record<UefaCompetitionId, LeagueStanding[]> = {
     UEFA_UCL: [],
@@ -3640,7 +3789,7 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     UEFA_UECL: [],
   };
   for (const uefaId of Object.keys(UEFA_COMPETITIONS_CONFIG) as UefaCompetitionId[]) {
-    const participantIds = baseline.uefaPots?.[uefaId]?.flat() || [];
+    const participantIds = rehydratedUefaPots?.[uefaId]?.flat() || [];
     rehydratedUefaStandings[uefaId] = recomputeUefaStandings(
       uefaId,
       docData.season,
@@ -3670,7 +3819,7 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
       ...(cs.standings || {}),
     },
     uefaStandings: rehydratedUefaStandings,
-    uefaPots: baseline.uefaPots,
+    uefaPots: rehydratedUefaPots,
     transferOffers: cs.transferOffers || [],
     shortlistPlayerIds: cs.shortlistPlayerIds || [],
     scoutAssignments: cs.scoutAssignments || [],
@@ -3688,6 +3837,8 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     customClubConfig: cs.customClubConfig || baseline.customClubConfig || null,
     lastMindGameMatchday: cs.lastMindGameMatchday || 0,
     socialFeed: cs.socialFeed || baseline.socialFeed || [],
+    buyBackClauses: cs.buyBackClauses || baseline.buyBackClauses || [],
+    lastSquadMeetingDate: cs.lastSquadMeetingDate || baseline.lastSquadMeetingDate,
   };
 }
 
@@ -3761,9 +3912,22 @@ export async function saveWorldStateToFirestoreSlot(
 }
 
 export async function syncUserSaveSlotsFromFirestore(): Promise<SaveSlotMeta[]> {
+  const localMetas = readLocalSaveMetas();
+  const mergedMap = new Map<string, SaveSlotMeta>();
+  for (const m of [...inMemorySlotMetas, ...localMetas]) {
+    const prev = mergedMap.get(m.slotId);
+    if (!prev || m.lastSavedAt >= prev.lastSavedAt) {
+      mergedMap.set(m.slotId, m);
+    }
+  }
+
   const currentUser = auth.currentUser;
   if (!currentUser) {
-    return inMemorySlotMetas;
+    const list = Array.from(mergedMap.values()).sort((a, b) =>
+      b.lastSavedAt.localeCompare(a.lastSavedAt)
+    );
+    inMemorySlotMetas = list;
+    return list;
   }
 
   const uid = currentUser.uid;
@@ -3774,27 +3938,33 @@ export async function syncUserSaveSlotsFromFirestore(): Promise<SaveSlotMeta[]> 
       where('ownerId', '==', uid)
     );
     const snap = await getDocs(q);
-    const loadedMetas: SaveSlotMeta[] = [];
 
     snap.forEach((docSnap) => {
       const data = docSnap.data() as CareerSaveDocument;
       if (data && data.slotId && data.careerState) {
-        loadedMetas.push({
-          slotId: data.slotId,
-          saveName: data.saveName,
-          clubName: data.clubName,
-          managerName: data.managerName,
-          gameDate: data.gameDate,
-          season: data.season,
-          lastSavedAt: data.lastSavedAtIso,
-        });
-        inMemorySaveSlots[data.slotId] = rehydrateWorldStateFromCareerDoc(data);
+        const existingLocal = mergedMap.get(data.slotId);
+        if (!existingLocal || data.lastSavedAtIso >= existingLocal.lastSavedAt) {
+          mergedMap.set(data.slotId, {
+            slotId: data.slotId,
+            saveName: data.saveName,
+            clubName: data.clubName,
+            managerName: data.managerName,
+            gameDate: data.gameDate,
+            season: data.season,
+            lastSavedAt: data.lastSavedAtIso,
+          });
+          inMemorySaveSlots[data.slotId] = rehydrateWorldStateFromCareerDoc(data);
+          writeLocalCareerDoc(data.slotId, data);
+        }
       }
     });
 
-    loadedMetas.sort((a, b) => b.lastSavedAt.localeCompare(a.lastSavedAt));
-    inMemorySlotMetas = loadedMetas;
-    return loadedMetas;
+    const mergedMetas = Array.from(mergedMap.values()).sort((a, b) =>
+      b.lastSavedAt.localeCompare(a.lastSavedAt)
+    );
+    inMemorySlotMetas = mergedMetas;
+    writeLocalSaveMetas(mergedMetas);
+    return mergedMetas;
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, savesPath);
   }
@@ -3806,7 +3976,7 @@ export async function loadWorldStateFromFirestoreSlot(
   const slotId = sanitizeSlotId(rawSlotId);
   const currentUser = auth.currentUser;
   if (!currentUser) {
-    return inMemorySaveSlots[slotId] || null;
+    return loadWorldStateFromSlot(slotId);
   }
 
   const uid = currentUser.uid;
@@ -3814,14 +3984,26 @@ export async function loadWorldStateFromFirestoreSlot(
   try {
     const snap = await getDoc(doc(db, 'users', uid, 'saves', slotId));
     if (!snap.exists()) {
-      return inMemorySaveSlots[slotId] || null;
+      return loadWorldStateFromSlot(slotId);
     }
     const data = snap.data() as CareerSaveDocument;
+    const localDoc = readLocalCareerDoc(slotId);
+    if (localDoc && localDoc.careerState && localDoc.lastSavedAtIso > data.lastSavedAtIso) {
+      const rehydratedLocal = rehydrateWorldStateFromCareerDoc(localDoc);
+      inMemorySaveSlots[slotId] = rehydratedLocal;
+      return rehydratedLocal;
+    }
     const rehydrated = rehydrateWorldStateFromCareerDoc(data);
     inMemorySaveSlots[slotId] = rehydrated;
+    writeLocalCareerDoc(slotId, data);
     return rehydrated;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, savePath);
+    try {
+      handleFirestoreError(error, OperationType.GET, savePath);
+    } catch {
+      // Fallback to localStorage slot if Cloud Firestore read fails
+    }
+    return loadWorldStateFromSlot(slotId);
   }
 }
 
@@ -3849,12 +4031,30 @@ function writeLocalSaveMetas(metas: SaveSlotMeta[]): void {
   }
 }
 
-function writeLocalCareerDoc(slotId: string, docData: CareerSaveDocument): void {
+function writeLocalCareerDoc(slotId: string, docData: CareerSaveDocument): boolean {
   try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
+    if (typeof window === 'undefined' || !window.localStorage) return false;
     window.localStorage.setItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`, JSON.stringify(docData));
+    return true;
   } catch {
-    // Ignore storage quota errors
+    try {
+      // Quota recovery: trim non-essential AI playerDiffs to top 35 entries and retry
+      const trimmedDiffs: Record<string, PlayerDelta> = {};
+      for (const [k, v] of Object.entries(docData.careerState.playerDiffs || {}).slice(0, 35)) {
+        trimmedDiffs[k] = v;
+      }
+      const compactDoc: CareerSaveDocument = {
+        ...docData,
+        careerState: {
+          ...docData.careerState,
+          playerDiffs: trimmedDiffs,
+        },
+      };
+      window.localStorage.setItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`, JSON.stringify(compactDoc));
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -3899,7 +4099,12 @@ export async function deleteSaveSlotFromFirestore(
     await deleteDoc(doc(db, 'users', uid, 'saves', slotId));
     return inMemorySlotMetas;
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, savePath);
+    try {
+      handleFirestoreError(error, OperationType.DELETE, savePath);
+    } catch {
+      // Keep local deletion intact even if Cloud delete fails
+    }
+    return inMemorySlotMetas;
   }
 }
 
@@ -3931,7 +4136,7 @@ export function saveWorldStateToSlot(
 
   const currentMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
   const existingMetas = currentMetas.filter((m) => m.slotId !== slotId);
-  const updatedMetas = [newMeta, ...existingMetas].slice(0, 5);
+  const updatedMetas = [newMeta, ...existingMetas].slice(0, 10);
   inMemorySlotMetas = updatedMetas;
   writeLocalSaveMetas(updatedMetas);
 
@@ -3953,7 +4158,9 @@ export function saveWorldStateToSlot(
   writeLocalCareerDoc(slotId, localDoc);
 
   if (triggerCloudSync && auth.currentUser) {
-    void saveWorldStateToFirestoreSlot(slotId, stamped);
+    void saveWorldStateToFirestoreSlot(slotId, stamped).catch(() => {
+      // Local save is already persisted safely
+    });
   }
 
   return updatedMetas;
@@ -3988,7 +4195,9 @@ export function deleteSavedSlot(rawSlotId: string): SaveSlotMeta[] {
   inMemorySlotMetas = currentMetas.filter((m) => m.slotId !== slotId);
   writeLocalSaveMetas(inMemorySlotMetas);
   if (auth.currentUser) {
-    void deleteSaveSlotFromFirestore(slotId);
+    void deleteSaveSlotFromFirestore(slotId).catch(() => {
+      // Local deletion is already completed
+    });
   }
   return inMemorySlotMetas;
 }
@@ -7038,4 +7247,410 @@ export function exerciseBuyBackClause(
     ),
   };
 }
+
+/**
+ * Stage 3 Pillar 3.1: 1-on-1 Manager Conversation with a Player
+ */
+export function conductOneOnOnePlayerChat(
+  state: WorldState,
+  playerId: string,
+  topic: 'PRAISE_FORM' | 'CRITICIZE_FORM' | 'EXPLAIN_ROTATION' | 'CAPTAIN_INTERVENE'
+): {
+  nextState: WorldState;
+  moraleDelta: number;
+  sharpnessDelta: number;
+  playerResponse: string;
+  message: string;
+} {
+  const player = state.players[playerId];
+  const myClub = state.clubs[state.controlledClubId];
+  if (!player) {
+    return {
+      nextState: state,
+      moraleDelta: 0,
+      sharpnessDelta: 0,
+      playerResponse: '',
+      message: 'Player not found.',
+    };
+  }
+
+  let moraleDelta = 0;
+  let sharpnessDelta = 0;
+  let clearBenched = false;
+  let playerResponse = '';
+
+  if (topic === 'PRAISE_FORM') {
+    moraleDelta = player.stats.averageRating >= 7.0 ? 7 : 4;
+    sharpnessDelta = 2;
+    playerResponse = trText(
+      `"Thanks boss! I'm feeling sharp and ready to keep delivering for ${myClub.shortName}."`,
+      `"ขอบคุณครับบอส! ผมกำลังมั่นใจเต็มร้อยและพร้อมช่วยทีม ${myClub.shortName} เก็บชัยชนะต่อเนื่องครับ"`
+    );
+  } else if (topic === 'CRITICIZE_FORM') {
+    const det = player.attributes.mental.determination;
+    if (det >= 13 || player.professionalism >= 12) {
+      moraleDelta = 3;
+      sharpnessDelta = 5;
+      playerResponse = trText(
+        `"Fair criticism, gaffer. I know my standards have slipped—I'll prove myself on the training pitch."`,
+        `"ผมยอมรับคำติชมครับบอส ผมรู้ตัวว่าฟอร์มดร็อปลงไป และจะพิสูจน์ตัวเองในการซ้อมและนัดต่อไปแน่นอน"`
+      );
+    } else {
+      moraleDelta = -3;
+      sharpnessDelta = 2;
+      playerResponse = trText(
+        `"I think that's harsh, boss, but I'll try to get my sharpness up."`,
+        `"ผมคิดว่าบอสพูดแรงไปนิดครับ แต่ผมจะพยายามเร่งความฟิตกลับมา"`
+      );
+    }
+  } else if (topic === 'EXPLAIN_ROTATION') {
+    moraleDelta = 8;
+    sharpnessDelta = 2;
+    clearBenched = true;
+    playerResponse = trText(
+      `"I appreciate your honesty about the fixture congestion, boss. I'll be ready when called upon."`,
+      `"ขอบคุณที่อธิบายแผนโรเตชันให้ฟังตรงๆ ครับบอส ผมเข้าใจและพร้อมลงสนามทันทีที่บอสต้องการ"`
+    );
+  } else {
+    // CAPTAIN_INTERVENE
+    const clubPlayers = Object.values(state.players).filter((p) => p.clubId === myClub.id);
+    const captainId = myClub.primaryTactic.setPieces?.captainId;
+    const captain =
+      (captainId ? state.players[captainId] : undefined) ||
+      [...clubPlayers].sort(
+        (a, b) => b.attributes.mental.leadership - a.attributes.mental.leadership
+      )[0];
+    const capLdr = captain ? captain.attributes.mental.leadership : 14;
+    moraleDelta = capLdr >= 14 ? 9 : 5;
+    clearBenched = true;
+    playerResponse = trText(
+      `Captain ${captain ? captain.lastName : 'Leader'} spoke privately with ${player.lastName} and resolved all dressing room concerns.`,
+      `กัปตันทีม ${captain ? captain.lastName : ''} เข้าไปช่วยพูดคุยเคลียร์ใจกับ ${player.lastName} จนกลับมาโฟกัสกับทีมเต็มร้อยแล้ว`
+    );
+  }
+
+  const updatedPlayer: Player = {
+    ...player,
+    morale: Math.max(15, Math.min(100, player.morale + moraleDelta)),
+    matchSharpness: Math.max(25, Math.min(100, player.matchSharpness + sharpnessDelta)),
+    satisfaction: Math.max(20, Math.min(100, player.satisfaction + Math.max(2, moraleDelta))),
+    consecutiveBenched: clearBenched ? 0 : player.consecutiveBenched,
+    unhappyReason: clearBenched ? null : player.unhappyReason,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [player.id]: updatedPlayer,
+      },
+    },
+    moraleDelta,
+    sharpnessDelta,
+    playerResponse,
+    message: `${player.firstName} ${player.lastName}: ${playerResponse} (${moraleDelta >= 0 ? `+${moraleDelta}` : moraleDelta} Morale)`,
+  };
+}
+
+/**
+ * Stage 3 Pillar 3.2: Emergency / Big-Match Squad Team Meeting (21-day cooldown)
+ */
+export function holdEmergencySquadMeeting(
+  state: WorldState,
+  tone: 'RALLY_MORALE' | 'DEMAND_STANDARDS' | 'CALM_PRESSURE'
+): {
+  nextState: WorldState;
+  boostedCount: number;
+  avgMoraleDelta: number;
+  message: string;
+} {
+  if (state.lastSquadMeetingDate) {
+    const lastMs = Date.parse(state.lastSquadMeetingDate);
+    const curMs = Date.parse(state.gameDate);
+    const diffDays = Math.floor((curMs - lastMs) / 86_400_000);
+    if (!Number.isNaN(diffDays) && diffDays < 21) {
+      return {
+        nextState: state,
+        boostedCount: 0,
+        avgMoraleDelta: 0,
+        message: trText(
+          `Squad Meeting unavailable — please wait ${21 - diffDays} more day(s) before calling another full dressing-room meeting.`,
+          `ยังไม่สามารถเรียกประชุมทีมชุดใหญ่ซ้ำได้ (ต้องรออีก ${21 - diffDays} วัน)`
+        ),
+      };
+    }
+  }
+
+  const myClub = state.clubs[state.controlledClubId];
+  const updatedPlayers: Record<string, Player> = { ...state.players };
+  const delta = tone === 'RALLY_MORALE' ? 8 : tone === 'DEMAND_STANDARDS' ? 6 : 7;
+  let boostedCount = 0;
+
+  for (const p of Object.values(state.players)) {
+    if (p.clubId !== myClub.id) continue;
+    boostedCount += 1;
+    updatedPlayers[p.id] = {
+      ...p,
+      morale: Math.min(100, p.morale + delta),
+      matchSharpness:
+        tone === 'DEMAND_STANDARDS'
+          ? Math.min(100, p.matchSharpness + 3)
+          : p.matchSharpness,
+      consecutiveBenched: 0,
+      unhappyReason: null,
+    };
+  }
+
+  const updatedClub: Club = {
+    ...myClub,
+    boardExpectations: {
+      ...myClub.boardExpectations,
+      confidence: {
+        ...myClub.boardExpectations.confidence,
+        squadAtmosphere: Math.min(
+          100,
+          myClub.boardExpectations.confidence.squadAtmosphere + 6
+        ),
+      },
+    },
+  };
+
+  return {
+    nextState: {
+      ...state,
+      lastSquadMeetingDate: state.gameDate,
+      players: updatedPlayers,
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedClub,
+      },
+    },
+    boostedCount,
+    avgMoraleDelta: delta,
+    message: trText(
+      `Squad Meeting Complete! All ${boostedCount} players at ${myClub.name} received +${delta}% Morale & cleared dressing room unrest.`,
+      `ประชุมทีมชุดใหญ่สำเร็จ! นักเตะทั้ง ${boostedCount} คนของ ${myClub.name} ได้รับขวัญกำลังใจ +${delta}% และเคลียร์ความกังวลในห้องแต่งตัวทั้งหมด`
+    ),
+  };
+}
+
+/**
+ * Stage 3 Pillar 4.1: Study & Upgrade Manager Coaching License (National A -> Continental B -> Continental A -> UEFA Pro)
+ */
+export function studyNextCoachingLicense(state: WorldState): {
+  nextState: WorldState;
+  newBadge: import('../types/game').CoachingLicenseTier;
+  message: string;
+} {
+  const order: import('../types/game').CoachingLicenseTier[] = [
+    'National A',
+    'Continental B',
+    'Continental A',
+    'UEFA Pro',
+  ];
+  const currentBadge = state.manager.coachingBadge || 'National A';
+  const curIdx = order.indexOf(currentBadge);
+  const nextBadge = order[Math.min(order.length - 1, curIdx + 1)];
+  const myClub = state.clubs[state.controlledClubId];
+
+  // Apply immediate passive buffs to club tactical familiarity and player training morale
+  const updatedClub: Club = {
+    ...myClub,
+    primaryTactic: {
+      ...myClub.primaryTactic,
+      familiarity: Math.min(100, myClub.primaryTactic.familiarity + 8),
+    },
+    secondaryTactic: {
+      ...myClub.secondaryTactic,
+      familiarity: Math.min(100, myClub.secondaryTactic.familiarity + 8),
+    },
+  };
+
+  const updatedManager = {
+    ...state.manager,
+    coachingBadge: nextBadge,
+    reputation: Math.min(100, state.manager.reputation + 5),
+    studyingBadge: null,
+  };
+
+  return {
+    nextState: {
+      ...state,
+      manager: updatedManager,
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedClub,
+      },
+    },
+    newBadge: nextBadge,
+    message: trText(
+      `Congratulations! You earned the ${nextBadge} Coaching License (+8% Tactical Familiarity & permanent coaching/negotiation buffs unlocked)!`,
+      `ขอแสดงความยินดี! คุณสอบผ่านใบอนุญาตโค้ชระดับ ${nextBadge} สำเร็จ (+8% ความคุ้นเคยแผนการเล่น และปลดล็อกบัฟผู้จัดการทีมถาวร)!`
+    ),
+  };
+}
+
+/**
+ * Stage 3 Pillar 4.2: Negotiate Season Ambition & Vision with the Board of Directors
+ */
+export function negotiateBoardSeasonAmbition(
+  state: WorldState,
+  ambition: 'Conservative' | 'Balanced' | 'Ambitious'
+): {
+  nextState: WorldState;
+  newTransferBudget: number;
+  newWageBudget: number;
+  message: string;
+} {
+  const myClub = state.clubs[state.controlledClubId];
+  const prevAmbition = myClub.boardExpectations.seasonAmbition || 'Balanced';
+  if (prevAmbition === ambition) {
+    return {
+      nextState: state,
+      newTransferBudget: myClub.finances.transferBudget,
+      newWageBudget: myClub.finances.wageBudgetPerWeek,
+      message: trText(
+        `Board Season Vision is already set to ${ambition}.`,
+        `เป้าหมายประจำฤดูกาลของบอร์ดบริหารตั้งไว้ที่ระดับ ${ambition} อยู่แล้ว`
+      ),
+    };
+  }
+
+  const mult = ambition === 'Ambitious' ? 1.2 : ambition === 'Conservative' ? 0.92 : 1.0;
+  const newTransferBudget = Math.round((myClub.finances.transferBudget * mult) / 100_000) * 100_000;
+  const newWageBudget = Math.round((myClub.finances.wageBudgetPerWeek * mult) / 1_000) * 1_000;
+  const newTargetPos =
+    ambition === 'Ambitious'
+      ? Math.max(1, myClub.boardExpectations.targetLeaguePosition - 2)
+      : ambition === 'Conservative'
+        ? Math.min(15, myClub.boardExpectations.targetLeaguePosition + 2)
+        : myClub.boardExpectations.targetLeaguePosition;
+
+  const updatedClub: Club = {
+    ...myClub,
+    finances: {
+      ...myClub.finances,
+      transferBudget: newTransferBudget,
+      wageBudgetPerWeek: newWageBudget,
+    },
+    boardExpectations: {
+      ...myClub.boardExpectations,
+      seasonAmbition: ambition,
+      targetLeaguePosition: newTargetPos,
+      confidence: {
+        ...myClub.boardExpectations.confidence,
+        overall:
+          ambition === 'Conservative'
+            ? Math.min(100, myClub.boardExpectations.confidence.overall + 4)
+            : myClub.boardExpectations.confidence.overall,
+      },
+    },
+  };
+
+  return {
+    nextState: {
+      ...state,
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedClub,
+      },
+    },
+    newTransferBudget,
+    newWageBudget,
+    message: trText(
+      `Board Vision updated to "${ambition}" (Target Top ${newTargetPos})! Transfer Budget adjusted to €${(newTransferBudget / 1_000_000).toFixed(1)}M.`,
+      `ปรับเป้าหมายบอร์ดบริหารเป็น "${ambition}" (เป้าอันดับ Top ${newTargetPos})! งบซื้อขายปรับเป็น €${(newTransferBudget / 1_000_000).toFixed(1)}M เรียบร้อยแล้ว`
+    ),
+  };
+}
+
+/**
+ * Stage 3 Pillar 5.1: Build 7-Day Interactive Calendar Schedule Strip (Day +0 to Day +6)
+ */
+export function buildSevenDayCalendarStrip(state: WorldState): {
+  date: string;
+  dayName: string;
+  dayNum: string;
+  isToday: boolean;
+  eventType: 'MATCHDAY' | 'DEADLINE' | 'TRAINING' | 'REST';
+  labelEn: string;
+  labelTh: string;
+  opponentClubId?: string;
+  opponentShortName?: string;
+  isHome?: boolean;
+  competitionId?: string;
+}[] {
+  const myClubId = state.controlledClubId;
+  const baseDate = new Date(`${state.gameDate}T00:00:00Z`);
+  const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const result = [];
+
+  for (let offset = 0; offset < 7; offset++) {
+    const d = new Date(baseDate.getTime() + offset * 86_400_000);
+    const iso = d.toISOString().slice(0, 10);
+    const dow = d.getUTCDay();
+    const dayName = dayNames[dow];
+    const dayNum = iso.slice(5); // MM-DD
+
+    const fixture = state.fixtures.find(
+      (f) =>
+        f.kickoffDate === iso &&
+        f.status === 'Scheduled' &&
+        (f.homeClubId === myClubId || f.awayClubId === myClubId)
+    );
+
+    if (fixture) {
+      const isHome = fixture.homeClubId === myClubId;
+      const oppId = isHome ? fixture.awayClubId : fixture.homeClubId;
+      const oppClub = state.clubs[oppId];
+      result.push({
+        date: iso,
+        dayName,
+        dayNum,
+        isToday: offset === 0,
+        eventType: 'MATCHDAY' as const,
+        labelEn: `vs ${oppClub?.shortName || 'OPP'} (${isHome ? 'H' : 'A'})`,
+        labelTh: `พบ ${oppClub?.shortName || 'OPP'} (${isHome ? 'เหย้า' : 'เยือน'})`,
+        opponentClubId: oppId,
+        opponentShortName: oppClub?.shortName || 'OPP',
+        isHome,
+        competitionId: fixture.competitionId,
+      });
+    } else if (isTransferDeadlineWindow(iso)) {
+      result.push({
+        date: iso,
+        dayName,
+        dayNum,
+        isToday: offset === 0,
+        eventType: 'DEADLINE' as const,
+        labelEn: 'Deadline Window',
+        labelTh: 'โค้งสุดท้ายตลาด',
+      });
+    } else if (dow === 1 || dow === 4) {
+      result.push({
+        date: iso,
+        dayName,
+        dayNum,
+        isToday: offset === 0,
+        eventType: 'TRAINING' as const,
+        labelEn: dow === 1 ? 'Training & Scouts' : 'Tactical Prep',
+        labelTh: dow === 1 ? 'ซ้อมใหญ่ & แมวมอง' : 'ซ้อมแท็กติก',
+      });
+    } else {
+      result.push({
+        date: iso,
+        dayName,
+        dayNum,
+        isToday: offset === 0,
+        eventType: 'REST' as const,
+        labelEn: 'Recovery / Prep',
+        labelTh: 'ฟื้นฟูร่างกาย',
+      });
+    }
+  }
+
+  return result;
+}
+
 

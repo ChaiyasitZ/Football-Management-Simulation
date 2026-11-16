@@ -15,6 +15,7 @@ import {
   PossessionLostInstruction,
   PossessionWonInstruction,
   PressingIntensity,
+  SetPieceBoxRole,
   SetPieceSetup,
   TacticalSystem,
   TacklingStyle,
@@ -22,6 +23,7 @@ import {
   TimeWasting,
   WorldState,
 } from '../types/game';
+import { computeSetPieceThreatScore } from '../engine/matchEngine';
 import {
   analyzeTacticalRisks,
   autoPickLineup,
@@ -2006,6 +2008,292 @@ export const TacticsView: React.FC<TacticsViewProps> = ({
                     </select>
                   </div>
                 </div>
+
+                {/* Interactive 2D Set-Piece Box Designer & Threat Score (Stage 3 Pillar 2) */}
+                {(() => {
+                  const threatScore = computeSetPieceThreatScore(
+                    activeTactic,
+                    world.players,
+                    candidatePool
+                  );
+                  const boxMap = currentSetPieces.boxAssignments || {};
+                  const swing = currentSetPieces.cornerDeliverySwing || 'inswinger';
+
+                  const autoAerial = [...candidatePool]
+                    .filter((p) => p.positions[0] !== 'GK')
+                    .sort(
+                      (a, b) =>
+                        b.attributes.technical.heading +
+                        b.attributes.physical.jumpingReach -
+                        (a.attributes.technical.heading + a.attributes.physical.jumpingReach)
+                    );
+                  const autoLongShot = [...candidatePool]
+                    .filter((p) => p.positions[0] !== 'GK')
+                    .sort(
+                      (a, b) =>
+                        b.attributes.technical.longShots - a.attributes.technical.longShots
+                    );
+                  const autoPace = [...candidatePool]
+                    .filter((p) => p.positions[0] !== 'GK')
+                    .sort(
+                      (a, b) =>
+                        b.attributes.physical.pace +
+                        b.attributes.physical.acceleration -
+                        (a.attributes.physical.pace + a.attributes.physical.acceleration)
+                    );
+
+                  const roleDefinitions: {
+                    role: SetPieceBoxRole;
+                    label: string;
+                    x: number;
+                    y: number;
+                    color: string;
+                    defaultPlayer?: typeof candidatePool[0];
+                    statLabel: (p: typeof candidatePool[0]) => string;
+                  }[] = [
+                    {
+                      role: 'near_post',
+                      label: tr('Attack Near Post', 'โฉบเสาแรก'),
+                      x: 34,
+                      y: 17,
+                      color: '#10b981',
+                      defaultPlayer: autoAerial[0],
+                      statLabel: (p) =>
+                        `HD ${p.attributes.technical.heading} · JMP ${p.attributes.physical.jumpingReach}`,
+                    },
+                    {
+                      role: 'challenge_keeper',
+                      label: tr('Challenge Keeper', 'เบียดผู้รักษาประตู'),
+                      x: 50,
+                      y: 11,
+                      color: '#f59e0b',
+                      defaultPlayer: autoAerial[2] || autoAerial[0],
+                      statLabel: (p) =>
+                        `STR ${p.attributes.physical.strength} · BRA ${p.attributes.mental.bravery}`,
+                    },
+                    {
+                      role: 'far_post',
+                      label: tr('Attack Far Post', 'กดเสาสอง'),
+                      x: 66,
+                      y: 18,
+                      color: '#10b981',
+                      defaultPlayer: autoAerial[1] || autoAerial[0],
+                      statLabel: (p) =>
+                        `HD ${p.attributes.technical.heading} · JMP ${p.attributes.physical.jumpingReach}`,
+                    },
+                    {
+                      role: 'lurk_edge',
+                      label: tr('Lurk Outside Area', 'ดักยิงแถวสองหน้าเขตโทษ'),
+                      x: 50,
+                      y: 36,
+                      color: '#38bdf8',
+                      defaultPlayer: autoLongShot[0],
+                      statLabel: (p) =>
+                        `LS ${p.attributes.technical.longShots} · ANT ${p.attributes.mental.anticipation}`,
+                    },
+                    {
+                      role: 'stay_back_1',
+                      label: tr('Stay Back (Left)', 'ห้อยหลังระวังสวนกลับ (ซ้าย)'),
+                      x: 33,
+                      y: 54,
+                      color: '#a855f7',
+                      defaultPlayer: autoPace[0],
+                      statLabel: (p) =>
+                        `PAC ${p.attributes.physical.pace} · ACC ${p.attributes.physical.acceleration}`,
+                    },
+                    {
+                      role: 'stay_back_2',
+                      label: tr('Stay Back (Right)', 'ห้อยหลังระวังสวนกลับ (ขวา)'),
+                      x: 67,
+                      y: 54,
+                      color: '#a855f7',
+                      defaultPlayer: autoPace[1] || autoPace[0],
+                      statLabel: (p) =>
+                        `PAC ${p.attributes.physical.pace} · ACC ${p.attributes.physical.acceleration}`,
+                    },
+                  ];
+
+                  const updateBoxRole = (role: SetPieceBoxRole, playerId: string) => {
+                    handleUpdateSetPieces({
+                      boxAssignments: {
+                        ...boxMap,
+                        [role]: playerId,
+                      },
+                    });
+                  };
+
+                  const targetX =
+                    currentSetPieces.cornerRoutine === 'near_post'
+                      ? 34
+                      : currentSetPieces.cornerRoutine === 'far_post'
+                        ? 66
+                        : currentSetPieces.cornerRoutine === 'short'
+                          ? 22
+                          : 50;
+                  const targetY =
+                    currentSetPieces.cornerRoutine === 'short'
+                      ? 18
+                      : currentSetPieces.cornerRoutine === 'centre'
+                        ? 11
+                        : 18;
+                  const ctrlY = swing === 'inswinger' ? 4 : 29;
+
+                  return (
+                    <div
+                      data-testid="set-piece-2d-planner"
+                      className="pt-3 border-t border-slate-800 space-y-2.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-emerald-400">
+                            📐 {tr('2D Penalty Box Set-Piece Planner', 'ผังจัดตำแหน่งเข้าทำลูกตั้งเตะ 2D')}
+                          </span>
+                          <span
+                            data-testid="set-piece-threat-score"
+                            className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-[11px]"
+                          >
+                            {tr('Threat Score:', 'ความอันตราย:')} {threatScore}/100
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleUpdateSetPieces({
+                                cornerDeliverySwing:
+                                  swing === 'inswinger' ? 'outswinger' : 'inswinger',
+                              })
+                            }
+                            className="px-2 py-0.5 rounded bg-slate-950 hover:bg-slate-800 border border-slate-700 text-[10px] font-mono text-amber-300 cursor-pointer"
+                          >
+                            {swing === 'inswinger'
+                              ? tr('🌀 Inswinger (โค้งเข้า)', '🌀 โค้งเข้าหาประตู (Inswinger)')
+                              : tr('↪ Outswinger (โค้งออก)', '↪ โค้งหนีผู้รักษาประตู (Outswinger)')}
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="auto-assign-set-piece-box-btn"
+                            onClick={() => {
+                              soundService.playClick();
+                              handleUpdateSetPieces({
+                                boxAssignments: {
+                                  near_post: autoAerial[0]?.id,
+                                  far_post: autoAerial[1]?.id,
+                                  challenge_keeper: autoAerial[2]?.id,
+                                  lurk_edge: autoLongShot[0]?.id,
+                                  stay_back_1: autoPace[0]?.id,
+                                  stay_back_2: autoPace[1]?.id,
+                                },
+                              });
+                            }}
+                            className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-semibold text-emerald-300 cursor-pointer"
+                          >
+                            ⚡ {tr('Auto-Fit Aerial & Pace', 'จัดตัวโหม่ง/ตัวสกัดอัตโนมัติ')}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Half-Pitch Penalty Box 2D SVG */}
+                      <svg
+                        viewBox="0 0 100 62"
+                        className="w-full h-44 rounded-xl border border-slate-800 bg-[#0b4731]"
+                      >
+                        <rect x="4" y="4" width="92" height="54" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.6" />
+                        {/* Goal mouth */}
+                        <rect x="42" y="1.5" width="16" height="2.5" fill="none" stroke="#ffffff" strokeWidth="0.7" />
+                        {/* 18-yard Penalty Area */}
+                        <rect x="20" y="4" width="60" height="26" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.6" />
+                        {/* 6-yard Box */}
+                        <rect x="35" y="4" width="30" height="10" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.6" />
+                        {/* Penalty Spot */}
+                        <circle cx="50" cy="19" r="0.8" fill="#ffffff" />
+
+                        {/* Corner Delivery Curved Trajectory */}
+                        <path
+                          d={`M 5 5 Q 24 ${ctrlY} ${targetX} ${targetY}`}
+                          fill="none"
+                          stroke="#facc15"
+                          strokeWidth="1.1"
+                          strokeDasharray="2 1"
+                        />
+                        <circle cx="5" cy="5" r="1.8" fill="#facc15" stroke="#000" strokeWidth="0.4" />
+
+                        {/* 6 Assigned Penalty Box Role Markers */}
+                        {roleDefinitions.map((rd) => {
+                          const assignedId = boxMap[rd.role] || rd.defaultPlayer?.id;
+                          const p = assignedId ? world.players[assignedId] : rd.defaultPlayer;
+                          return (
+                            <g key={rd.role}>
+                              <circle
+                                cx={rd.x}
+                                cy={rd.y}
+                                r="3.4"
+                                fill={rd.color}
+                                stroke="#ffffff"
+                                strokeWidth="0.6"
+                              />
+                              <text
+                                x={rd.x}
+                                y={rd.y + 1}
+                                textAnchor="middle"
+                                fontSize="2.2"
+                                fontWeight="bold"
+                                fill="#020617"
+                              >
+                                {p?.shirtNumber || '•'}
+                              </text>
+                              <text
+                                x={rd.x}
+                                y={rd.y + 6}
+                                textAnchor="middle"
+                                fontSize="2.2"
+                                fontWeight="bold"
+                                fill="#f8fafc"
+                              >
+                                {p ? p.lastName.slice(0, 8) : rd.label}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+
+                      {/* 6 Penalty Box Role Dropdowns */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {roleDefinitions.map((rd) => {
+                          const selectedId = boxMap[rd.role] || rd.defaultPlayer?.id || '';
+                          return (
+                            <div
+                              key={rd.role}
+                              className="p-2 rounded-lg bg-slate-950 border border-slate-800 space-y-1"
+                            >
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="font-semibold text-slate-200">{rd.label}</span>
+                                {selectedId && world.players[selectedId] && (
+                                  <span className="font-mono text-emerald-400">
+                                    {rd.statLabel(world.players[selectedId])}
+                                  </span>
+                                )}
+                              </div>
+                              <select
+                                value={selectedId}
+                                onChange={(e) => updateBoxRole(rd.role, e.target.value)}
+                                className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-800 text-[11px] text-slate-100"
+                              >
+                                {candidatePool
+                                  .filter((p) => p.positions[0] !== 'GK')
+                                  .map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      #{p.shirtNumber || ''} {p.firstName[0]}. {p.lastName} ({rd.statLabel(p)})
+                                    </option>
+                                  ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}

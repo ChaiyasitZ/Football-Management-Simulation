@@ -67,6 +67,10 @@ export interface PlayerProfilePageProps {
   onActivateReleaseClause?: (playerId: string, useBargainDiscount?: boolean) => void;
   onSendToAffiliateLoan?: (playerId: string) => void;
   onOfferPlayerToClubs?: (playerId: string) => void;
+  onPlayerChat?: (
+    playerId: string,
+    topic: 'PRAISE_FORM' | 'CRITICIZE_FORM' | 'EXPLAIN_ROTATION' | 'CAPTAIN_INTERVENE'
+  ) => void;
 }
 
 type ProfileTabId = 'overview' | 'development' | 'contract' | 'stats' | 'scout';
@@ -86,12 +90,15 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   onActivateReleaseClause,
   onSendToAffiliateLoan,
   onOfferPlayerToClubs,
+  onPlayerChat,
 }) => {
   const { tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<ProfileTabId>('overview');
   const [comparePlayerId, setComparePlayerId] = useState<string>('');
   const [stepperOpen, setStepperOpen] = useState<boolean>(false);
   const [stepperStep, setStepperStep] = useState<1 | 2 | 3>(1);
+  const [chatModalOpen, setChatModalOpen] = useState<boolean>(false);
+  const [chatFeedback, setChatFeedback] = useState<string | null>(null);
 
   const playerClub = world.clubs[player.clubId];
   const myClub = world.clubs[world.controlledClubId];
@@ -285,6 +292,20 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     ? tr('Shortlisted', 'อยู่ในรายชื่อเป้าหมาย')
                     : tr('Add to Shortlist', 'เพิ่มเข้าเป้าหมาย')}
                 </span>
+              </button>
+            )}
+
+            {isMyPlayer && onPlayerChat && (
+              <button
+                type="button"
+                data-testid="open-player-chat-btn"
+                onClick={() => {
+                  setChatFeedback(null);
+                  setChatModalOpen(true);
+                }}
+                className="px-3.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/50 text-sky-300 font-semibold text-xs cursor-pointer"
+              >
+                {tr('💬 Speak to Player', '💬 พูดคุยตัวต่อตัว')}
               </button>
             )}
 
@@ -1596,6 +1617,143 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                 </button>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1-on-1 Player Chat & Captain Intervention Modal (Stage 3 Pillar 3) */}
+      {chatModalOpen && isMyPlayer && onPlayerChat && (
+        <div
+          data-testid="player-chat-modal"
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-xl rounded-2xl bg-slate-900 border border-sky-500/50 shadow-2xl p-5 space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <PlayerAvatar player={player} club={playerClub} size="sm" />
+                <div>
+                  <h3 className="text-base font-display font-bold text-white">
+                    💬 {tr('1-on-1 Manager Chat:', 'พูดคุยตัวต่อตัวกับ')} {player.firstName}{' '}
+                    {player.lastName}
+                  </h3>
+                  <p className="text-slate-400 font-mono">
+                    {tr('Morale:', 'ขวัญกำลังใจ:')} <strong className="text-emerald-400">{player.morale}%</strong> ·{' '}
+                    {tr('Sharpness:', 'ความฟิตแมตช์:')} <strong className="text-sky-400">{player.matchSharpness ?? 80}%</strong> ·{' '}
+                    {tr('Det:', 'ความมุ่งมั่น:')} <strong className="text-amber-300">{player.attributes.mental.determination}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="close-player-chat-btn"
+                onClick={() => setChatModalOpen(false)}
+                className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {player.unhappyReason && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200">
+                ⚠️ <strong>{tr('Current Concern:', 'ความกังวลปัจจุบัน:')}</strong> {player.unhappyReason}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {(
+                [
+                  {
+                    id: 'PRAISE_FORM',
+                    title: tr(
+                      '🌟 Praise Recent Form & Training Attitude',
+                      '🌟 ชื่นชมฟอร์มการเล่นและความทุ่มเทในการซ้อม'
+                    ),
+                    desc: tr(
+                      'Boosts Morale (+10) & Match Sharpness (+4%). Ideal when morale or rating is solid.',
+                      'เพิ่มขวัญกำลังใจ (+10) และความฟิตแมตช์ (+4%)'
+                    ),
+                    reply: tr(
+                      `"Thanks Boss! I'm feeling sharp and ready to give everything for ${myClub?.shortName}."`,
+                      `"ขอบคุณครับบอส! ผมรู้สึกมั่นใจมากและพร้อมทุ่มเทเต็มร้อยเพื่อ ${myClub?.shortName}"`
+                    ),
+                  },
+                  {
+                    id: 'CRITICIZE_FORM',
+                    title: tr(
+                      '🔥 Demand Higher Standards / Criticize Recent Displays',
+                      '🔥 ตำหนิฟอร์มและเรียกร้องมาตรฐานที่สูงขึ้น'
+                    ),
+                    desc: tr(
+                      'High Determination (>=13) players respond with +8% Sharpness & +6 Morale.',
+                      'นักเตะที่มีค่าความมุ่งมั่นสูง (Det >= 13) จะฮึดสู้และเพิ่มความฟิตแมตช์ (+8%)'
+                    ),
+                    reply:
+                      player.attributes.mental.determination >= 13
+                        ? tr(
+                            `"You're right gaffer. I know I haven't been at my best—watch me prove myself on the pitch."`,
+                            `"บอสพูดถูกครับ ผมรู้ว่ายังทำได้ดีกว่านี้ รอดูผมพิสูจน์ตัวเองในสนามได้เลย"`
+                          )
+                        : tr(
+                            `"I think that's a bit harsh, Boss, but I'll try to work harder."`,
+                            `"ผมคิดว่าบอสพูดแรงไปนิดนะครับ แต่ผมจะพยายามซ้อมให้หนักขึ้น"`
+                          ),
+                  },
+                  {
+                    id: 'EXPLAIN_ROTATION',
+                    title: tr(
+                      '🤝 Explain Squad Rotation & Promise Upcoming Minutes',
+                      '🤝 อธิบายแผนการโรเตชั่นและสัญญาว่าจะให้โอกาสลงสนาม'
+                    ),
+                    desc: tr(
+                      'Clears playing-time unhappiness, resets consecutive bench streak, and restores +14 Morale.',
+                      'เคลียร์ปัญหาไม่พอใจเรื่องเวลาลงสนาม รีเซ็ตสถิตินั่งสำรองติดกัน และฟื้นฟูขวัญกำลังใจ (+14)'
+                    ),
+                    reply: tr(
+                      `"I appreciate the honesty, Boss. Knowing I'm part of your rotation plans puts my mind at ease."`,
+                      `"ขอบคุณที่เปิดใจคุยกันตรงๆ ครับบอส พอรู้ว่าผมยังอยู่ในแผนการทำทีมก็สบายใจขึ้นเยอะครับ"`
+                    ),
+                  },
+                  {
+                    id: 'CAPTAIN_INTERVENE',
+                    title: tr(
+                      '©️ Ask Club Captain to Intervene & Mentor',
+                      '©️ มอบหมายให้กัปตันทีมช่วยพูดคุยเคลียร์ใจ'
+                    ),
+                    desc: tr(
+                      'Uses Club Captain Leadership to resolve dressing-room friction and boost Morale.',
+                      'ใช้ค่าความเป็นผู้นำ (Leadership) ของกัปตันทีมช่วยประสานรอยร้าวและดึงขวัญกำลังใจกลับมา'
+                    ),
+                    reply: tr(
+                      `The club captain sat down with ${player.lastName} after training and resolved the tension.`,
+                      `กัปตันทีมเข้าไปพูดคุยปรับความเข้าใจกับ ${player.lastName} หลังเลิกซ้อมจนบรรยากาศดีขึ้นมาก`
+                    ),
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  data-testid={`player-chat-topic-${opt.id.toLowerCase()}`}
+                  onClick={() => {
+                    onPlayerChat(player.id, opt.id);
+                    setChatFeedback(opt.reply);
+                  }}
+                  className="w-full p-3 rounded-xl bg-slate-950 hover:bg-sky-500/15 border border-slate-800 hover:border-sky-500/40 text-left space-y-1 cursor-pointer transition-colors"
+                >
+                  <div className="font-semibold text-white">{opt.title}</div>
+                  <div className="text-[11px] text-slate-400">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+
+            {chatFeedback && (
+              <div
+                data-testid="player-chat-response-box"
+                className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 font-medium"
+              >
+                💬 {chatFeedback}
+              </div>
+            )}
           </div>
         </div>
       )}

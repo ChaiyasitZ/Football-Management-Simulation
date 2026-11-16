@@ -77,11 +77,14 @@ describe('Firestore Security Rules — Dirty Dozen & 8 Pillars Verification', ()
       'Payload 10 blocked: gameDate format and size check'
     );
 
-    // 11. Type Poisoning Guard (careerState must be a native map with strict keys)
+    // 11. Type Poisoning Guard (careerState must be a native map with strict keys including Stage 3 fields)
     assert.ok(
       rules.includes('cs is map') &&
-        rules.includes('isValidCareerStateMap(data.careerState)'),
-      'Payload 11 blocked: careerState must be a validated native map'
+        rules.includes('isValidCareerStateMap(data.careerState)') &&
+        rules.includes("'buyBackClauses'") &&
+        rules.includes("'scheduledExtraFixtures'") &&
+        rules.includes("'uefaPots'"),
+      'Payload 11 blocked: careerState must be a validated native map with complete Stage 3 keys'
     );
 
     // 12. Secure List Query Enforcer (checks resource.data.ownerId without get/exists)

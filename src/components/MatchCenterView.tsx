@@ -150,6 +150,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   const [penaltyKicksLog, setPenaltyKicksLog] = useState<
     { round: number; homeScored: boolean; awayScored: boolean; homeTaker: string; awayTaker: string }[]
   >([]);
+  const [highlightMode, setHighlightMode] = useState<'FULL' | 'KEY' | 'DATA'>('KEY');
+  const [replayGoalEvent, setReplayGoalEvent] = useState<MatchEvent | null>(null);
+  const [emergencyInjuryPlayerId, setEmergencyInjuryPlayerId] = useState<string | null>(null);
 
   // 5 Swappable Analytics Tiles persisted in localStorage
   const [tiles, setTiles] = useState<
@@ -247,10 +250,34 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     return computed;
   };
 
+  // Helper to check if a minute or adjacent minute is a Key Highlight
+  const isKeyHighlightMinute = (min: number, res: MatchResult | null): boolean => {
+    if (!res || min <= 0) return false;
+    return res.events.some(
+      (e) =>
+        Math.abs(e.minute - min) <= 1 &&
+        (e.eventType === 'Goal' ||
+          e.eventType === 'PenaltyMissed' ||
+          e.eventType === 'RedCard' ||
+          e.eventType === 'Injury' ||
+          (e.shotXg ?? e.xGDelta ?? 0) >= 0.25)
+    );
+  };
+
+  const activeKeyHighlight = isKeyHighlightMinute(currentMinute, simResult);
+
   // Minute progression timer when playing live
   useEffect(() => {
     if (!isPlaying || !simResult) return;
-    const intervalMs = speed === 4 ? 70 : speed === 2 ? 140 : 260;
+    const baseMs = speed === 4 ? 70 : speed === 2 ? 140 : 260;
+    const intervalMs =
+      highlightMode === 'DATA'
+        ? 35
+        : highlightMode === 'KEY'
+          ? isKeyHighlightMinute(currentMinute + 1, simResult) || activeKeyHighlight
+            ? 240
+            : 45
+          : baseMs;
     const endMinute = simResult.extraTimePlayed ? 120 : 90;
 
     const timer = setInterval(() => {
@@ -265,6 +292,15 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
         if (ev && ev.eventType === 'Goal') {
           soundService.playGoalCheer();
         }
+        if (
+          ev &&
+          ev.eventType === 'Injury' &&
+          ev.teamId === myClub.id &&
+          liveSubstitutions.length < 5
+        ) {
+          setIsPlaying(false);
+          setEmergencyInjuryPlayerId(ev.playerId || null);
+        }
 
         // Pause at Half-Time (45') if team talk not yet given
         if (nextMin === 45 && !teamTalkGiven) {
@@ -276,7 +312,17 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     }, intervalMs);
 
     return () => clearInterval(timer);
-  }, [isPlaying, simResult, speed, teamTalkGiven]);
+  }, [
+    isPlaying,
+    simResult,
+    speed,
+    teamTalkGiven,
+    highlightMode,
+    currentMinute,
+    activeKeyHighlight,
+    myClub.id,
+    liveSubstitutions.length,
+  ]);
 
   // Auto-commit match result to WorldState when reaching full-time (90' or 120')
   useEffect(() => {
@@ -1821,6 +1867,34 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               </button>
             )}
 
+          {/* Broadcast Highlight Mode Selector (FULL / KEY / DATA) */}
+          <div
+            data-testid="highlight-mode-selector"
+            className="flex items-center gap-0.5 p-0.5 bg-slate-900 rounded-lg border border-slate-800"
+          >
+            {(
+              [
+                { id: 'FULL', label: tr('Full 90m', 'เต็มเกม') },
+                { id: 'KEY', label: tr('Key Highlights', 'ไฮไลท์สำคัญ') },
+                { id: 'DATA', label: tr('Data Only', 'ข้อมูลล้วน') },
+              ] as const
+            ).map((hm) => (
+              <button
+                key={hm.id}
+                type="button"
+                data-testid={`highlight-mode-${hm.id.toLowerCase()}`}
+                onClick={() => setHighlightMode(hm.id)}
+                className={`px-1.5 py-0.5 text-[11px] font-mono rounded cursor-pointer whitespace-nowrap ${
+                  highlightMode === hm.id
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {hm.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-0.5 p-0.5 bg-slate-900 rounded-lg border border-slate-800">
             {([1, 2, 4] as const).map((spd) => (
               <button
@@ -2333,13 +2407,63 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
 
             {/* Center Wide Live 2D Pitch + Live Commentary Ticker */}
             <div className="md:col-span-6 bg-slate-900/95 border border-slate-800 rounded-xl p-2.5 flex flex-col justify-between min-h-0 overflow-hidden">
-              <div className="flex items-center justify-between mb-1 shrink-0">
-                <span className="text-xs font-display font-bold text-white uppercase tracking-wider">
-                  {tr('LIVE 2D PITCH ENGINE', 'สนามแข่งขันสด 2D (22 PLAYERS)')}
-                </span>
-                <span className="text-xs font-mono text-slate-400">
-                  {homeClub.stadiumName}
-                </span>
+              <div className="flex items-center justify-between gap-2 mb-1 shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-display font-bold text-white uppercase tracking-wider">
+                    {tr('LIVE 2D PITCH ENGINE', 'สนามแข่งขันสด 2D (22 PLAYERS)')}
+                  </span>
+                  {activeKeyHighlight && (
+                    <span
+                      data-testid="key-highlight-badge"
+                      className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/60 text-amber-300 text-[10px] font-mono font-bold animate-pulse"
+                    >
+                      ⚡ {tr('KEY HIGHLIGHT IN PROGRESS', 'จังหวะไฮไลท์สำคัญ')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="watch-goal-replay-btn"
+                    onClick={() => {
+                      const goals = visibleEvents.filter((e) => e.eventType === 'Goal');
+                      const latestGoal = goals[goals.length - 1];
+                      if (latestGoal) {
+                        setReplayGoalEvent(latestGoal);
+                      } else {
+                        const fallbackScorer = myStarters[myStarters.length - 1] || myStarters[0];
+                        const fallbackAssister = myStarters[Math.max(0, myStarters.length - 3)];
+                        setReplayGoalEvent({
+                          id: 'preview_replay_goal',
+                          fixtureId: targetFixture?.id || 'fix_replay',
+                          minute: Math.max(1, currentMinute || 24),
+                          eventType: 'Goal',
+                          teamId: myClub.id,
+                          playerId: fallbackScorer?.id,
+                          playerName: fallbackScorer
+                            ? `${fallbackScorer.firstName} ${fallbackScorer.lastName}`
+                            : myClub.shortName,
+                          secondaryPlayerName: fallbackAssister
+                            ? `${fallbackAssister.firstName} ${fallbackAssister.lastName}`
+                            : 'Playmaker',
+                          shotXg: 0.38,
+                          pitchX: isUserHome ? 88 : 12,
+                          pitchY: 46,
+                          text: tr(
+                            `Goal Instant Replay Analysis — ${myClub.shortName} attacking build-up pattern.`,
+                            `ภาพช้าวิเคราะห์จังหวะเข้าทำประตู — รูปแบบการต่อบอลของ ${myClub.shortName}`
+                          ),
+                        });
+                      }
+                    }}
+                    className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500 text-emerald-300 hover:text-slate-950 border border-emerald-500/40 text-[10px] font-mono font-bold cursor-pointer transition-colors"
+                  >
+                    🎥 {tr('Goal Replay', 'ภาพช้าประตู')}
+                  </button>
+                  <span className="text-xs font-mono text-slate-400 hidden sm:inline">
+                    {homeClub.stadiumName}
+                  </span>
+                </div>
               </div>
 
               {/* Interactive 22-Player SVG Pitch */}
@@ -2619,6 +2743,215 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           {renderSwappableTile(4, 'flex-1')}
         </div>
       </div>
+
+      {/* 2D GOAL INSTANT REPLAY MODAL (3-Step Build-Up Vector, Shot Velocity & xG) */}
+      {replayGoalEvent && (() => {
+        const isHomeGoal = replayGoalEvent.teamId === homeClub.id;
+        const scoringClub = isHomeGoal ? homeClub : awayClub;
+        const shotXgVal = replayGoalEvent.shotXg ?? replayGoalEvent.xGDelta ?? 0.34;
+        const shotVelocityKmh = Math.round(86 + ((replayGoalEvent.minute * 13) % 32));
+        const p1X = isHomeGoal ? 38 : 62;
+        const p1Y = 44;
+        const p2X = isHomeGoal ? 68 : 32;
+        const p2Y = 24;
+        const p3X = isHomeGoal ? 84 : 16;
+        const p3Y = 31;
+        const netX = isHomeGoal ? 96.5 : 3.5;
+        const netY = 29;
+        const allGoals = visibleEvents.filter((e) => e.eventType === 'Goal');
+
+        return (
+          <div
+            data-testid="goal-instant-replay-modal"
+            className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <div className="w-full max-w-2xl rounded-2xl bg-slate-900 border border-emerald-500/50 shadow-2xl p-5 space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <ClubBadge club={scoringClub} size="sm" />
+                  <div>
+                    <div className="text-sm font-display font-bold text-white flex items-center gap-2">
+                      <span>🎥 {tr('2D GOAL INSTANT REPLAY', 'ภาพช้าจำลองวิถีประตู 2D')}</span>
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono text-xs">
+                        {replayGoalEvent.minute}&apos;
+                      </span>
+                    </div>
+                    <p className="text-slate-400">
+                      {replayGoalEvent.text}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="close-goal-replay-btn"
+                  onClick={() => setReplayGoalEvent(null)}
+                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {allGoals.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-slate-400 font-mono">{tr('Select Goal:', 'เลือกจังหวะประตู:')}</span>
+                  {allGoals.map((g) => (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => setReplayGoalEvent(g)}
+                      className={`px-2 py-0.5 rounded font-mono cursor-pointer border ${
+                        replayGoalEvent.id === g.id
+                          ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                          : 'bg-slate-950 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      {g.minute}&apos; {g.playerName || ''}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* 2D Vector Trajectory SVG */}
+              <svg
+                viewBox="0 0 100 62"
+                className="w-full h-56 rounded-xl border border-slate-800 bg-[#0b4630]"
+              >
+                <rect x="3" y="3" width="94" height="56" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.6" />
+                <line x1="50" y1="3" x2="50" y2="59" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                <circle cx="50" cy="31" r="8" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                <rect x="3" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.6" />
+                <rect x="83" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.5)" strokeWidth="0.6" />
+
+                {/* Step 1 -> Step 2 (Build-Up Pass) */}
+                <line
+                  x1={p1X}
+                  y1={p1Y}
+                  x2={p2X}
+                  y2={p2Y}
+                  stroke="#38bdf8"
+                  strokeWidth="0.9"
+                  strokeDasharray="2 1"
+                />
+                {/* Step 2 -> Step 3 (Assist Final Pass) */}
+                <line
+                  x1={p2X}
+                  y1={p2Y}
+                  x2={p3X}
+                  y2={p3Y}
+                  stroke="#a855f7"
+                  strokeWidth="1.1"
+                  strokeDasharray="1.5 1"
+                />
+                {/* Step 3 -> Goal Net (Laser Shot Trajectory) */}
+                <line
+                  x1={p3X}
+                  y1={p3Y}
+                  x2={netX}
+                  y2={netY}
+                  stroke="#10b981"
+                  strokeWidth="1.5"
+                />
+
+                {/* Build-Up Node */}
+                <circle cx={p1X} cy={p1Y} r="2.6" fill="#0284c7" stroke="#fff" strokeWidth="0.5" />
+                <text x={p1X} y={p1Y + 5} textAnchor="middle" fontSize="2.2" fill="#e2e8f0">
+                  1. Build-Up
+                </text>
+
+                {/* Assister Node */}
+                <circle cx={p2X} cy={p2Y} r="2.8" fill="#9333ea" stroke="#fff" strokeWidth="0.5" />
+                <text x={p2X} y={p2Y - 4} textAnchor="middle" fontSize="2.2" fill="#f3e8ff" fontWeight="bold">
+                  2. {replayGoalEvent.secondaryPlayerName || 'Key Pass'}
+                </text>
+
+                {/* Scorer Node */}
+                <circle cx={p3X} cy={p3Y} r="3.1" fill={scoringClub.primaryColor} stroke="#facc15" strokeWidth="0.7" />
+                <text x={p3X} y={p3Y + 5.5} textAnchor="middle" fontSize="2.4" fill="#fef08a" fontWeight="bold">
+                  3. ⚽ {replayGoalEvent.playerName || 'Scorer'}
+                </text>
+
+                {/* Net Target Pulse */}
+                <circle cx={netX} cy={netY} r="2.2" fill="#facc15" stroke="#fff" strokeWidth="0.5" />
+              </svg>
+
+              <div className="grid grid-cols-3 gap-3 font-mono">
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-slate-400 text-[10px]">{tr('SHOT VELOCITY', 'ความเร็วลูกยิง')}</div>
+                  <div className="text-base font-bold text-emerald-400">{shotVelocityKmh} km/h</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-slate-400 text-[10px]">{tr('SHOT QUALITY (xG)', 'ค่าคาดหวังประตู (xG)')}</div>
+                  <div className="text-base font-bold text-amber-400">{shotXgVal.toFixed(2)} xG</div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-slate-400 text-[10px]">{tr('ASSIST VECTOR', 'แอสซิสต์')}</div>
+                  <div className="text-sm font-bold text-purple-300 truncate">
+                    {replayGoalEvent.secondaryPlayerName || tr('Unassisted / Rebound', 'ยิงเดี่ยว / ซ้ำดาบสอง')}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* FORCED INJURY EMERGENCY SUBSTITUTION MODAL */}
+      {emergencyInjuryPlayerId && liveSubstitutions.length < 5 && (
+        <div
+          data-testid="injury-emergency-sub-modal"
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-slate-900 border border-rose-500/60 shadow-2xl p-5 space-y-4 text-xs">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-display font-bold text-rose-400 uppercase">
+                  🚑 {tr('Forced Injury — Medical Bench Alert', 'นักเตะบาดเจ็บในสนาม — เปลี่ยนตัวฉุกเฉิน')}
+                </h3>
+                <p className="text-slate-300 mt-0.5">
+                  {world.players[emergencyInjuryPlayerId]?.firstName}{' '}
+                  {world.players[emergencyInjuryPlayerId]?.lastName}{' '}
+                  {tr(
+                    'picked up a knock and the medical staff recommend an immediate substitution.',
+                    'ได้รับบาดเจ็บ ทีมแพทย์แนะนำให้เปลี่ยนตัวออกทันทีเพื่อป้องกันอาการเจ็บหนัก'
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmergencyInjuryPlayerId(null)}
+                className="px-2 py-1 rounded bg-slate-800 text-slate-300 hover:text-white cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-1.5 max-h-60 overflow-y-auto">
+              {myBench.map((bPlayer) => (
+                <button
+                  key={bPlayer.id}
+                  type="button"
+                  onClick={() => {
+                    handleMakeSubstitution(emergencyInjuryPlayerId, bPlayer.id);
+                    setEmergencyInjuryPlayerId(null);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/40 flex items-center justify-between text-left cursor-pointer"
+                >
+                  <div>
+                    <span className="font-mono text-emerald-400 font-bold mr-2">
+                      {bPlayer.positions.join('/')}
+                    </span>
+                    <span className="font-semibold text-white">
+                      {bPlayer.firstName} {bPlayer.lastName}
+                    </span>
+                  </div>
+                  <span className="font-mono text-slate-400">
+                    ♥ {bPlayer.fitness}% · Sharp {bPlayer.matchSharpness ?? 80}%
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Substitution Bench Picker Popover when a starter is clicked */}
       {selectedSubOutId && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute && (
