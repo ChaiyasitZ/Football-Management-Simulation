@@ -15,6 +15,7 @@ import {
 import {
   activateReleaseClauseTransfer,
   adjustClubBudgetAllocation,
+  advanceDeadlineDayTwoHours,
   advanceWorldOneDay,
   applyForManagerJob,
   applyMatchResultToWorld,
@@ -24,6 +25,7 @@ import {
   assignYouthMentor,
   buildScoutReportForPlayer,
   buildSevenDayCalendarStrip,
+  clearInMemorySaveCache,
   computeHallOfFameLeaderboard,
   computeLeaguePositionWormData,
   conductOneOnOnePlayerChat,
@@ -36,12 +38,15 @@ import {
   expandClubStadium,
   exportWorldDatabaseJson,
   generateAnnualYouthIntake,
+  getClubAllTimeRecords,
   getClubStaffBonuses,
   getClubSupporterConfidence,
   getCoachingLicenseModifiers,
   getDeadlineDayBargains,
   getFanSocialFeed,
+  getLiveBallonDorAndGoldenBoyRace,
   getNextAvailableManualSaveSlot,
+  getSavedSlotsList,
   getWeeklyTrainingReportAndAdvice,
   holdEmergencySquadMeeting,
   importWorldDatabaseJson,
@@ -1925,3 +1930,46 @@ test('Stage 6 Complete Suite: 100% Zero-LocalStorage Save Purge & End-of-Season 
   assert.ok(rollover.seasonSummary.clubTopScorerName.length > 0);
   assert.ok(rollover.seasonSummary.totalPrizeAndTvPayout > 10_000_000);
 });
+
+test('Stage 7 Complete Suite: Deadline Day Hourly Countdown (08:00-23:00), Live Ballon d\'Or & Golden Boy Power Rankings, All-Time Club Records, and Sign-Out Cache Clear', () => {
+  let world = createInitialWorldState(99999);
+
+  // 1. Deadline Day Hourly Countdown (+2 Hours: 08:00 -> 10:00 -> 12:00)
+  const step1 = advanceDeadlineDayTwoHours(world);
+  assert.equal(step1.currentHour, 10, 'First +2h advance must move clock from 08:00 to 10:00');
+  assert.equal(step1.hoursRemaining, 13);
+  assert.ok(step1.flashDealPlayerId, 'Must select a Flash Deal (-35%) player');
+  assert.ok(step1.tickerHeadline.includes('10:00'), 'Ticker headline must include 10:00 CET timestamp');
+
+  world = step1.nextState;
+  const step2 = advanceDeadlineDayTwoHours(world);
+  assert.equal(step2.currentHour, 12, 'Second +2h advance must move clock from 10:00 to 12:00');
+  assert.equal(step2.hoursRemaining, 11);
+
+  // 2. Live Ballon d'Or & Golden Boy Power Rankings
+  const liveRace = getLiveBallonDorAndGoldenBoyRace(world);
+  assert.equal(liveRace.ballonDorTop5.length, 5, 'Must return Top 5 Ballon d\'Or contenders');
+  assert.equal(liveRace.goldenBoyTop5.length, 5, 'Must return Top 5 U21 Golden Boy contenders');
+  assert.ok(
+    liveRace.ballonDorTop5[0].powerScore >= liveRace.ballonDorTop5[1].powerScore,
+    'Ballon d\'Or contenders must be sorted descending by powerScore'
+  );
+  for (const gb of liveRace.goldenBoyTop5) {
+    assert.ok(gb.age <= 21, 'Golden Boy contenders must all be age <= 21');
+  }
+
+  // 3. All-Time Club Records Book
+  const records = getClubAllTimeRecords(world, world.controlledClubId);
+  assert.equal(records.clubId, world.controlledClubId);
+  assert.ok(records.biggestVictory.scoreline.length > 0);
+  assert.ok(records.topGoalscorer.playerName.length > 0);
+  assert.ok(records.recordSigning.fee > 0);
+  assert.ok(records.recordSale.fee > 0);
+
+  // 4. Sign-Out Cache Clear
+  saveWorldStateToSlot('slot_1', world, false);
+  assert.ok(getSavedSlotsList().length >= 1);
+  clearInMemorySaveCache();
+  assert.equal(getSavedSlotsList().length, 0, 'clearInMemorySaveCache must empty session save slots');
+});
+

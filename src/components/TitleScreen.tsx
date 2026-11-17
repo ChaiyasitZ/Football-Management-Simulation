@@ -12,6 +12,8 @@ import {
   Trash2,
   Trophy,
   UserCheck,
+  Volume2,
+  VolumeX,
   Zap,
 } from 'lucide-react';
 import {
@@ -26,7 +28,8 @@ import {
 } from '../types/game';
 import { CLUB_TEMPLATES, ClubSeedTemplate, LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
-import { ClubBadge, ClubKitJersey, CompetitionBadge, TrophyArtwork } from './ClubBadge';
+import { ClubBadge } from './ClubBadge';
+import { ClubKitJersey, CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 import type { User } from '../firebase';
 
@@ -34,6 +37,8 @@ interface TitleScreenProps {
   world: WorldState | null;
   saveSlots: SaveSlotMeta[];
   authUser?: User | null;
+  isMuted?: boolean;
+  onToggleMute?: () => void;
   onGoogleSignIn?: () => void;
   onGoogleSignOut?: () => void;
   onQuickStart: () => void;
@@ -230,6 +235,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   world,
   saveSlots,
   authUser,
+  isMuted = false,
+  onToggleMute,
   onGoogleSignIn,
   onGoogleSignOut,
   onStartCustomCareer,
@@ -603,6 +610,22 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 <span>{tr('Sign in with Google (Cloud Save)', 'เข้าสู่ระบบ Gmail (ซิงก์เซฟ Cloud)')}</span>
               </button>
             )
+          )}
+
+          {onToggleMute && (
+            <button
+              type="button"
+              data-testid="title-mute-toggle-btn"
+              onClick={onToggleMute}
+              title={isMuted ? tr('Unmute Audio', 'เปิดเสียงเอฟเฟกต์') : tr('Mute Audio', 'ปิดเสียงเอฟเฟกต์')}
+              className="p-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 text-slate-300 hover:text-white cursor-pointer transition-colors"
+            >
+              {isMuted ? (
+                <VolumeX className="w-4 h-4 text-rose-400" />
+              ) : (
+                <Volume2 className="w-4 h-4 text-emerald-400" />
+              )}
+            </button>
           )}
 
           <LanguageSwitcher />

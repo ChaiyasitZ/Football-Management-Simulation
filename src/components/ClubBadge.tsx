@@ -167,115 +167,12 @@ export const ClubBadge: React.FC<{
   );
 });
 
-export const ClubKitJersey: React.FC<{
-  club?: Pick<Club, 'name' | 'shortName' | 'primaryColor' | 'secondaryColor'> | null;
-  variant?: 'home' | 'away' | 'gk';
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-}> = React.memo(({ club, variant = 'home', size = 'md', className = '' }) => {
-  if (!club) return null;
+export {
+  ClubKitJersey,
+  ClubKitShowcaseCard,
+  CompetitionBadge,
+  TrophyArtwork,
+  resolveTrophyType,
+} from './TrophyAndKitVisuals';
 
-  const sizeClass =
-    size === 'sm' ? 'w-7 h-7' : size === 'lg' ? 'w-14 h-14' : 'w-10 h-10';
-
-  const primary =
-    variant === 'home'
-      ? club.primaryColor || '#10b981'
-      : variant === 'away'
-        ? club.secondaryColor || '#f8fafc'
-        : '#f59e0b';
-  const secondary =
-    variant === 'home'
-      ? club.secondaryColor || '#ffffff'
-      : variant === 'away'
-        ? club.primaryColor || '#0f172a'
-        : '#0f172a';
-
-  return (
-    <div
-      className={`${sizeClass} inline-flex items-center justify-center shrink-0 select-none ${className}`}
-      title={`${club.name} (${variant.toUpperCase()})`}
-      data-testid={`club-kit-${variant}`}
-    >
-      <svg viewBox="0 0 64 64" className="w-full h-full drop-shadow">
-        <path
-          d="M20 8 L10 15 L15 28 L21 25 L21 56 L43 56 L43 25 L49 28 L54 15 L44 8 L38 13 C35 15 29 15 26 13 Z"
-          fill={primary}
-          stroke={secondary}
-          strokeWidth="2.5"
-        />
-        <rect x="28" y="15" width="8" height="40" fill={secondary} fillOpacity="0.35" />
-      </svg>
-    </div>
-  );
-});
-
-export const CompetitionBadge: React.FC<{
-  competitionId: CompetitionId | LeagueId | string;
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-}> = React.memo(({ competitionId, size = 'md', className = '' }) => {
-  const [imgErr, setImgErr] = useState(false);
-  const leagueCfg = LEAGUES_CONFIG[competitionId as LeagueId];
-  const logoUrl = leagueCfg?.logoUrl;
-
-  const sizeClass =
-    size === 'sm' ? 'w-6 h-6' : size === 'lg' ? 'w-11 h-11' : 'w-8 h-8';
-
-  if (logoUrl && !imgErr) {
-    return (
-      <img
-        src={logoUrl}
-        alt={leagueCfg?.name || String(competitionId)}
-        loading="lazy"
-        decoding="async"
-        referrerPolicy="no-referrer"
-        onError={() => setImgErr(true)}
-        className={`${sizeClass} object-contain shrink-0 select-none ${className}`}
-      />
-    );
-  }
-
-  return (
-    <span
-      className={`${sizeClass} rounded-md bg-slate-800 border border-slate-700 inline-flex items-center justify-center text-[10px] font-mono font-bold text-amber-300 shrink-0 ${className}`}
-    >
-      🏆
-    </span>
-  );
-});
-
-export const TrophyArtwork: React.FC<{
-  competitionId?: CompetitionId | LeagueId | string;
-  size?: 'sm' | 'md' | 'lg';
-  className?: string;
-}> = React.memo(({ size = 'md', className = '' }) => {
-  const sizeClass =
-    size === 'sm' ? 'w-7 h-7' : size === 'lg' ? 'w-14 h-14' : 'w-10 h-10';
-
-  return (
-    <div
-      className={`${sizeClass} inline-flex items-center justify-center shrink-0 select-none ${className}`}
-      data-testid="trophy-artwork-svg"
-    >
-      <svg viewBox="0 0 64 64" className="w-full h-full drop-shadow">
-        <path
-          d="M20 10 H44 V24 C44 33 38 39 32 41 C26 39 20 33 20 24 Z"
-          fill="#fbbf24"
-          stroke="#fef08a"
-          strokeWidth="2"
-        />
-        <path
-          d="M20 14 H13 C13 23 16 28 21 29 M44 14 H51 C51 23 48 28 43 29"
-          fill="none"
-          stroke="#f59e0b"
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-        <rect x="28" y="41" width="8" height="9" fill="#d97706" />
-        <rect x="21" y="50" width="22" height="6" rx="2" fill="#92400e" stroke="#fbbf24" strokeWidth="1.5" />
-      </svg>
-    </div>
-  );
-});
 

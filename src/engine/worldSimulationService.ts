@@ -4247,6 +4247,13 @@ export function getSavedSlotsList(): SaveSlotMeta[] {
   return inMemorySlotMetas;
 }
 
+export function clearInMemorySaveCache(): void {
+  for (const key of Object.keys(inMemorySaveSlots)) {
+    delete inMemorySaveSlots[key];
+  }
+  inMemorySlotMetas = [];
+}
+
 export function deleteSavedSlot(rawSlotId: string): SaveSlotMeta[] {
   const slotId = sanitizeSlotId(rawSlotId);
   delete inMemorySaveSlots[slotId];
@@ -8766,6 +8773,414 @@ export function simulateU21YouthAndReservesMatchday(state: WorldState): {
     ),
   };
 }
+
+/**
+ * Stage 7 Phase 2: Transfer Deadline Day Hourly Countdown (08:00 – 23:00)
+ * - Advances the Deadline Day clock by +2 Hours (08:00 -> 10:00 -> ... -> 23:00)
+ * - Generates a live European Breaking Transfer Ticker headline
+ * - Selects a Flash Deal (-35% asking price) bargain player
+ * - Triggers occasional AI last-minute loan/transfer bids for user fringe players
+ */
+export function advanceDeadlineDayTwoHours(state: WorldState): {
+  nextState: WorldState;
+  currentHour: number;
+  hoursRemaining: number;
+  tickerHeadline: string;
+  flashDealPlayerId: string | null;
+  windowClosed: boolean;
+  message: string;
+} {
+  const prevHour = typeof state.deadlineHour === 'number' ? state.deadlineHour : 8;
+  const rng = new SeededRNG(state.randomSeed + prevHour * 97 + state.transferOffers.length * 31);
+  const myClub = state.clubs[state.controlledClubId];
+
+  // If already at 23:00, close the window and advance to next day (resetting deadlineHour to 8)
+  if (prevHour >= 23) {
+    const advancedDay = advanceWorldOneDay(state);
+    const closedHeadline = trText(
+      `🔔 [23:00 CET] OFFICIAL: The European Transfer Window has slammed shut! All late registrations ratified.`,
+      `🔔 [23:00 CET] ปิดตลาดซื้อขายนักเตะยุโรปอย่างเป็นทางการ! ดีลนาทีสุดท้ายทั้งหมดได้รับการขึ้นทะเบียนเรียบร้อย`
+    );
+    return {
+      nextState: {
+        ...advancedDay.nextState,
+        deadlineHour: 8,
+        deadlineFlashDealPlayerId: null,
+        deadlineTickerHeadlines: [
+          closedHeadline,
+          ...(state.deadlineTickerHeadlines || []).slice(0, 5),
+        ],
+      },
+      currentHour: 23,
+      hoursRemaining: 0,
+      tickerHeadline: closedHeadline,
+      flashDealPlayerId: null,
+      windowClosed: true,
+      message: closedHeadline,
+    };
+  }
+
+  const nextHour = Math.min(23, prevHour + 2);
+  const hoursRemaining = Math.max(0, 23 - nextHour);
+
+  // Pick a Flash Deal (-35% Asking Price) candidate from external transfer-listed or high-CA players
+  const externalCandidates = Object.values(state.players)
+    .filter((p) => p.clubId !== myClub.id && (p.transferListed || p.currentAbility >= 145))
+    .sort((a, b) => b.currentAbility - a.currentAbility)
+    .slice(0, 24);
+
+  const flashPlayer =
+    externalCandidates[Math.abs(prevHour + state.transferOffers.length) % Math.max(1, externalCandidates.length)] ||
+    null;
+
+  const updatedPlayers: Record<string, Player> = { ...state.players };
+  if (flashPlayer) {
+    const flashDiscountPrice = Math.max(
+      500_000,
+      Math.round((flashPlayer.marketValue * 0.65) / 100_000) * 100_000
+    );
+    updatedPlayers[flashPlayer.id] = {
+      ...flashPlayer,
+      transferListed: true,
+      askingPrice: flashDiscountPrice,
+    };
+  }
+
+  // Generate a realistic European Breaking Transfer Ticker headline
+  const otherClubs = Object.values(state.clubs).filter((c) => c.id !== myClub.id && c.reputation >= 78);
+  const buyerA = rng.pick(otherClubs) || myClub;
+  const sellerB = rng.pick(otherClubs.filter((c) => c.id !== buyerA.id)) || myClub;
+  const feeM = (rng.int(18, 72) + 0.5).toFixed(1);
+  const hourStr = `${String(nextHour).padStart(2, '0')}:00`;
+
+  const tickerHeadline = flashPlayer
+    ? trText(
+        `⚡ [${hourStr} CET] FLASH DEAL (-35%): ${flashPlayer.firstName} ${flashPlayer.lastName} (${state.clubs[flashPlayer.clubId]?.shortName || 'EU'}) offered by agent for €${((flashPlayer.marketValue * 0.65) / 1_000_000).toFixed(1)}M · ${buyerA.shortName} in advanced talks with ${sellerB.shortName} (€${feeM}M)!`,
+        `⚡ [${hourStr} CET] ดีลด่วนลดราคา -35%: เอเย่นต์เร่ขาย ${flashPlayer.firstName} ${flashPlayer.lastName} เหลือเพียง €${((flashPlayer.marketValue * 0.65) / 1_000_000).toFixed(1)}M · ${buyerA.shortName} เปิดโต๊ะเจรจาคว้าแข้ง ${sellerB.shortName} (€${feeM}M)!`
+      )
+    : trText(
+        `⚡ [${hourStr} CET] BREAKING: ${buyerA.name} submit €${feeM}M deadline bid to ${sellerB.name} (${hoursRemaining}h remaining)!`,
+        `⚡ [${hourStr} CET] ข่าวด่วนตลาดซื้อขาย: ${buyerA.name} ยื่นข้อเสนอ €${feeM}M ให้ ${sellerB.name} (เหลือเวลาอีก ${hoursRemaining} ชม.)!`
+      );
+
+  // Occasionally generate a last-minute AI bid for one of user's squad/fringe players
+  const updatedOffers = [...state.transferOffers];
+  const updatedInbox = [...state.inbox];
+  const mySquad = Object.values(updatedPlayers).filter((p) => p.clubId === myClub.id);
+  const fringePool = mySquad.filter(
+    (p) => p.transferListed || p.loanListed || p.squadStatus === 'Squad Player' || p.squadStatus === 'Breakthrough Prospect'
+  );
+  const targetUserPlayer = fringePool.length > 0 ? rng.pick(fringePool) : mySquad[0];
+
+  if (targetUserPlayer && otherClubs.length > 0 && (nextHour === 12 || nextHour === 18 || nextHour === 22)) {
+    const biddingClub = rng.pick(otherClubs);
+    const panicFee = Math.max(
+      1_500_000,
+      Math.round((targetUserPlayer.marketValue * 1.15) / 250_000) * 250_000
+    );
+    const offerId = `off_dd_${state.gameDate}_${nextHour}_${targetUserPlayer.id}`;
+    const newOffer: TransferOffer = {
+      id: offerId,
+      date: state.gameDate,
+      playerId: targetUserPlayer.id,
+      buyingClubId: biddingClub.id,
+      sellingClubId: myClub.id,
+      offerType: 'Transfer',
+      upfrontFee: panicFee,
+      installmentsFee: 0,
+      sellOnPercentage: 10,
+      proposedWagePerWeek: Math.round(targetUserPlayer.wagePerWeek * 1.2),
+      proposedContractYears: 4,
+      proposedSquadStatus: 'Important Player',
+      signingBonus: 500_000,
+      agentFee: 250_000,
+      status: 'PendingClub',
+    };
+    updatedOffers.unshift(newOffer);
+    updatedInbox.unshift({
+      id: `news_dd_bid_${offerId}`,
+      gameDate: state.gameDate,
+      category: 'Transfer',
+      title: trText(
+        `⏰ [${hourStr}] Deadline Panic Bid: ${biddingClub.name} offer €${(panicFee / 1_000_000).toFixed(2)}M for ${targetUserPlayer.firstName} ${targetUserPlayer.lastName}!`,
+        `⏰ [${hourStr}] ข้อเสนอนาทีสุดท้าย: ${biddingClub.name} ยื่นซื้อ ${targetUserPlayer.firstName} ${targetUserPlayer.lastName} ราคา €${(panicFee / 1_000_000).toFixed(2)}M!`
+      ),
+      body: trText(
+        `With only ${hoursRemaining} hours left before the window closes, ${biddingClub.name} have tabled an urgent €${(panicFee / 1_000_000).toFixed(2)}M offer (1.15x market value) for ${targetUserPlayer.firstName} ${targetUserPlayer.lastName}.`,
+        `เหลือเวลาเพียง ${hoursRemaining} ชั่วโมงก่อนปิดตลาด ${biddingClub.name} ได้ยื่นข้อเสนอด่วน €${(panicFee / 1_000_000).toFixed(2)}M (1.15 เท่าของราคาตลาด) เพื่อขอซื้อ ${targetUserPlayer.firstName} ${targetUserPlayer.lastName}`
+      ),
+      isRead: false,
+      isImportant: true,
+      relatedClubId: biddingClub.id,
+      relatedPlayerId: targetUserPlayer.id,
+      actionType: 'GoToTransfer',
+    });
+  }
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      transferOffers: updatedOffers,
+      inbox: updatedInbox,
+      deadlineHour: nextHour,
+      deadlineFlashDealPlayerId: flashPlayer?.id || null,
+      deadlineTickerHeadlines: [
+        tickerHeadline,
+        ...(state.deadlineTickerHeadlines || []).slice(0, 5),
+      ],
+    },
+    currentHour: nextHour,
+    hoursRemaining,
+    tickerHeadline,
+    flashDealPlayerId: flashPlayer?.id || null,
+    windowClosed: false,
+    message: tickerHeadline,
+  };
+}
+
+/**
+ * Stage 7 Phase 4.1: Live Season Ballon d'Or & Golden Boy (U21) Power Rankings
+ */
+export interface LiveAwardContender {
+  rank: number;
+  playerId: string;
+  playerName: string;
+  clubId: string;
+  clubName: string;
+  age: number;
+  ca: number;
+  pa: number;
+  goals: number;
+  assists: number;
+  averageRating: number;
+  powerScore: number;
+}
+
+export function getLiveBallonDorAndGoldenBoyRace(state: WorldState): {
+  ballonDorTop5: LiveAwardContender[];
+  goldenBoyTop5: LiveAwardContender[];
+} {
+  const allPlayers = Object.values(state.players);
+
+  const scorePlayer = (p: Player): number => {
+    const clubRep = state.clubs[p.clubId]?.reputation || 70;
+    const ratingBonus = Math.max(0, (p.stats.averageRating - 6.5) * 32);
+    return Number(
+      (
+        p.currentAbility * 0.85 +
+        p.stats.goals * 4.2 +
+        p.stats.assists * 2.8 +
+        p.stats.manOfTheMatch * 3.5 +
+        ratingBonus +
+        clubRep * 0.25
+      ).toFixed(1)
+    );
+  };
+
+  const ballonDorTop5: LiveAwardContender[] = [...allPlayers]
+    .sort((a, b) => scorePlayer(b) - scorePlayer(a))
+    .slice(0, 5)
+    .map((p, idx) => ({
+      rank: idx + 1,
+      playerId: p.id,
+      playerName: `${p.firstName} ${p.lastName}`,
+      clubId: p.clubId,
+      clubName: state.clubs[p.clubId]?.name || 'Club',
+      age: getAgeAtDate(p.dateOfBirth, state.gameDate),
+      ca: p.currentAbility,
+      pa: p.potentialAbility,
+      goals: p.stats.goals,
+      assists: p.stats.assists,
+      averageRating: p.stats.averageRating || 7.1,
+      powerScore: scorePlayer(p),
+    }));
+
+  const goldenBoyTop5: LiveAwardContender[] = allPlayers
+    .filter((p) => getAgeAtDate(p.dateOfBirth, state.gameDate) <= 21)
+    .sort((a, b) => scorePlayer(b) + b.potentialAbility * 0.25 - (scorePlayer(a) + a.potentialAbility * 0.25))
+    .slice(0, 5)
+    .map((p, idx) => ({
+      rank: idx + 1,
+      playerId: p.id,
+      playerName: `${p.firstName} ${p.lastName}`,
+      clubId: p.clubId,
+      clubName: state.clubs[p.clubId]?.name || 'Club',
+      age: getAgeAtDate(p.dateOfBirth, state.gameDate),
+      ca: p.currentAbility,
+      pa: p.potentialAbility,
+      goals: p.stats.goals,
+      assists: p.stats.assists,
+      averageRating: p.stats.averageRating || 7.05,
+      powerScore: scorePlayer(p),
+    }));
+
+  return { ballonDorTop5, goldenBoyTop5 };
+}
+
+/**
+ * Stage 7 Phase 4.2: All-Time Club Records Book
+ */
+export interface ClubAllTimeRecords {
+  clubId: string;
+  clubName: string;
+  biggestVictory: {
+    scoreline: string;
+    opponentName: string;
+    date: string;
+  };
+  topGoalscorer: {
+    playerId: string;
+    playerName: string;
+    goals: number;
+    appearances: number;
+  };
+  highestRatedPlayer: {
+    playerId: string;
+    playerName: string;
+    averageRating: number;
+    appearances: number;
+  };
+  recordSigning: {
+    playerName: string;
+    fee: number;
+    fromClubName: string;
+  };
+  recordSale: {
+    playerName: string;
+    fee: number;
+    toClubName: string;
+  };
+}
+
+export function getClubAllTimeRecords(
+  state: WorldState,
+  targetClubId?: string
+): ClubAllTimeRecords {
+  const clubId = targetClubId || state.controlledClubId;
+  const club = state.clubs[clubId] || state.clubs[state.controlledClubId];
+  const clubPlayers = Object.values(state.players).filter((p) => p.clubId === club.id);
+
+  // 1. Biggest Victory from completed fixtures
+  const completedClubFixtures = state.fixtures.filter(
+    (f) => f.status === 'Completed' && f.result && (f.homeClubId === club.id || f.awayClubId === club.id)
+  );
+  let bestMargin = -1;
+  let bestGoalsFor = -1;
+  let biggestVictory = {
+    scoreline: `${club.shortName} 4 - 0 Rival XI`,
+    opponentName: 'Historic League Record',
+    date: '2024/25',
+  };
+
+  for (const fx of completedClubFixtures) {
+    if (!fx.result) continue;
+    const isHome = fx.homeClubId === club.id;
+    const gf = isHome ? fx.result.homeGoals : fx.result.awayGoals;
+    const ga = isHome ? fx.result.awayGoals : fx.result.homeGoals;
+    const margin = gf - ga;
+    if (margin > 0 && (margin > bestMargin || (margin === bestMargin && gf > bestGoalsFor))) {
+      bestMargin = margin;
+      bestGoalsFor = gf;
+      const oppClub = state.clubs[isHome ? fx.awayClubId : fx.homeClubId];
+      biggestVictory = {
+        scoreline: `${club.shortName} ${gf} - ${ga} ${oppClub?.shortName || 'OPP'}`,
+        opponentName: oppClub?.name || 'Opponent',
+        date: fx.kickoffDate,
+      };
+    }
+  }
+
+  // 2. Top Goalscorer
+  const sortedByGoals = [...clubPlayers].sort(
+    (a, b) => b.stats.goals - a.stats.goals || b.currentAbility - a.currentAbility
+  );
+  const topScorerPlayer = sortedByGoals[0];
+  const topGoalscorer = topScorerPlayer
+    ? {
+        playerId: topScorerPlayer.id,
+        playerName: `${topScorerPlayer.firstName} ${topScorerPlayer.lastName}`,
+        goals: Math.max(topScorerPlayer.stats.goals, Math.round(topScorerPlayer.currentAbility / 12)),
+        appearances: Math.max(1, topScorerPlayer.stats.appearances),
+      }
+    : {
+        playerId: '',
+        playerName: 'Club Legend',
+        goals: 18,
+        appearances: 34,
+      };
+
+  // 3. Highest Rated Player
+  const sortedByRating = [...clubPlayers].sort(
+    (a, b) => b.stats.averageRating - a.stats.averageRating || b.currentAbility - a.currentAbility
+  );
+  const topRatedPlayer = sortedByRating[0];
+  const highestRatedPlayer = topRatedPlayer
+    ? {
+        playerId: topRatedPlayer.id,
+        playerName: `${topRatedPlayer.firstName} ${topRatedPlayer.lastName}`,
+        averageRating: Number((topRatedPlayer.stats.averageRating || 7.25).toFixed(2)),
+        appearances: Math.max(1, topRatedPlayer.stats.appearances),
+      }
+    : {
+        playerId: '',
+        playerName: 'Club Captain',
+        averageRating: 7.45,
+        appearances: 30,
+      };
+
+  // 4. Record Signing & Record Sale from completed TransferOffers (with realistic club fallback)
+  const completedSignings = state.transferOffers
+    .filter((o) => o.buyingClubId === club.id && o.status === 'Completed' && o.offerType === 'Transfer')
+    .sort((a, b) => b.upfrontFee + b.installmentsFee - (a.upfrontFee + a.installmentsFee));
+
+  const completedSales = state.transferOffers
+    .filter((o) => o.sellingClubId === club.id && o.status === 'Completed' && o.offerType === 'Transfer')
+    .sort((a, b) => b.upfrontFee + b.installmentsFee - (a.upfrontFee + a.installmentsFee));
+
+  const mostValuablePlayer = [...clubPlayers].sort((a, b) => b.marketValue - a.marketValue)[0];
+
+  const recordSigning = completedSignings[0]
+    ? {
+        playerName: state.players[completedSignings[0].playerId]
+          ? `${state.players[completedSignings[0].playerId].firstName} ${state.players[completedSignings[0].playerId].lastName}`
+          : 'Marquee Signing',
+        fee: completedSignings[0].upfrontFee + completedSignings[0].installmentsFee,
+        fromClubName: state.clubs[completedSignings[0].sellingClubId]?.name || 'European Club',
+      }
+    : {
+        playerName: mostValuablePlayer
+          ? `${mostValuablePlayer.firstName} ${mostValuablePlayer.lastName}`
+          : 'Marquee Star',
+        fee: mostValuablePlayer ? Math.round(mostValuablePlayer.marketValue * 0.92) : 45_000_000,
+        fromClubName: 'Club Record Transfer',
+      };
+
+  const recordSale = completedSales[0]
+    ? {
+        playerName: state.players[completedSales[0].playerId]
+          ? `${state.players[completedSales[0].playerId].firstName} ${state.players[completedSales[0].playerId].lastName}`
+          : 'Record Departure',
+        fee: completedSales[0].upfrontFee + completedSales[0].installmentsFee,
+        toClubName: state.clubs[completedSales[0].buyingClubId]?.name || 'European Club',
+      }
+    : {
+        playerName: 'Historic Record Departure',
+        fee: Math.max(18_000_000, Math.round(club.finances.transferBudget * 0.85)),
+        toClubName: 'European Giant',
+      };
+
+  return {
+    clubId: club.id,
+    clubName: club.name,
+    biggestVictory,
+    topGoalscorer,
+    highestRatedPlayer,
+    recordSigning,
+    recordSale,
+  };
+}
+
 
 
 

@@ -27,10 +27,12 @@ import {
   evaluateSquadMedicalRisk,
   exportWorldDatabaseJson,
   getAgeAtDate,
+  getClubAllTimeRecords,
   getClubStaffBonuses,
   getClubSupporterConfidence,
   getDeadlineDayBargains,
   getFanSocialFeed,
+  getLiveBallonDorAndGoldenBoyRace,
   getNextAvailableManualSaveSlot,
   getWeeklyTrainingReportAndAdvice,
   isTransferDeadlineWindow,
@@ -1867,6 +1869,7 @@ export const TransfersView: React.FC<{
   onTriggerLoanOptionToBuy?: (playerId: string) => void;
   onSendToAffiliateLoan?: (playerId: string) => void;
   onQuickLoanInPlayer?: (playerId: string) => void;
+  onAdvanceDeadlineTwoHours?: () => void;
 }> = ({
   world,
   onSelectPlayer,
@@ -1879,6 +1882,7 @@ export const TransfersView: React.FC<{
   onTriggerLoanOptionToBuy,
   onSendToAffiliateLoan,
   onQuickLoanInPlayer,
+  onAdvanceDeadlineTwoHours,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -1892,6 +1896,17 @@ export const TransfersView: React.FC<{
   const [counterBuyBackM, setCounterBuyBackM] = useState<number>(0);
   const currentYear = Number(world.gameDate.slice(0, 4)) || 2025;
   const isDeadlineWindow = isTransferDeadlineWindow(world.gameDate);
+  const deadlineHour = typeof world.deadlineHour === 'number' ? world.deadlineHour : 8;
+  const hoursRemaining = Math.max(0, 23 - deadlineHour);
+  const flashDealPlayer = world.deadlineFlashDealPlayerId
+    ? world.players[world.deadlineFlashDealPlayerId]
+    : null;
+  const latestTickerHeadline =
+    (world.deadlineTickerHeadlines && world.deadlineTickerHeadlines[0]) ||
+    tr(
+      `⚡ [${String(deadlineHour).padStart(2, '0')}:00 CET] LIVE EUROPEAN DEADLINE TICKER: Clubs across 15 European leagues are finalizing last-minute medicals and release clauses (${hoursRemaining}h remaining until 23:00 window close).`,
+      `⚡ [${String(deadlineHour).padStart(2, '0')}:00 CET] เกาะติดโค้งสุดท้ายตลาดนักเตะยุโรป: สโมสรจาก 15 ลีกกำลังเร่งปิดดีลตรวจร่างกายและฉีกสัญญาก่อนเส้นตาย 23:00 น. (เหลือเวลาอีก ${hoursRemaining} ชั่วโมง)`
+    );
   const deadlineBargains = useMemo(() => getDeadlineDayBargains(world), [world]);
   const releaseClauseTargets = useMemo(
     () =>
@@ -1981,63 +1996,93 @@ export const TransfersView: React.FC<{
 
   return (
     <div className="space-y-4">
-      {/* Transfer Deadline Day Live Hub Banner (Checkpoint 12) + Global Super-Club Bid (Checkpoint 23) */}
+      {/* Stage 7 Phase 2: Transfer Deadline Day Hourly Countdown Hub (08:00 – 23:00) + Breaking Ticker */}
       <div
-        className={`p-4 rounded-xl border flex flex-wrap items-center justify-between gap-3 ${
-          isDeadlineWindow
-            ? 'bg-amber-950/40 border-amber-500 text-amber-200'
+        data-testid="deadline-hourly-countdown-hub"
+        className={`p-4 rounded-xl border space-y-3 ${
+          isDeadlineWindow || deadlineHour > 8
+            ? 'bg-gradient-to-r from-amber-950/60 via-slate-900 to-rose-950/40 border-amber-500/70 text-amber-100'
             : 'bg-slate-900 border-slate-800 text-slate-300'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <span className="px-2.5 py-1 rounded bg-amber-500 text-slate-950 font-mono font-bold text-xs">
-            ⏰ DEADLINE DAY HUB
-          </span>
-          <div>
-            <div className="text-xs font-bold text-white">
-              {isDeadlineWindow
-                ? tr(
-                    '🚨 TRANSFER WINDOW CLOSING SOON! Agent Last-Minute Bargains (-25% Asking Price) & Instant Release Clauses Active',
-                    '🚨 โค้งสุดท้ายตลาดซื้อขายนักเตะ! เอเย่นต์เร่ขายนักเตะลดราคา -25% & จ่ายค่าฉีกสัญญาคว้าตัวได้ทันที'
-                  )
-                : tr(
-                    'Transfer Deadline Day Scout Radar & Release Clause Directory (Aug 25–31 & Jan 25–31)',
-                    'ศูนย์รวมดีลด่วนโค้งสุดท้าย (-25%) และทำเนียบนักเตะที่มีค่าฉีกสัญญา (Release Clause)'
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 font-mono font-extrabold text-xs shadow-sm">
+              ⏰ {String(deadlineHour).padStart(2, '0')}:00 CET — {hoursRemaining}h LEFT
+            </span>
+            <div>
+              <div className="text-xs font-bold text-white flex items-center gap-2">
+                <span>
+                  {tr(
+                    '🚨 TRANSFER DEADLINE DAY HOURLY COUNTDOWN (08:00 – 23:00)',
+                    '🚨 เกาะติดเส้นตายตลาดซื้อขายรายชั่วโมง (08:00 – 23:00 น.)'
                   )}
-            </div>
-            <div className="text-[11px] text-slate-400">
-              {tr(
-                `${deadlineBargains.length} Agent Bargains (-25% Fee) · ${releaseClauseTargets.length} Release Clause Targets available`,
-                `ดีลเอเย่นต์ลดราคา ${deadlineBargains.length} คน (-25%) · เป้าหมายมีค่าฉีกสัญญา ${releaseClauseTargets.length} คน`
-              )}
+                </span>
+                {flashDealPlayer && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectPlayer(flashDealPlayer.id)}
+                    className="px-2 py-0.5 rounded bg-rose-500/25 border border-rose-400/50 text-rose-200 font-mono text-[10px] hover:bg-rose-500/40 cursor-pointer"
+                  >
+                    🔥 FLASH DEAL -35%: {flashDealPlayer.firstName} {flashDealPlayer.lastName} (€
+                    {(flashDealPlayer.askingPrice / 1_000_000).toFixed(1)}M)
+                  </button>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-300 font-mono mt-0.5">
+                {latestTickerHeadline}
+              </div>
             </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {onTriggerGlobalSuperBid && (
+
+          <div className="flex flex-wrap items-center gap-2">
+            {onAdvanceDeadlineTwoHours && (
+              <button
+                type="button"
+                data-testid="advance-deadline-2h-btn"
+                onClick={onAdvanceDeadlineTwoHours}
+                className="px-3.5 py-1.5 bg-rose-500 hover:bg-rose-400 text-slate-950 font-mono font-extrabold text-xs rounded-lg cursor-pointer shadow-sm transition-colors"
+              >
+                {deadlineHour >= 23
+                  ? tr('🔔 Close Window (23:00)', '🔔 ปิดตลาดซื้อขาย (23:00)')
+                  : tr('⏩ Advance +2 Hours', '⏩ เดินเวลา +2 ชั่วโมง')}
+              </button>
+            )}
+            {onTriggerGlobalSuperBid && (
+              <button
+                type="button"
+                data-testid="trigger-super-club-bid-btn"
+                onClick={() => {
+                  onTriggerGlobalSuperBid();
+                  setTab('incoming');
+                }}
+                className="px-3.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs rounded-lg cursor-pointer"
+              >
+                {tr(
+                  '💰 Simulate Saudi / MLS Super-Club Bid (1.38x)',
+                  '💰 จำลองข้อเสนอทุ่มซื้อจากสโมสรซาอุฯ / MLS (1.38x)'
+                )}
+              </button>
+            )}
             <button
               type="button"
-              data-testid="trigger-super-club-bid-btn"
-              onClick={() => {
-                onTriggerGlobalSuperBid();
-                setTab('incoming');
-              }}
-              className="px-3.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 font-semibold text-xs rounded-lg cursor-pointer"
+              onClick={() => setTab('deadline')}
+              data-testid="deadline-hub-tab-btn"
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
             >
-              {tr(
-                '💰 Simulate Saudi / MLS Super-Club Bid (1.38x)',
-                '💰 จำลองข้อเสนอทุ่มซื้อจากสโมสรซาอุฯ / MLS (1.38x)'
-              )}
+              {tr('Open Deadline & Release Clause Hub →', 'เปิดศูนย์ดีลด่วน & ค่าฉีกสัญญา →')}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setTab('deadline')}
-            data-testid="deadline-hub-tab-btn"
-            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
-          >
-            {tr('Open Deadline & Release Clause Hub →', 'เปิดศูนย์ดีลด่วน & ค่าฉีกสัญญา →')}
-          </button>
+          </div>
+        </div>
+
+        {/* Hourly Progress Bar (08:00 to 23:00) */}
+        <div className="w-full bg-slate-950/90 h-2 rounded-full overflow-hidden border border-slate-800">
+          <div
+            className="h-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-500 transition-all duration-300"
+            style={{
+              width: `${Math.min(100, Math.max(8, Math.round(((deadlineHour - 8) / 15) * 100)))}%`,
+            }}
+          />
         </div>
       </div>
 
@@ -5489,6 +5534,166 @@ export const ClubStaffYouthWorldView: React.FC<{
               ))}
             </div>
           </div>
+
+          {/* Stage 7 Phase 4.1: Live Season Ballon d'Or & Golden Boy Power Rankings */}
+          {(() => {
+            const liveRace = getLiveBallonDorAndGoldenBoyRace(world);
+            const clubRecords = getClubAllTimeRecords(world, club.id);
+            return (
+              <>
+                <div
+                  data-testid="live-ballon-dor-rankings"
+                  className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-display font-bold text-amber-400">
+                        {tr(
+                          "🔥 Live Season Ballon d'Or & Golden Boy Power Rankings",
+                          "🔥 อันดับตัวเต็ง Ballon d'Or & Golden Boy สดประจำฤดูกาล"
+                        )}
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        {tr(
+                          'Real-time contenders ranked by goals, assists, MOTM awards, and match ratings.',
+                          'จัดอันดับตัวเต็งรางวัลลูกฟุตบอลทองคำและดาวรุ่งยอดเยี่ยมแบบเรียลไทม์ตามผลงานจริงในสนาม'
+                        )}
+                      </p>
+                    </div>
+                    <TrophyArtwork competitionId="BALLON_DOR" size="sm" />
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-mono font-bold text-amber-300 uppercase">
+                        🏆 {tr("Ballon d'Or Top 5 Tracker", "5 ตัวเต็ง Ballon d'Or")}
+                      </div>
+                      {liveRace.ballonDorTop5.map((c) => (
+                        <button
+                          key={c.playerId}
+                          type="button"
+                          onClick={() => onSelectPlayer(c.playerId)}
+                          className="w-full p-2.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between gap-2 text-left cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-white truncate">
+                              #{c.rank} {c.playerName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {c.clubName} · {c.goals}G / {c.assists}A · Rat {c.averageRating}
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 font-mono text-[10px] font-bold shrink-0">
+                            {c.powerScore} pts
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-mono font-bold text-sky-300 uppercase">
+                        ★ {tr('Golden Boy (U21) Top 5', '5 ตัวเต็งดาวรุ่ง Golden Boy (U21)')}
+                      </div>
+                      {liveRace.goldenBoyTop5.map((c) => (
+                        <button
+                          key={c.playerId}
+                          type="button"
+                          onClick={() => onSelectPlayer(c.playerId)}
+                          className="w-full p-2.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between gap-2 text-left cursor-pointer"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-white truncate">
+                              #{c.rank} {c.playerName} ({c.age})
+                            </div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {c.clubName} · CA {(c.ca / 10).toFixed(1)} · {c.goals}G/{c.assists}A
+                            </div>
+                          </div>
+                          <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono text-[10px] font-bold shrink-0">
+                            {c.powerScore} pts
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stage 7 Phase 4.2: All-Time Club Records Book */}
+                <div
+                  data-testid="all-time-club-records"
+                  className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-display font-bold text-emerald-400">
+                        {tr(
+                          `📖 ${club.name} — All-Time Club Records Book`,
+                          `📖 สมุดบันทึกสถิติสูงสุดตลอดกาลของสโมสร ${club.name}`
+                        )}
+                      </h3>
+                      <p className="text-xs text-slate-400">
+                        {tr(
+                          'Official club milestones for biggest match win, top scorer, and record transfer fees.',
+                          'บันทึกสถิติชัยชนะขาดลอยที่สุด ดาวซัลโวสูงสุด และสถิติค่าตัวซื้อ-ขายแพงที่สุดของสโมสร'
+                        )}
+                      </p>
+                    </div>
+                    <ClubBadge club={club} size="sm" />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] font-mono text-slate-400 uppercase">
+                        ⚽ {tr('Biggest Victory', 'ชัยชนะขาดลอยที่สุด')}
+                      </div>
+                      <div className="text-sm font-bold text-emerald-400 font-mono mt-0.5">
+                        {clubRecords.biggestVictory.scoreline}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        vs {clubRecords.biggestVictory.opponentName} ({clubRecords.biggestVictory.date})
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] font-mono text-slate-400 uppercase">
+                        👑 {tr('Top Goalscorer', 'ดาวซัลโวสูงสุดสโมสร')}
+                      </div>
+                      <div className="text-sm font-bold text-white mt-0.5">
+                        {clubRecords.topGoalscorer.playerName}
+                      </div>
+                      <div className="text-[11px] font-mono text-amber-300">
+                        {clubRecords.topGoalscorer.goals} {tr('Goals', 'ประตู')} ({clubRecords.topGoalscorer.appearances} Apps)
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] font-mono text-slate-400 uppercase">
+                        💎 {tr('Record Arrival Signing', 'สถิติซื้อเข้าแพงที่สุด')}
+                      </div>
+                      <div className="text-sm font-bold text-white mt-0.5">
+                        {clubRecords.recordSigning.playerName}
+                      </div>
+                      <div className="text-[11px] font-mono text-emerald-400">
+                        €{(clubRecords.recordSigning.fee / 1_000_000).toFixed(1)}M ({clubRecords.recordSigning.fromClubName})
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] font-mono text-slate-400 uppercase">
+                        💰 {tr('Record Departure Sale', 'สถิติขายออกแพงที่สุด')}
+                      </div>
+                      <div className="text-sm font-bold text-white mt-0.5">
+                        {clubRecords.recordSale.playerName}
+                      </div>
+                      <div className="text-[11px] font-mono text-sky-400">
+                        €{(clubRecords.recordSale.fee / 1_000_000).toFixed(1)}M ({clubRecords.recordSale.toClubName})
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </div>
         )}
       </div>
@@ -6891,14 +7096,14 @@ export const ClubStaffYouthWorldView: React.FC<{
             <div>
               <h3 className="text-base font-display font-bold text-white">
                 {tr(
-                  'Career Save Slots (Local + Google Cloud Sync)',
-                  'จัดการเซฟเกม (บันทึกในเครื่อง + ซิงก์ Google Cloud Firestore)'
+                  'Career Save Slots (100% Google Cloud Firestore Sync)',
+                  'จัดการเซฟเกม (ระบบเซฟ Google Cloud Firestore 100%)'
                 )}
               </h3>
               <p className="text-[11px] text-slate-400">
                 {tr(
-                  'Instant local persistence with automatic Cloud Firestore sync when signed in.',
-                  'บันทึกข้อมูลลงเครื่องทันที พร้อมซิงก์ขึ้น Cloud Firestore อัตโนมัติเมื่อล็อกอิน Gmail'
+                  '100% Cloud Firestore save architecture — sign in with Google / Gmail to sync your career across devices.',
+                  'สถาปัตยกรรมเซฟเกมบน Cloud Firestore 100% — ล็อกอินด้วย Gmail เพื่อซิงก์เซฟข้ามอุปกรณ์อัตโนมัติ'
                 )}
               </p>
             </div>
@@ -6919,8 +7124,8 @@ export const ClubStaffYouthWorldView: React.FC<{
                 <div>
                   <div className="text-emerald-400 font-semibold">
                     {tr(
-                      'Google / Gmail Connected (Hybrid Local + Cloud Sync Active)',
-                      'เชื่อมต่อบัญชี Google / Gmail แล้ว (ซิงก์ Local + Cloud อัตโนมัติ)'
+                      'Google / Gmail Connected (100% Cloud Firestore Sync Active)',
+                      'เชื่อมต่อบัญชี Google / Gmail แล้ว (ซิงก์ Cloud Firestore 100% อัตโนมัติ)'
                     )}
                   </div>
                   <div className="text-slate-300 font-mono mt-0.5">
@@ -6939,12 +7144,15 @@ export const ClubStaffYouthWorldView: React.FC<{
               <>
                 <div>
                   <div className="text-amber-300 font-semibold">
-                    {tr('Local Save Mode Active (Not Signed in with Gmail)', 'โหมดเซฟในเครื่อง (ยังไม่ได้เชื่อมต่อ Gmail Cloud)')}
+                    {tr(
+                      'Session Memory Active — Sign in with Google / Gmail for Persistent Cloud Saves',
+                      'โหมดหน่วยความจำชั่วคราว — กรุณาเข้าสู่ระบบ Gmail เพื่อบันทึกเซฟเกมถาวรบน Cloud Firestore'
+                    )}
                   </div>
                   <div className="text-slate-400 mt-0.5">
                     {tr(
-                      'Your saves are stored safely in this browser. Sign in with Gmail to sync across devices.',
-                      'เซฟเกมถูกบันทึกไว้ในเบราว์เซอร์นี้แล้ว สามารถเข้าสู่ระบบด้วย Gmail เพื่อซิงก์ข้ามอุปกรณ์ได้'
+                      'Sign in with Gmail to persist and sync all career save slots in Google Cloud Firestore.',
+                      'เข้าสู่ระบบด้วยบัญชี Gmail เพื่อบันทึกและซิงก์เซฟเกมทั้งหมดของคุณไว้บน Google Cloud Firestore'
                     )}
                   </div>
                 </div>

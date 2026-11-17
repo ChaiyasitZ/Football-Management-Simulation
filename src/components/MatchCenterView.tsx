@@ -159,6 +159,8 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     textEn: string;
     textTh: string;
   } | null>(null);
+  const [activeFlankPopoverSlotIdx, setActiveFlankPopoverSlotIdx] = useState<number | null>(null);
+  const [easedOffPlayerIds, setEasedOffPlayerIds] = useState<string[]>([]);
 
   // 5 Swappable Analytics Tiles persisted in localStorage
   const [tiles, setTiles] = useState<
@@ -914,10 +916,14 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               return (
                 <g
                   key={p.id}
+                  data-testid={isMyTeam ? `flank-player-node-${idx}` : undefined}
                   opacity={isSentOff ? 0.45 : 1}
                   onClick={() => {
-                    if (isMyTeam && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute && !isSentOff) {
-                      setSelectedSubOutId(selectedSubOutId === p.id ? null : p.id);
+                    if (isMyTeam && !isSentOff) {
+                      setActiveFlankPopoverSlotIdx(activeFlankPopoverSlotIdx === idx ? null : idx);
+                      if (liveSubstitutions.length < 5 && currentMinute < maxMatchMinute) {
+                        setSelectedSubOutId(p.id);
+                      }
                     } else {
                       onSelectPlayer(p.id);
                     }
@@ -928,8 +934,16 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   <path
                     d={`M ${cx - 2.3} ${cy - 3.8} L ${cx - 4.4} ${cy - 2.2} L ${cx - 3.6} ${cy - 0.5} L ${cx - 2.6} ${cy - 1.1} L ${cx - 2.6} ${cy + 3.4} L ${cx + 2.6} ${cy + 3.4} L ${cx + 2.6} ${cy - 1.1} L ${cx + 3.6} ${cy - 0.5} L ${cx + 4.4} ${cy - 2.2} L ${cx + 2.3} ${cy - 3.8} Z`}
                     fill={idx === 0 ? '#f59e0b' : club.primaryColor}
-                    stroke={selectedSubOutId === p.id ? '#facc15' : '#ffffff'}
-                    strokeWidth={selectedSubOutId === p.id ? '1.1' : '0.6'}
+                    stroke={
+                      (isMyTeam && activeFlankPopoverSlotIdx === idx) || selectedSubOutId === p.id
+                        ? '#facc15'
+                        : '#ffffff'
+                    }
+                    strokeWidth={
+                      (isMyTeam && activeFlankPopoverSlotIdx === idx) || selectedSubOutId === p.id
+                        ? '1.2'
+                        : '0.6'
+                    }
                   />
                   {/* Real Squad Number */}
                   <text
@@ -1019,11 +1033,197 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     {p.lastName.slice(0, 8)}
                     {goalsCount > 0 ? ' ⚽' : ''}
                     {isSentOff ? ' 🟥' : hasYellow ? ' 🟨' : ''}
+                    {easedOffPlayerIds.includes(p.id) ? ' 🛡️' : ''}
                   </text>
                 </g>
               );
             })}
           </svg>
+
+          {/* Stage 7 Phase 3: Live In-Match Player Tactical Popover on User's Flank Pitch */}
+          {isMyTeam && activeFlankPopoverSlotIdx !== null && (() => {
+            const popSlot = club.primaryTactic.lineup[activeFlankPopoverSlotIdx];
+            const { player: popPlayer } = getActiveSlotPlayer(club, activeFlankPopoverSlotIdx);
+            if (!popPlayer || !popSlot) return null;
+            const isEased = easedOffPlayerIds.includes(popPlayer.id);
+            const hasYellow = visibleEvents.some(
+              (e) => e.eventType === 'YellowCard' && e.playerId === popPlayer.id
+            );
+            const popCond = computeLivePlayerStamina(
+              popPlayer,
+              currentMinute,
+              club.primaryTactic.instructions.pressingIntensity
+            );
+            const popBenchMatch =
+              myBench.find((b) => b.positions.some((pos) => popPlayer.positions.includes(pos))) ||
+              myBench[0];
+
+            const roleOptions =
+              activeFlankPopoverSlotIdx === 0
+                ? ['Goalkeeper', 'Sweeper Keeper']
+                : [
+                    'Ball Playing Defender',
+                    'Central Defender',
+                    'Wing Back',
+                    'Inverted Wing Back',
+                    'Deep-Lying Playmaker',
+                    'Ball Winning Midfielder',
+                    'Box-to-Box Midfielder',
+                    'Advanced Playmaker',
+                    'Mezzala',
+                    'Inside Forward',
+                    'Winger',
+                    'Advanced Forward',
+                    'Complete Forward',
+                    'Pressing Forward',
+                  ];
+
+            return (
+              <div
+                data-testid="flank-player-tactical-popover"
+                className="absolute inset-x-1.5 bottom-1.5 z-20 rounded-xl bg-slate-950/95 border border-emerald-500/60 p-2.5 shadow-2xl space-y-2 text-[11px]"
+              >
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
+                  <div className="truncate">
+                    <span className="font-mono font-bold text-emerald-400">
+                      #{popPlayer.shirtNumber || activeFlankPopoverSlotIdx + 1}
+                    </span>{' '}
+                    <span className="font-bold text-white">
+                      {popPlayer.firstName} {popPlayer.lastName}
+                    </span>{' '}
+                    <span className="text-[10px] font-mono text-slate-400">
+                      ({popCond}% · {hasYellow ? '🟨 Booked' : 'Clean'})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveFlankPopoverSlotIdx(null)}
+                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {/* 1. Ease Off Tackles Toggle */}
+                  <button
+                    type="button"
+                    data-testid="popover-ease-off-tackles-btn"
+                    onClick={() => {
+                      const nextEased = isEased
+                        ? easedOffPlayerIds.filter((id) => id !== popPlayer.id)
+                        : [...easedOffPlayerIds, popPlayer.id];
+                      setEasedOffPlayerIds(nextEased);
+                      const updatedTac: TacticalSystem = {
+                        ...myClub.primaryTactic,
+                        instructions: {
+                          ...myClub.primaryTactic.instructions,
+                          tackling: !isEased ? 'Stay On Feet' : 'Standard',
+                        },
+                      };
+                      onUpdateClubTactic(updatedTac);
+                      if (targetFixture && currentMinute > 0 && currentMinute < maxMatchMinute) {
+                        reSimulateRemainingMinutes(updatedTac, liveSubstitutions, {
+                          id: `ease_${currentMinute}_${popPlayer.id}`,
+                          fixtureId: targetFixture.id,
+                          minute: currentMinute,
+                          eventType: 'TacticalChange',
+                          teamId: myClub.id,
+                          playerId: popPlayer.id,
+                          playerName: `${popPlayer.firstName} ${popPlayer.lastName}`,
+                          text: tr(
+                            `Min ${currentMinute}': Individual Instruction (${myClub.shortName}) — ${popPlayer.lastName} instructed to ${!isEased ? 'Ease Off Tackles (Stay on Feet)' : 'resume Standard Tackling'}.`,
+                            `นาที ${currentMinute}': สั่งการรายบุคคล (${myClub.shortName}) — สั่งให้ ${popPlayer.lastName} ${!isEased ? 'ชะลอการเข้าปะทะ (Ease Off Tackles)' : 'เข้าปะทะตามปกติ'}`
+                          ),
+                          pitchX: 50,
+                          pitchY: 50,
+                        });
+                      }
+                    }}
+                    className={`px-2 py-1.5 rounded-lg font-semibold border text-left cursor-pointer ${
+                      isEased
+                        ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                        : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+                    }`}
+                  >
+                    🛡️ {isEased ? tr('Eased Off ✓', 'ผ่อนปะทะ ✓') : tr('Ease Off Tackles', 'สั่งผ่อนการปะทะ')}
+                  </button>
+
+                  {/* 2. 1-Click Quick Substitution */}
+                  {popBenchMatch && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute ? (
+                    <button
+                      type="button"
+                      data-testid="popover-sub-out-btn"
+                      onClick={() => {
+                        handleMakeSubstitution(popPlayer.id, popBenchMatch.id);
+                        setActiveFlankPopoverSlotIdx(null);
+                      }}
+                      className="px-2 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-left truncate cursor-pointer"
+                    >
+                      🔄 {tr(`Sub → ${popBenchMatch.lastName}`, `เปลี่ยน → ${popBenchMatch.lastName}`)}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onSelectPlayer(popPlayer.id)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-semibold text-center cursor-pointer"
+                    >
+                      👤 {tr('Player Profile', 'ดูโปรไฟล์')}
+                    </button>
+                  )}
+                </div>
+
+                {/* 3. Live Role Switcher */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                    🎯 {tr('Live Role:', 'เปลี่ยนบทบาทสด:')}
+                  </span>
+                  <select
+                    aria-label="Select Live Tactical Role"
+                    data-testid="popover-role-select"
+                    value={popSlot.role}
+                    onChange={(e) => {
+                      const nextRole = e.target.value as typeof popSlot.role;
+                      const updatedTac: TacticalSystem = {
+                        ...myClub.primaryTactic,
+                        lineup: myClub.primaryTactic.lineup.map((s, sIdx) =>
+                          sIdx === activeFlankPopoverSlotIdx ? { ...s, role: nextRole } : s
+                        ),
+                      };
+                      onUpdateClubTactic(updatedTac);
+                      if (targetFixture && currentMinute > 0 && currentMinute < maxMatchMinute) {
+                        reSimulateRemainingMinutes(updatedTac, liveSubstitutions, {
+                          id: `role_${currentMinute}_${popPlayer.id}`,
+                          fixtureId: targetFixture.id,
+                          minute: currentMinute,
+                          eventType: 'TacticalChange',
+                          teamId: myClub.id,
+                          playerId: popPlayer.id,
+                          playerName: `${popPlayer.firstName} ${popPlayer.lastName}`,
+                          text: tr(
+                            `Min ${currentMinute}': Tactical Role Switch (${myClub.shortName}) — ${popPlayer.lastName} switched to ${nextRole}.`,
+                            `นาที ${currentMinute}': ปรับบทบาทสดข้างสนาม (${myClub.shortName}) — เปลี่ยนบทบาท ${popPlayer.lastName} เป็น ${nextRole}`
+                          ),
+                          pitchX: 50,
+                          pitchY: 50,
+                        });
+                      }
+                    }}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[10px] text-emerald-300 font-mono"
+                  >
+                    {!roleOptions.includes(popSlot.role) && (
+                      <option value={popSlot.role}>{popSlot.role}</option>
+                    )}
+                    {roleOptions.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
     );

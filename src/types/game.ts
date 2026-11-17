@@ -883,4 +883,7 @@ export interface WorldState {
   socialFeed?: FanSocialPost[];
   buyBackClauses?: BuyBackClauseRecord[];
   lastSquadMeetingDate?: string | null;
+  deadlineHour?: number;
+  deadlineTickerHeadlines?: string[];
+  deadlineFlashDealPlayerId?: string | null;
 }

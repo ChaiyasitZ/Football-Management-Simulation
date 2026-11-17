@@ -35,10 +35,12 @@ import {
 } from './types/game';
 import { createInitialWorldState } from './engine/worldGenerator';
 import { autoRegisterSquadIds } from './engine/tacticsEngine';
-import { ClubBadge, ClubKitJersey, TrophyArtwork } from './components/ClubBadge';
+import { ClubBadge } from './components/ClubBadge';
+import { ClubKitJersey, TrophyArtwork } from './components/TrophyAndKitVisuals';
 import {
   activateReleaseClauseTransfer,
   adjustClubBudgetAllocation,
+  advanceDeadlineDayTwoHours,
   advanceWorldOneDay,
   applyForManagerJob,
   applyPostMatchTeamTalk,
@@ -47,6 +49,7 @@ import {
   assignYouthMentor,
   buildScoutReportForPlayer,
   buildSevenDayCalendarStrip,
+  clearInMemorySaveCache,
   completeUserMatchdayAndSyncWorld,
   conductOneOnOnePlayerChat,
   createCustomPlayerInWorld,
@@ -605,6 +608,10 @@ function TouchlineShell() {
       setCloudSyncStatus('syncing');
       const user = await signInWithGoogle();
       setAuthUser(user);
+      await ensureUserProfileInFirestore(user);
+      if (shellState === 'playing' && worldState) {
+        await saveWorldStateToFirestoreSlot('slot_autosave', worldState);
+      }
       const cloudSlots = await syncUserSaveSlotsFromFirestore();
       setSaveSlots(cloudSlots);
       setCloudSyncStatus('synced');
@@ -627,6 +634,8 @@ function TouchlineShell() {
   const handleGoogleSignOut = async () => {
     try {
       await signOutFromGoogle();
+      clearInMemorySaveCache();
+      setSaveSlots([]);
       setAuthUser(null);
       setCloudSyncStatus('idle');
       showToast(
@@ -1079,6 +1088,11 @@ function TouchlineShell() {
           world={worldState}
           saveSlots={saveSlots}
           authUser={authUser}
+          isMuted={isMuted}
+          onToggleMute={() => {
+            const m = soundService.toggleMute();
+            setIsMuted(m);
+          }}
           onGoogleSignIn={handleGoogleSignIn}
           onGoogleSignOut={handleGoogleSignOut}
           onQuickStart={handleQuickStart}
@@ -2104,6 +2118,12 @@ function TouchlineShell() {
                       proposedSquadStatus: 'Squad Player',
                       signingBonus: 50_000,
                     });
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onAdvanceDeadlineTwoHours={() => {
+                    soundService.playClick();
+                    const res = advanceDeadlineDayTwoHours(world);
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
