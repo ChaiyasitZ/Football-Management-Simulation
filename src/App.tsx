@@ -35,7 +35,7 @@ import {
 } from './types/game';
 import { createInitialWorldState } from './engine/worldGenerator';
 import { autoRegisterSquadIds } from './engine/tacticsEngine';
-import { ClubBadge } from './components/ClubBadge';
+import { ClubBadge, ClubKitJersey, TrophyArtwork } from './components/ClubBadge';
 import {
   activateReleaseClauseTransfer,
   adjustClubBudgetAllocation,
@@ -72,6 +72,7 @@ import {
   prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
+  purgeLegacyLocalSaves,
   recallPlayerFromLoan,
   recruitYouthAcademyProspect,
   releaseYouthProspect,
@@ -84,6 +85,7 @@ import {
   SaveSlotMeta,
   saveWorldStateToFirestoreSlot,
   saveWorldStateToSlot,
+  SeasonRolloverSummary,
   sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
   setPlayerIndividualTrainingIntensity,
@@ -422,6 +424,16 @@ function TouchlineShell() {
 
   const [saveSlots, setSaveSlots] = useState<SaveSlotMeta[]>(() => getSavedSlotsList());
   const [authUser, setAuthUser] = useState<User | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>(
+    'idle'
+  );
+  const [unveilingModalData, setUnveilingModalData] = useState<{
+    clubId: string;
+    managerName: string;
+  } | null>(null);
+  const [seasonGalaModalData, setSeasonGalaModalData] = useState<SeasonRolloverSummary | null>(
+    null
+  );
   const [isMuted, setIsMuted] = useState<boolean>(() => soundService.getMuted());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
@@ -431,13 +443,29 @@ function TouchlineShell() {
 
   const isAdvancingRef = useRef(false);
 
+  // Stage 6 Phase 1.1: Purge any legacy localStorage save keys on startup (100% Cloud-Only Save Architecture)
+  useEffect(() => {
+    purgeLegacyLocalSaves();
+  }, []);
+
   const scheduleIdleAutosave = (stateToSave: WorldState) => {
     const win = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
     };
     const runSave = () => {
-      const updatedSlots = saveWorldStateToSlot('slot_autosave', stateToSave);
+      const updatedSlots = saveWorldStateToSlot('slot_autosave', stateToSave, false);
       setSaveSlots(updatedSlots);
+      if (auth.currentUser) {
+        setCloudSyncStatus('syncing');
+        void saveWorldStateToFirestoreSlot('slot_autosave', stateToSave)
+          .then((cloudSlots) => {
+            setSaveSlots(cloudSlots);
+            setCloudSyncStatus('synced');
+          })
+          .catch(() => {
+            setCloudSyncStatus('error');
+          });
+      }
     };
     if (typeof win.requestIdleCallback === 'function') {
       win.requestIdleCallback(runSave, { timeout: 1000 });
@@ -446,12 +474,12 @@ function TouchlineShell() {
     }
   };
 
-  // Stage 5 Pillar 1: Debounced (600ms) Auto-Save whenever world state changes while playing
+  // Stage 6 Phase 1.2: Smart Cloud Auto-Save (3,500ms debounce so rapid tactical clicks never spam Firestore)
   useEffect(() => {
     if (shellState !== 'playing' || !worldState) return;
     const debounceId = window.setTimeout(() => {
       scheduleIdleAutosave(worldState);
-    }, 600);
+    }, 3500);
     return () => window.clearTimeout(debounceId);
   }, [worldState, shellState]);
 
@@ -555,13 +583,18 @@ function TouchlineShell() {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setAuthUser(user);
       if (user) {
+        setCloudSyncStatus('syncing');
         try {
           await ensureUserProfileInFirestore(user);
           const cloudSlots = await syncUserSaveSlotsFromFirestore();
           setSaveSlots(cloudSlots);
+          setCloudSyncStatus('synced');
         } catch (err) {
           console.error(err);
+          setCloudSyncStatus('error');
         }
+      } else {
+        setCloudSyncStatus('idle');
       }
     });
     return () => unsub();
@@ -569,10 +602,12 @@ function TouchlineShell() {
 
   const handleGoogleSignIn = async () => {
     try {
+      setCloudSyncStatus('syncing');
       const user = await signInWithGoogle();
       setAuthUser(user);
       const cloudSlots = await syncUserSaveSlotsFromFirestore();
       setSaveSlots(cloudSlots);
+      setCloudSyncStatus('synced');
       showToast(
         tr(
           `Signed in with Gmail (${user.email || user.displayName})! Cloud saves synced.`,
@@ -580,6 +615,7 @@ function TouchlineShell() {
         )
       );
     } catch (err) {
+      setCloudSyncStatus('idle');
       const msg =
         err instanceof Error
           ? err.message
@@ -592,6 +628,7 @@ function TouchlineShell() {
     try {
       await signOutFromGoogle();
       setAuthUser(null);
+      setCloudSyncStatus('idle');
       showToast(
         tr('Signed out from Google / Gmail account.', 'ออกจากระบบบัญชี Google / Gmail เรียบร้อยแล้ว')
       );
@@ -608,7 +645,7 @@ function TouchlineShell() {
   const handleQuickStart = () => {
     soundService.playClick();
     const w = ensureWorld();
-    setSaveSlots(saveWorldStateToSlot('slot_autosave', w));
+    scheduleIdleAutosave(w);
     setShellState('playing');
   };
 
@@ -627,9 +664,13 @@ function TouchlineShell() {
       customClubConfig
     );
     setWorld(freshWorld);
-    setSaveSlots(saveWorldStateToSlot('slot_autosave', freshWorld));
+    scheduleIdleAutosave(freshWorld);
     navigateToRoute('#/home/portal');
     setShellState('playing');
+    setUnveilingModalData({
+      clubId: freshWorld.controlledClubId,
+      managerName: freshWorld.manager.name,
+    });
     showToast(
       tr(
         `Started managerial career with ${freshWorld.clubs[clubId].name}!`,
@@ -824,8 +865,7 @@ function TouchlineShell() {
   const handleCompleteMatch = (fixtureId: string, result: MatchResult) => {
     const updated = completeUserMatchdayAndSyncWorld(world, fixtureId, result);
     setWorld(updated);
-    const slots = saveWorldStateToSlot('slot_autosave', updated);
-    setSaveSlots(slots);
+    scheduleIdleAutosave(updated);
     showToast(
       tr(
         'Match result recorded and all league & UEFA standings updated!',
@@ -1438,6 +1478,49 @@ function TouchlineShell() {
               </span>
             </div>
 
+            {/* Stage 6 Phase 1.2: Live Cloud Sync Status Badge */}
+            <button
+              type="button"
+              data-testid="cloud-sync-badge"
+              onClick={() => {
+                if (!authUser) {
+                  void handleGoogleSignIn();
+                } else {
+                  scheduleIdleAutosave(world);
+                }
+              }}
+              title={
+                authUser
+                  ? tr(
+                      '100% Cloud Firestore Auto-Save Active (Click to sync now)',
+                      'ซิงก์เซฟเกมอัตโนมัติบน Cloud Firestore (คลิกเพื่อซิงก์ทันที)'
+                    )
+                  : tr(
+                      'Sign in with Google to save your career to Cloud Firestore',
+                      'คลิกเพื่อเข้าสู่ระบบ Google และบันทึกเซฟเกมขึ้น Cloud Firestore'
+                    )
+              }
+              className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-mono cursor-pointer transition-colors ${
+                !authUser
+                  ? 'bg-slate-950 hover:bg-slate-800 border-sky-500/40 text-sky-300'
+                  : cloudSyncStatus === 'syncing'
+                    ? 'bg-amber-950/30 border-amber-500/40 text-amber-300'
+                    : cloudSyncStatus === 'error'
+                      ? 'bg-rose-950/30 border-rose-500/40 text-rose-300'
+                      : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-300'
+              }`}
+            >
+              <span>
+                {!authUser
+                  ? tr('☁️ Sign in to Save', '☁️ เข้าสู่ระบบเพื่อเซฟ')
+                  : cloudSyncStatus === 'syncing'
+                    ? tr('🔄 Syncing...', '🔄 กำลังซิงก์...')
+                    : cloudSyncStatus === 'error'
+                      ? tr('⚠️ Sync Retry', '⚠️ ลองซิงก์ใหม่')
+                      : tr('☁️ Cloud Synced', '☁️ ซิงก์ Cloud แล้ว')}
+              </span>
+            </button>
+
             {/* Notification Center Bell */}
             <button
               type="button"
@@ -1659,6 +1742,10 @@ function TouchlineShell() {
                     showToast(res.message);
                     if (res.switchedClub) {
                       scheduleIdleAutosave(res.nextState);
+                      setUnveilingModalData({
+                        clubId: res.nextState.controlledClubId,
+                        managerName: res.nextState.manager.name,
+                      });
                       navigateToRoute('#/home/portal');
                     }
                   }}
@@ -2121,6 +2208,8 @@ function TouchlineShell() {
                   onTriggerSeasonRollover={() => {
                     const res = processEndOfSeasonRollover(world);
                     setWorld(res.nextState);
+                    setSeasonGalaModalData(res.seasonSummary);
+                    scheduleIdleAutosave(res.nextState);
                     showToast(res.message);
                   }}
                   onTriggerTakeover={(mode) => {
@@ -2133,6 +2222,11 @@ function TouchlineShell() {
                     setWorld(res.nextState);
                     showToast(res.message);
                     if (res.accepted) {
+                      scheduleIdleAutosave(res.nextState);
+                      setUnveilingModalData({
+                        clubId: res.nextState.controlledClubId,
+                        managerName: res.nextState.manager.name,
+                      });
                       navigateToRoute('#/home/portal');
                     }
                   }}
@@ -2213,25 +2307,30 @@ function TouchlineShell() {
                   }}
                   onSaveToSlot={async (slotId) => {
                     try {
-                      const slots = authUser
-                        ? await saveWorldStateToFirestoreSlot(slotId, world)
-                        : saveWorldStateToSlot(slotId, world);
+                      let activeUser = authUser;
+                      if (!activeUser) {
+                        setCloudSyncStatus('syncing');
+                        activeUser = await signInWithGoogle();
+                        setAuthUser(activeUser);
+                      }
+                      setCloudSyncStatus('syncing');
+                      const slots = await saveWorldStateToFirestoreSlot(slotId, world);
                       setSaveSlots(slots);
-                      showToast(
-                        authUser
-                          ? tr(
-                              `Saved career to Local & Cloud Firestore (${slotId})!`,
-                              `บันทึกเซฟลงเครื่องและ Cloud Firestore (${slotId}) สำเร็จ!`
-                            )
-                          : tr(`Saved career to ${slotId}!`, `บันทึกเกมลงช่อง ${slotId} สำเร็จ!`)
-                      );
-                    } catch {
-                      const fallbackSlots = getSavedSlotsList();
-                      setSaveSlots(fallbackSlots);
+                      setCloudSyncStatus('synced');
                       showToast(
                         tr(
-                          `Saved career locally to ${slotId} (Cloud sync pending).`,
-                          `บันทึกเซฟลงเครื่องช่อง ${slotId} สำเร็จ (รอซิงก์ Cloud)`
+                          `Saved career to Cloud Firestore (${slotId})!`,
+                          `บันทึกเซฟเกมขึ้น Cloud Firestore (${slotId}) สำเร็จ!`
+                        )
+                      );
+                    } catch {
+                      const fallbackSlots = saveWorldStateToSlot(slotId, world, false);
+                      setSaveSlots(fallbackSlots);
+                      setCloudSyncStatus('error');
+                      showToast(
+                        tr(
+                          `Sign in with Google to persist ${slotId} to Cloud Firestore.`,
+                          `กรุณาเข้าสู่ระบบด้วย Google เพื่อบันทึกเซฟ ${slotId} ขึ้น Cloud Firestore`
                         )
                       );
                     }
@@ -2490,17 +2589,31 @@ function TouchlineShell() {
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const slots = saveWorldStateToSlot('slot_1', world);
-                  setSaveSlots(slots);
-                  showToast(
-                    tr('Saved career to Save Slot #1!', 'บันทึกเกมลงช่องเซฟ #1 สำเร็จ!')
-                  );
-                  setShellState('playing');
+                onClick={async () => {
+                  try {
+                    let activeUser = authUser;
+                    if (!activeUser) {
+                      setCloudSyncStatus('syncing');
+                      activeUser = await signInWithGoogle();
+                      setAuthUser(activeUser);
+                    }
+                    setCloudSyncStatus('syncing');
+                    const slots = await saveWorldStateToFirestoreSlot('slot_1', world);
+                    setSaveSlots(slots);
+                    setCloudSyncStatus('synced');
+                    showToast(
+                      tr('Saved career to Cloud Slot #1!', 'บันทึกเกมขึ้น Cloud ช่องเซฟ #1 สำเร็จ!')
+                    );
+                    setShellState('playing');
+                  } catch {
+                    const slots = saveWorldStateToSlot('slot_1', world, false);
+                    setSaveSlots(slots);
+                    setShellState('playing');
+                  }
                 }}
                 className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-100 font-medium text-xs rounded-lg cursor-pointer"
               >
-                {tr('Quick Save (Slot #1)', 'บันทึกเกมด่วน (Slot #1)')}
+                {tr('☁️ Quick Cloud Save (Slot #1)', '☁️ บันทึกเกมด่วนขึ้น Cloud (Slot #1)')}
               </button>
               <button
                 type="button"
@@ -2518,6 +2631,184 @@ function TouchlineShell() {
                 className="w-full py-2.5 bg-slate-950 hover:bg-slate-800 text-slate-400 border border-slate-800 text-xs rounded-lg cursor-pointer"
               >
                 {tr('Return to Title Screen', 'กลับสู่หน้าจอหลัก')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stage 6 Phase 3.1: Official Club Unveiling Ceremony Modal */}
+      {unveilingModalData && world.clubs[unveilingModalData.clubId] && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          data-testid="manager-unveiling-modal"
+          role="dialog"
+          aria-modal="true"
+        >
+          {(() => {
+            const unveiledClub = world.clubs[unveilingModalData.clubId];
+            return (
+              <div
+                className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl"
+                style={{ borderTop: `4px solid ${unveiledClub.primaryColor}` }}
+              >
+                <div className="p-6 text-center space-y-4">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 font-mono text-[11px] font-bold">
+                    📸 {tr('OFFICIAL PRESS PRESENTATION', 'งานแถลงข่าวเปิดตัวผู้จัดการทีมคนใหม่')}
+                  </div>
+
+                  <div className="flex items-center justify-center gap-6 py-2">
+                    <ClubBadge club={unveiledClub} size="lg" />
+                    <ClubKitJersey club={unveiledClub} variant="home" size="lg" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-display font-extrabold text-white">
+                      {unveilingModalData.managerName}
+                    </h2>
+                    <p className="text-xs font-mono text-emerald-400 mt-0.5">
+                      {tr(
+                        `Appointed First-Team Manager of ${unveiledClub.name}`,
+                        `ได้รับการแต่งตั้งเป็นผู้จัดการทีม ${unveiledClub.name} อย่างเป็นทางการ`
+                      )}
+                    </p>
+                  </div>
+
+                  <blockquote className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 italic leading-relaxed">
+                    &ldquo;
+                    {tr(
+                      `Welcome to ${unveiledClub.stadiumName}, ${unveilingModalData.managerName}. The Board of Directors has full confidence in your ${world.manager.tacticalStyle} vision to guide ${unveiledClub.name} to a Top ${unveiledClub.boardExpectations.targetLeaguePosition} finish this season.`,
+                      `ยินดีต้อนรับสู่สนาม ${unveiledClub.stadiumName} คุณ ${unveilingModalData.managerName} บอร์ดบริหารเชื่อมั่นอย่างเต็มเปี่ยมว่าปรัชญาฟุตบอล ${world.manager.tacticalStyle} ของคุณจะพา ${unveiledClub.name} ก้าวสู่อันดับ Top ${unveiledClub.boardExpectations.targetLeaguePosition} ในฤดูกาลนี้`
+                    )}
+                    &rdquo;
+                  </blockquote>
+
+                  <div className="grid grid-cols-3 gap-2.5 font-mono text-xs">
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">
+                        {tr('WARCHEST', 'งบเสริมทัพ')}
+                      </div>
+                      <div className="text-sm font-bold text-emerald-400">
+                        €{(unveiledClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">
+                        {tr('BOARD TARGET', 'เป้าหมายลีก')}
+                      </div>
+                      <div className="text-sm font-bold text-amber-300">
+                        Top {unveiledClub.boardExpectations.targetLeaguePosition}
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                      <div className="text-[10px] text-slate-400">
+                        {tr('FORMATION', 'แผนหลัก')}
+                      </div>
+                      <div className="text-sm font-bold text-sky-400">
+                        {unveiledClub.primaryTactic.formation}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="close-unveiling-modal-btn"
+                    onClick={() => setUnveilingModalData(null)}
+                    className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider cursor-pointer"
+                  >
+                    {tr('Enter the Dugout →', 'เข้าสู่ห้องทำงานผู้จัดการทีม →')}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Stage 6 Phase 3.2: End-of-Season Review & Champions Gala Modal */}
+      {seasonGalaModalData && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          data-testid="season-review-gala-modal"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-slate-900 border-2 border-amber-500/50 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl">
+            <div className="p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div>
+                  <div className="text-[11px] font-mono uppercase tracking-wider text-amber-400 font-bold">
+                    🏆 {tr('END-OF-SEASON REVIEW GALA', 'สรุปผลงานประจำฤดูกาลและรางวัลเกียรติยศ')}
+                  </div>
+                  <h2 className="text-xl font-display font-extrabold text-white">
+                    {seasonGalaModalData.completedSeason} → {seasonGalaModalData.nextSeason}
+                  </h2>
+                </div>
+                <TrophyArtwork competitionId={controlledClub.leagueId} size="md" />
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 font-mono text-xs">
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">
+                    {tr('YOUR FINAL POSITION', 'อันดับในลีกของคุณ')}
+                  </div>
+                  <div className="text-base font-bold text-emerald-400 mt-0.5">
+                    #{seasonGalaModalData.finalPosition} ({seasonGalaModalData.leagueName})
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">
+                    {tr('LEAGUE CHAMPION', 'แชมป์ลีกประจำฤดูกาล')}
+                  </div>
+                  <div className="text-sm font-bold text-amber-300 mt-0.5 truncate">
+                    🏆 {seasonGalaModalData.leagueChampionName}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">
+                    {tr('UEFA UCL WINNER', 'แชมป์ยูฟ่า แชมเปียนส์ลีก')}
+                  </div>
+                  <div className="text-sm font-bold text-sky-300 mt-0.5 truncate">
+                    ⭐ {seasonGalaModalData.uclChampionName}
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">
+                    {tr('CLUB TOP SCORER', 'ดาวซัลโวประจำสโมสร')}
+                  </div>
+                  <div className="text-sm font-bold text-white mt-0.5 truncate">
+                    ⚽ {seasonGalaModalData.clubTopScorerName} ({seasonGalaModalData.clubTopScorerGoals})
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">
+                    {tr('PLAYER OF THE SEASON', 'นักเตะยอดเยี่ยมสโมสร')}
+                  </div>
+                  <div className="text-sm font-bold text-emerald-300 mt-0.5 truncate">
+                    🌟 {seasonGalaModalData.clubPlayerOfSeasonName} (
+                    {seasonGalaModalData.clubPlayerOfSeasonRating})
+                  </div>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                  <div className="text-[10px] text-slate-400">
+                    {tr('PRIZE & TV PAYOUT', 'เงินรางวัล + ค่าลิขสิทธิ์')}
+                  </div>
+                  <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                    +€{(seasonGalaModalData.totalPrizeAndTvPayout / 1_000_000).toFixed(1)}M
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                data-testid="close-season-gala-modal-btn"
+                onClick={() => setSeasonGalaModalData(null)}
+                className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider cursor-pointer"
+              >
+                {tr(
+                  `Begin ${seasonGalaModalData.nextSeason} Pre-Season →`,
+                  `เข้าสู่การเตรียมทีมฤดูกาลใหม่ ${seasonGalaModalData.nextSeason} →`
+                )}
               </button>
             </div>
           </div>

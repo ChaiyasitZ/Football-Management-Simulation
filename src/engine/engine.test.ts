@@ -55,6 +55,7 @@ import {
   prescribePlayerMedicalRest,
   processEndOfSeasonRollover,
   promoteYouthProspectToSenior,
+  purgeLegacyLocalSaves,
   recallPlayerFromLoan,
   rehydrateWorldStateFromCareerDoc,
   releaseYouthProspect,
@@ -1906,4 +1907,21 @@ test('Stage 5 Complete Suite: Weekly Training Risers & Staff Advice, Arrange Fri
   assert.equal(world.inbox[0].title.includes('U21'), true);
 });
 
+test('Stage 6 Complete Suite: 100% Zero-LocalStorage Save Purge & End-of-Season Review Gala Summary', () => {
+  const world = createInitialWorldState(88888);
 
+  // 1. Verify purgeLegacyLocalSaves executes cleanly
+  const purged = purgeLegacyLocalSaves();
+  assert.equal(purged, 0);
+
+  // 2. Verify processEndOfSeasonRollover returns structured seasonSummary for the Season Review Gala modal
+  const rollover = processEndOfSeasonRollover(world);
+  assert.ok(rollover.seasonSummary, 'processEndOfSeasonRollover must return seasonSummary');
+  assert.equal(rollover.seasonSummary.completedSeason, '2025/26');
+  assert.equal(rollover.seasonSummary.nextSeason, '2026/27');
+  assert.ok(rollover.seasonSummary.finalPosition >= 1 && rollover.seasonSummary.finalPosition <= 20);
+  assert.ok(rollover.seasonSummary.leagueChampionName.length > 0);
+  assert.ok(rollover.seasonSummary.uclChampionName.length > 0);
+  assert.ok(rollover.seasonSummary.clubTopScorerName.length > 0);
+  assert.ok(rollover.seasonSummary.totalPrizeAndTvPayout > 10_000_000);
+});

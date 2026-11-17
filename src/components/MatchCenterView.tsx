@@ -3386,12 +3386,15 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
 
       {/* 3. BOTTOM MATCH TIMELINE & 11-PLAYER PITCH STRIP */}
       <div className="min-h-[60px] shrink-0 bg-slate-950 border-t border-slate-800 px-3 py-1.5 flex flex-col justify-between gap-1.5">
-        {/* Progress Timeline Bar with Event Pins */}
+        {/* Progress Timeline Bar with Interactive Event Pins */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-mono text-emerald-400 w-12">
             {currentMinute}&apos;/{maxMatchMinute}&apos;
           </span>
-          <div className="flex-1 h-2 bg-slate-900 rounded-full relative overflow-visible border border-slate-800">
+          <div
+            data-testid="match-timeline-bar"
+            className="flex-1 h-2.5 bg-slate-900 rounded-full relative overflow-visible border border-slate-800"
+          >
             <div
               className="h-full bg-emerald-500/70 rounded-full transition-all"
               style={{ width: `${Math.min(100, (currentMinute / maxMatchMinute) * 100)}%` }}
@@ -3408,23 +3411,43 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               )
               .map((ev) => {
                 const leftPct = Math.min(98, Math.max(2, (ev.minute / maxMatchMinute) * 100));
-                const icon =
-                  ev.eventType === 'Goal'
-                    ? '⚽'
-                    : ev.eventType === 'RedCard'
-                      ? '🟥'
-                      : ev.eventType === 'YellowCard'
-                        ? '🟨'
-                        : '🔄';
+                const isGoal = ev.eventType === 'Goal';
+                const icon = isGoal
+                  ? '⚽'
+                  : ev.eventType === 'RedCard'
+                    ? '🟥'
+                    : ev.eventType === 'YellowCard'
+                      ? '🟨'
+                      : '🔄';
+                const playerObj = ev.playerId ? world.players[ev.playerId] : null;
+                const playerLabel = playerObj
+                  ? `${playerObj.firstName} ${playerObj.lastName}`
+                  : ev.playerName || '';
                 return (
-                  <span
+                  <button
                     key={ev.id}
+                    type="button"
+                    data-testid={isGoal ? 'timeline-goal-pin' : 'timeline-event-pin'}
                     style={{ left: `${leftPct}%` }}
-                    title={`${ev.minute}' ${ev.text}`}
-                    className="absolute -top-2 -translate-x-1/2 text-[10px] leading-none select-none"
+                    onClick={() => {
+                      if (isGoal) {
+                        setIsPlaying(false);
+                        setReplayGoalEvent(ev);
+                      }
+                    }}
+                    title={
+                      isGoal
+                        ? `${ev.minute}' ⚽ ${playerLabel ? `${playerLabel} — ` : ''}${ev.text} (${tr('Click for 2D Instant Replay', 'คลิกเพื่อดูภาพช้า 2D Replay')})`
+                        : `${ev.minute}' ${icon} ${playerLabel ? `${playerLabel} — ` : ''}${ev.text}`
+                    }
+                    className={`absolute -top-2.5 -translate-x-1/2 text-[11px] leading-none select-none transition-transform ${
+                      isGoal
+                        ? 'cursor-pointer hover:scale-150 z-20 drop-shadow-[0_0_6px_rgba(16,185,129,0.85)]'
+                        : 'cursor-help hover:scale-125 z-10'
+                    }`}
                   >
                     {icon}
-                  </span>
+                  </button>
                 );
               })}
           </div>

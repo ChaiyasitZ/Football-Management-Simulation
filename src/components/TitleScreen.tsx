@@ -1,42 +1,41 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ChevronLeft,
+  ChevronRight,
   Cloud,
   FolderOpen,
-  Globe2,
+  LogIn,
+  LogOut,
   Play,
-  Search,
-  Settings,
   Shield,
   Sparkles,
+  Trash2,
   Trophy,
   UserCheck,
-  Volume2,
-  VolumeX,
-  X,
+  Zap,
 } from 'lucide-react';
 import {
   AIManagerStyle,
   Club,
   CustomClubConfig,
+  FormationId,
   LeagueId,
   ManagerProfile,
   ScenarioChallengeId,
   WorldState,
 } from '../types/game';
-import { CLUB_TEMPLATES, LEAGUES_CONFIG } from '../engine/leaguesConfig';
+import { CLUB_TEMPLATES, ClubSeedTemplate, LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
-import { soundService } from '../engine/soundService';
-import type { User } from '../firebase';
-import { ClubBadge } from './ClubBadge';
-import { ClubKitJersey, CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
+import { ClubBadge, ClubKitJersey, CompetitionBadge, TrophyArtwork } from './ClubBadge';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
+import type { User } from '../firebase';
 
 interface TitleScreenProps {
-  world?: WorldState | null;
+  world: WorldState | null;
   saveSlots: SaveSlotMeta[];
-  authUser: User | null;
-  onGoogleSignIn: () => void;
-  onGoogleSignOut: () => void;
+  authUser?: User | null;
+  onGoogleSignIn?: () => void;
+  onGoogleSignOut?: () => void;
   onQuickStart: () => void;
   onStartCustomCareer: (
     manager: Partial<ManagerProfile>,
@@ -48,271 +47,183 @@ interface TitleScreenProps {
   onDeleteSlot: (slotId: string) => void;
 }
 
-/**
- * Lightweight 280-club map built directly from CLUB_TEMPLATES (<0.5ms) so TitleScreen
- * renders immediately for <100ms LCP/FCP before the 5,800-player WorldState finishes generating in idle time.
- */
-const LIGHTWEIGHT_PREVIEW_CLUBS: Record<string, Club> = (() => {
-  const map: Record<string, Club> = {};
-  (Object.keys(LEAGUES_CONFIG) as LeagueId[]).forEach((leagueId) => {
-    const config = LEAGUES_CONFIG[leagueId];
-    const templates = CLUB_TEMPLATES[leagueId] || [];
-    templates.slice(0, config.targetClubCount).forEach((tpl, idx) => {
-      const clubId = `club_${leagueId.toLowerCase()}_${idx + 1}`;
-      const repFactor = Math.pow(tpl.reputation / 70, 2.8);
-      const balance = Math.round(repFactor * 42_000_000);
-      const transferBudget = Math.round(repFactor * 28_000_000);
-      const wageBudgetPerWeek = Math.round(repFactor * 1_650_000);
-      map[clubId] = {
-        id: clubId,
-        name: tpl.name,
-        shortName: tpl.shortName,
-        countryId: config.countryId,
-        leagueId,
-        city: tpl.city,
-        primaryColor: tpl.primaryColor,
-        secondaryColor: tpl.secondaryColor,
-        logoUrl: tpl.logoUrl,
-        stadiumName: tpl.stadiumName,
-        stadiumCapacity: tpl.stadiumCapacity,
-        reputation: tpl.reputation,
-        trainingFacilities: Math.min(20, Math.max(10, Math.round(tpl.reputation / 5))),
-        youthFacilities: Math.min(20, Math.max(9, Math.round(tpl.reputation / 5.2))),
-        finances: {
-          balance,
-          transferBudget,
-          wageBudgetPerWeek,
-          wageUsedPerWeek: Math.round(wageBudgetPerWeek * 0.85),
-          debt: 0,
-          sponsorRevenueAnnual: Math.round(repFactor * 35_000_000),
-          ticketPriceAvg: Math.round(35 + (tpl.reputation - 65) * 1.1),
-        },
-        boardExpectations: {
-          targetLeaguePosition: Math.max(1, Math.min(config.targetClubCount, idx + 1)),
-          cupTarget: idx < 4 ? 'Semi-Final' : idx < 10 ? 'Quarter-Final' : 'Compete',
-          clubVision:
-            idx < 4
-              ? 'Compete for the league title and maintain elite European status'
-              : idx < 10
-                ? 'Challenge for European qualification and promote youth prospects'
-                : 'Secure top-flight status and maintain long-term financial sustainability',
-          confidence: {
-            overall: 78,
-            leaguePerformance: 76,
-            financialManagement: 82,
-            youthDevelopment: 75,
-            squadAtmosphere: 80,
-          },
-        },
-        aiManager: {
-          name: tpl.managerName,
-          style: 'Possession-focused Manager',
-          reputation: tpl.reputation,
-          jobSecurity: 80,
-        },
-        primaryTactic: {
-          id: `tac_${clubId}_1`,
-          name: 'Primary 4-3-3',
-          formation: '4-3-3',
-          instructions: {
-            mentality: 'Positive',
-            passingDirectness: 'Shorter',
-            tempo: 'Higher',
-            attackingWidth: 'Wide',
-            buildUp: 'Play Out of Defence',
-            pressingIntensity: 'High',
-            defensiveLine: 'High',
-            lineOfEngagement: 'High',
-            transition: 'Counter-Press',
-            defensiveApproach: 'Zonal Marking',
-            timeWasting: 'Never',
-            offsideTrap: true,
-            tackling: 'Standard',
-          },
-          familiarity: 80,
-          lineup: [],
-          benchPlayerIds: [],
-        },
-        secondaryTactic: {
-          id: `tac_${clubId}_2`,
-          name: 'Secondary 4-2-3-1',
-          formation: '4-2-3-1',
-          instructions: {
-            mentality: 'Balanced',
-            passingDirectness: 'Mixed',
-            tempo: 'Standard',
-            attackingWidth: 'Standard',
-            buildUp: 'Mixed',
-            pressingIntensity: 'Standard',
-            defensiveLine: 'Standard',
-            lineOfEngagement: 'Mid',
-            transition: 'Counter',
-            defensiveApproach: 'Zonal Marking',
-            timeWasting: 'Never',
-            offsideTrap: false,
-            tackling: 'Standard',
-          },
-          familiarity: 68,
-          lineup: [],
-          benchPlayerIds: [],
-        },
-        trainingFocus: 'Possession',
-        trainingIntensity: 'Standard',
-      };
-    });
-  });
-  return map;
-})();
+const FEATURED_GIANT_CLUB_IDS = [
+  'club_eng_pl_1', // Arsenal
+  'club_esp_ll_1', // Real Madrid
+  'club_eng_pl_3', // Liverpool
+  'club_ger_bl_1', // Bayern Munich
+  'club_esp_ll_2', // Barcelona
+  'club_ita_sa_1', // Inter Milan
+  'club_fra_l1_1', // PSG
+  'club_eng_pl_2', // Manchester City
+];
 
-interface FloatingBall {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  radius: number;
-  rotation: number;
-  vRot: number;
-  depthLayer: 0 | 1 | 2; // 0 = far background, 1 = mid-ground, 2 = foreground hero
-  accentColor: string;
-  pulsePhase: number;
+const COUNTRY_GROUPS = [
+  { countryId: 'ENG', flag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿', name: 'England' },
+  { countryId: 'ESP', flag: '🇪🇸', name: 'Spain' },
+  { countryId: 'GER', flag: '🇩🇪', name: 'Germany' },
+  { countryId: 'ITA', flag: '🇮🇹', name: 'Italy' },
+  { countryId: 'FRA', flag: '🇫🇷', name: 'France' },
+  { countryId: 'POR', flag: '🇵🇹', name: 'Portugal' },
+  { countryId: 'NED', flag: '🇳🇱', name: 'Netherlands' },
+  { countryId: 'BEL', flag: '🇧🇪', name: 'Belgium' },
+  { countryId: 'TUR', flag: '🇹🇷', name: 'Türkiye' },
+  { countryId: 'SCO', flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', name: 'Scotland' },
+];
+
+const SCENARIO_CHALLENGES: {
+  id: ScenarioChallengeId;
+  badge: string;
+  titleEn: string;
+  descEn: string;
+}[] = [
+  {
+    id: 'STANDARD',
+    badge: '🏆',
+    titleEn: 'Standard Career (Authentic 2025/26)',
+    descEn: 'Full transfer budgets, normal fitness, and clean league points.',
+  },
+  {
+    id: 'POINTS_DEDUCTION',
+    badge: '⚖️',
+    titleEn: 'FFP Crisis (-10 Points Deduction)',
+    descEn: 'Start the season on -10 league points after an FFP sanction.',
+  },
+  {
+    id: 'INJURY_CRISIS',
+    badge: '🚑',
+    titleEn: 'Pre-Season Injury Crisis',
+    descEn: '4 senior starters begin the campaign in the medical room.',
+  },
+  {
+    id: 'YOUTH_ONLY',
+    badge: '🌱',
+    titleEn: 'Cantera / Youth Academy Embargo',
+    descEn: '12-month transfer embargo: rely on your squad and U18/U21 graduates.',
+  },
+];
+
+function buildPreviewClubFromTemplate(
+  leagueId: LeagueId,
+  idx: number,
+  tpl: ClubSeedTemplate
+): Club {
+  const clubId = `club_${leagueId.toLowerCase()}_${idx + 1}`;
+  const leagueCfg = LEAGUES_CONFIG[leagueId];
+  const repFactor = Math.pow(Math.max(50, tpl.reputation) / 100, 3);
+  const transferBudget = Math.max(
+    1_200_000,
+    Math.round((repFactor * 115_000_000) / 500_000) * 500_000
+  );
+  const wageBudgetPerWeek = Math.max(
+    65_000,
+    Math.round((repFactor * 3_800_000) / 10_000) * 10_000
+  );
+  const formation: FormationId =
+    idx % 3 === 0 ? '4-3-3' : idx % 3 === 1 ? '4-2-3-1' : '3-4-3';
+
+  return {
+    id: clubId,
+    name: tpl.name,
+    shortName: tpl.shortName,
+    countryId: leagueCfg.countryId,
+    leagueId,
+    city: tpl.city,
+    reputation: tpl.reputation,
+    primaryColor: tpl.primaryColor,
+    secondaryColor: tpl.secondaryColor,
+    logoUrl: tpl.logoUrl,
+    stadiumName: tpl.stadiumName,
+    stadiumCapacity: tpl.stadiumCapacity,
+    trainingFacilities: Math.min(20, Math.max(10, Math.round(tpl.reputation / 5))),
+    youthFacilities: Math.min(20, Math.max(10, Math.round(tpl.reputation / 5.2))),
+    juniorCoaching: 15,
+    youthRecruitment: 15,
+    sugarDaddyType: tpl.reputation >= 90 ? 'FRONT_END' : 'NONE',
+    finances: {
+      balance: transferBudget * 1.4,
+      transferBudget,
+      wageBudgetPerWeek,
+      wageUsedPerWeek: Math.round(wageBudgetPerWeek * 0.82),
+      debt: 0,
+      sponsorRevenueAnnual: Math.round(repFactor * 35_000_000),
+      ticketPriceAvg: 48,
+    },
+    boardExpectations: {
+      targetLeaguePosition: Math.max(1, Math.min(leagueCfg.targetClubCount, idx + 1)),
+      cupTarget: idx < 4 ? 'Semi-Final' : 'Quarter-Final',
+      clubVision: 'Compete at the highest level and develop elite talent.',
+      confidence: {
+        overall: 80,
+        leaguePerformance: 80,
+        financialManagement: 82,
+        youthDevelopment: 78,
+        squadAtmosphere: 80,
+      },
+    },
+    aiManager: {
+      name: tpl.managerName,
+      style: 'Attacking Manager',
+      reputation: tpl.reputation,
+      jobSecurity: 82,
+    },
+    primaryTactic: {
+      id: `tac_${clubId}_1`,
+      name: `Primary ${formation}`,
+      formation,
+      instructions: {
+        mentality: 'Positive',
+        passingDirectness: 'Mixed',
+        tempo: 'Higher',
+        attackingWidth: 'Wide',
+        buildUp: 'Play Out of Defence',
+        pressingIntensity: 'High',
+        defensiveLine: 'High',
+        lineOfEngagement: 'High',
+        transition: 'Counter-Press',
+        defensiveApproach: 'Zonal Marking',
+        timeWasting: 'Never',
+        offsideTrap: true,
+        tackling: 'Standard',
+      },
+      lineup: [],
+      benchPlayerIds: [],
+      familiarity: 85,
+    },
+    secondaryTactic: {
+      id: `tac_${clubId}_2`,
+      name: `Secondary 4-2-3-1`,
+      formation: '4-2-3-1',
+      instructions: {
+        mentality: 'Balanced',
+        passingDirectness: 'Mixed',
+        tempo: 'Standard',
+        attackingWidth: 'Standard',
+        buildUp: 'Play Out of Defence',
+        pressingIntensity: 'Standard',
+        defensiveLine: 'Standard',
+        lineOfEngagement: 'Mid',
+        transition: 'Counter',
+        defensiveApproach: 'Zonal Marking',
+        timeWasting: 'Never',
+        offsideTrap: false,
+        tackling: 'Standard',
+      },
+      lineup: [],
+      benchPlayerIds: [],
+      familiarity: 75,
+    },
+    trainingFocus: 'Possession',
+    trainingIntensity: 'Standard',
+  };
 }
 
-/**
- * Draws a 3D-shaded floating soccer ball / football with rotating pentagon/hexagon panels
- * and subtle stadium rim lighting on an HTML5 2D canvas.
- */
-function drawFloatingFootball(
-  ctx: CanvasRenderingContext2D,
-  ball: FloatingBall,
-  timeSec: number
-) {
-  const { x, y, radius: r, rotation, depthLayer, accentColor, pulsePhase } = ball;
-  const alpha = depthLayer === 2 ? 0.92 : depthLayer === 1 ? 0.62 : 0.32;
-
-  ctx.save();
-  ctx.translate(x, y);
-
-  // 1. Soft outer glow / ambient shadow
-  const glowRadius = r * (depthLayer === 2 ? 2.1 : 1.7);
-  const glowGrad = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, glowRadius);
-  const pulse = 0.5 + 0.5 * Math.sin(timeSec * 1.6 + pulsePhase);
-  glowGrad.addColorStop(
-    0,
-    accentColor === 'emerald'
-      ? `rgba(16, 185, 129, ${(0.16 + pulse * 0.08) * alpha})`
-      : `rgba(56, 189, 248, ${(0.15 + pulse * 0.07) * alpha})`
-  );
-  glowGrad.addColorStop(1, 'rgba(7, 11, 18, 0)');
-  ctx.fillStyle = glowGrad;
-  ctx.beginPath();
-  ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 2. Clip to sphere circle
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.save();
-  ctx.clip();
-
-  // 3. 3D Spherical Base Gradient (Top-left stadium light source)
-  const sphereGrad = ctx.createRadialGradient(-r * 0.32, -r * 0.32, r * 0.08, 0, 0, r * 1.05);
-  sphereGrad.addColorStop(0, `rgba(248, 250, 252, ${0.96 * alpha})`);
-  sphereGrad.addColorStop(0.45, `rgba(203, 213, 225, ${0.88 * alpha})`);
-  sphereGrad.addColorStop(0.78, `rgba(71, 85, 105, ${0.85 * alpha})`);
-  sphereGrad.addColorStop(1, `rgba(15, 23, 42, ${0.95 * alpha})`);
-  ctx.fillStyle = sphereGrad;
-  ctx.fillRect(-r, -r, r * 2, r * 2);
-
-  // 4. Rotate for pentagon/hexagon panel pattern
-  ctx.rotate(rotation);
-
-  const drawPolygon = (cx: number, cy: number, polyR: number, sides: number, rotOffset = 0) => {
-    ctx.beginPath();
-    for (let i = 0; i < sides; i++) {
-      const ang = rotOffset + (i * Math.PI * 2) / sides;
-      const px = cx + Math.cos(ang) * polyR;
-      const py = cy + Math.sin(ang) * polyR;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-  };
-
-  const panelColor = `rgba(15, 23, 42, ${0.88 * alpha})`;
-  const seamColor =
-    accentColor === 'emerald'
-      ? `rgba(16, 185, 129, ${0.65 * alpha})`
-      : `rgba(56, 189, 248, ${0.65 * alpha})`;
-
-  // Center Pentagon
-  const centerPentR = r * 0.3;
-  drawPolygon(0, 0, centerPentR, 5, -Math.PI / 2);
-  ctx.fillStyle = panelColor;
-  ctx.fill();
-  ctx.strokeStyle = seamColor;
-  ctx.lineWidth = Math.max(1, r * 0.045);
-  ctx.stroke();
-
-  // 5 Outer Pentagons + Connecting Hexagon Seams
-  const ringDist = r * 0.72;
-  const outerPentR = r * 0.25;
-
-  for (let i = 0; i < 5; i++) {
-    const angle = -Math.PI / 2 + (i * Math.PI * 2) / 5;
-    const vx = Math.cos(angle) * centerPentR;
-    const vy = Math.sin(angle) * centerPentR;
-    const ox = Math.cos(angle) * (ringDist - outerPentR * 0.78);
-    const oy = Math.sin(angle) * (ringDist - outerPentR * 0.78);
-
-    // Seam spoke from center pentagon vertex to outer pentagon
-    ctx.beginPath();
-    ctx.moveTo(vx, vy);
-    ctx.lineTo(ox, oy);
-    ctx.strokeStyle = `rgba(30, 41, 59, ${0.75 * alpha})`;
-    ctx.lineWidth = Math.max(1, r * 0.04);
-    ctx.stroke();
-
-    // Outer pentagon patch
-    const px = Math.cos(angle) * ringDist;
-    const py = Math.sin(angle) * ringDist;
-    drawPolygon(px, py, outerPentR, 5, angle + Math.PI);
-    ctx.fillStyle = panelColor;
-    ctx.fill();
-    ctx.strokeStyle = seamColor;
-    ctx.lineWidth = Math.max(0.9, r * 0.035);
-    ctx.stroke();
-  }
-
-  // Secondary Hexagon Ring Bridges
-  for (let i = 0; i < 5; i++) {
-    const a1 = -Math.PI / 2 + (i * Math.PI * 2) / 5;
-    const a2 = -Math.PI / 2 + (((i + 1) % 5) * Math.PI * 2) / 5;
-    const p1x = Math.cos(a1) * (ringDist - outerPentR * 0.6);
-    const p1y = Math.sin(a1) * (ringDist - outerPentR * 0.6);
-    const p2x = Math.cos(a2) * (ringDist - outerPentR * 0.6);
-    const p2y = Math.sin(a2) * (ringDist - outerPentR * 0.6);
-
-    ctx.beginPath();
-    ctx.moveTo(p1x, p1y);
-    ctx.lineTo(p2x, p2y);
-    ctx.strokeStyle = `rgba(51, 65, 85, ${0.55 * alpha})`;
-    ctx.lineWidth = Math.max(0.8, r * 0.03);
-    ctx.stroke();
-  }
-
-  ctx.restore(); // Unclip
-
-  // 5. Outer Rim Highlight (Emerald / Sky Fresnel Edge)
-  ctx.beginPath();
-  ctx.arc(0, 0, r, 0, Math.PI * 2);
-  ctx.strokeStyle =
-    accentColor === 'emerald'
-      ? `rgba(52, 211, 153, ${0.55 * alpha})`
-      : `rgba(56, 189, 248, ${0.5 * alpha})`;
-  ctx.lineWidth = depthLayer === 2 ? 1.8 : 1.2;
-  ctx.stroke();
-
-  ctx.restore();
+function getReputationStars(rep: number): string {
+  if (rep >= 90) return '★★★★★';
+  if (rep >= 80) return '★★★★☆';
+  if (rep >= 70) return '★★★☆☆';
+  if (rep >= 60) return '★★☆☆☆';
+  return '★☆☆☆☆';
 }
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
@@ -321,1320 +232,1446 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   authUser,
   onGoogleSignIn,
   onGoogleSignOut,
-  onQuickStart,
   onStartCustomCareer,
   onLoadSlot,
   onDeleteSlot,
 }) => {
-  const { lang, setLang, tr } = useLanguage();
+  const { tr } = useLanguage();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [showSetupModal, setShowSetupModal] = useState(false);
-  const [showLoadModal, setShowLoadModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [isMuted, setIsMuted] = useState(soundService.isMuted());
 
-  const isModalOpenRef = useRef(false);
-  isModalOpenRef.current = showSetupModal || showLoadModal || showSettingsModal;
+  // Featured Spotlight Club state (cycles through European Giants or user's latest saved club)
+  const [spotlightIndex, setSpotlightIndex] = useState<number>(0);
 
-  const clubsMap = world?.clubs ?? LIGHTWEIGHT_PREVIEW_CLUBS;
-  const controlledClubId = world?.controlledClubId ?? 'club_eng_pl_1';
+  // Modals & 2-Step Wizard State
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState<1 | 2>(1);
+  const [loadModalOpen, setLoadModalOpen] = useState(false);
 
-  // Setup state
-  const [managerName, setManagerName] = useState('Mikel Arteta');
-  const [customEditedName, setCustomEditedName] = useState(false);
-  const [managerAge, setManagerAge] = useState(42);
-  const [managerNat, setManagerNat] = useState('Spain');
-  const [coachingStyle, setCoachingStyle] = useState<ManagerProfile['coachingStyle']>('Tactician');
-  const [tacticalStyle, setTacticalStyle] = useState<AIManagerStyle>('Possession-focused Manager');
-  const [selectedLeague, setSelectedLeague] = useState<LeagueId>('ENG_PL');
-  const [selectedClubId, setSelectedClubId] = useState<string>('club_eng_pl_1');
-  const [clubSearchQuery, setClubSearchQuery] = useState<string>('');
-
-  // Checkpoint 17: Scenario Challenge Mode & Create-a-Club state
-  const [scenarioChallenge, setScenarioChallenge] = useState<ScenarioChallengeId>('STANDARD');
-  const [createClubEnabled, setCreateClubEnabled] = useState<boolean>(false);
-  const [customClubName, setCustomClubName] = useState<string>('Touchline FC');
-  const [customShortName, setCustomShortName] = useState<string>('TFC');
-  const [customPrimaryColor, setCustomPrimaryColor] = useState<string>('#10b981');
-  const [customSecondaryColor, setCustomSecondaryColor] = useState<string>('#0f172a');
-  const [customStadiumName, setCustomStadiumName] = useState<string>('Touchline Arena');
-
-  const allLeagueConfigs = Object.values(LEAGUES_CONFIG);
-  const currentLeagueConfig = LEAGUES_CONFIG[selectedLeague];
-  const selectedCountryId = currentLeagueConfig.countryId;
-
-  const countriesList = Array.from(
-    new Map(
-      allLeagueConfigs.map((cfg) => [
-        cfg.countryId,
-        {
-          countryId: cfg.countryId,
-          countryName: cfg.countryName,
-          countryFlag: cfg.countryFlag,
-          leagues: allLeagueConfigs.filter((l) => l.countryId === cfg.countryId),
-        },
-      ])
-    ).values()
+  // Career Setup Form State
+  const [managerName, setManagerName] = useState(world?.manager.name || 'Alex Mercer');
+  const [nationality, setNationality] = useState(world?.manager.nationality || 'England');
+  const [age, setAge] = useState(world?.manager.age || 38);
+  const [coachingStyle, setCoachingStyle] = useState<ManagerProfile['coachingStyle']>(
+    world?.manager.coachingStyle || 'Tactician'
   );
+  const [tacticalStyle, setTacticalStyle] = useState<AIManagerStyle>(
+    world?.manager.tacticalStyle || 'Attacking Manager'
+  );
+  const [selectedLeagueId, setSelectedLeagueId] = useState<LeagueId>('ENG_PL');
+  const [selectedClubId, setSelectedClubId] = useState<string>(
+    world?.controlledClubId || 'club_eng_pl_1'
+  );
+  const [selectedScenario, setSelectedScenario] = useState<ScenarioChallengeId>('STANDARD');
 
-  const countryLeagues = allLeagueConfigs.filter((l) => l.countryId === selectedCountryId);
+  // Create-a-Club Mode State
+  const [createAClubEnabled, setCreateAClubEnabled] = useState(false);
+  const [customClubName, setCustomClubName] = useState('London Athletic FC');
+  const [customShortName, setCustomShortName] = useState('LON');
+  const [customStadiumName, setCustomStadiumName] = useState('New Crown Arena');
+  const [customPrimaryColor, setCustomPrimaryColor] = useState('#10b981');
+  const [customSecondaryColor, setCustomSecondaryColor] = useState('#0f172a');
 
-  const handleSelectLeague = (lId: LeagueId) => {
-    setSelectedLeague(lId);
-    setClubSearchQuery('');
-    const firstInLeague = Object.values(clubsMap).find((c) => c.leagueId === lId);
-    if (firstInLeague) {
-      setSelectedClubId(firstInLeague.id);
-      if (!customEditedName) setManagerName(firstInLeague.aiManager.name);
+  const previewClubsMap = useMemo(() => {
+    if (world) return world.clubs;
+    const map: Record<string, Club> = {};
+    for (const [leagueId, templates] of Object.entries(CLUB_TEMPLATES) as [
+      LeagueId,
+      ClubSeedTemplate[],
+    ][]) {
+      templates.forEach((tpl, idx) => {
+        const club = buildPreviewClubFromTemplate(leagueId, idx, tpl);
+        map[club.id] = club;
+      });
     }
-  };
+    return map;
+  }, [world]);
 
-  const handleSelectCountry = (countryId: string) => {
-    const firstLeagueOfCountry = allLeagueConfigs.find((l) => l.countryId === countryId);
-    if (firstLeagueOfCountry) {
-      handleSelectLeague(firstLeagueOfCountry.id);
+  const latestSave = saveSlots[0] || null;
+
+  // Featured clubs list for the Spotlight Deck & Quick Start Dugout
+  const featuredClubs = useMemo(() => {
+    const list: Club[] = [];
+    if (latestSave) {
+      const savedClub = Object.values(previewClubsMap).find(
+        (c) => c.name === latestSave.clubName
+      );
+      if (savedClub) list.push(savedClub);
     }
-  };
+    for (const cid of FEATURED_GIANT_CLUB_IDS) {
+      const c = previewClubsMap[cid];
+      if (c && !list.some((existing) => existing.id === c.id)) {
+        list.push(c);
+      }
+    }
+    return list.length > 0 ? list : Object.values(previewClubsMap).slice(0, 6);
+  }, [previewClubsMap, latestSave]);
 
-  const leagueClubs: Club[] = Object.values(clubsMap).filter(
-    (c) =>
-      c.leagueId === selectedLeague &&
-      (clubSearchQuery.trim() === '' ||
-        c.name.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()) ||
-        c.shortName.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()) ||
-        c.city.toLowerCase().includes(clubSearchQuery.trim().toLowerCase()))
-  );
-  const allClubsInSelectedLeague: Club[] = Object.values(clubsMap).filter(
-    (c) => c.leagueId === selectedLeague
-  );
-  const activeClub = clubsMap[selectedClubId] || allClubsInSelectedLeague[0];
-  const defaultQuickClub = clubsMap[controlledClubId] || activeClub;
+  const activeSpotlightClub =
+    featuredClubs[spotlightIndex % featuredClubs.length] ||
+    previewClubsMap[selectedClubId] ||
+    Object.values(previewClubsMap)[0];
 
-  // Animated Floating Footballs + Tactical Stadium Backdrop Canvas
+  const clubsInSelectedLeague = useMemo(
+    () =>
+      Object.values(previewClubsMap)
+        .filter((c) => c.leagueId === selectedLeagueId)
+        .sort((a, b) => b.reputation - a.reputation),
+    [previewClubsMap, selectedLeagueId]
+  );
+
+  const selectedClub = previewClubsMap[selectedClubId] || clubsInSelectedLeague[0];
+
+  // Ambient club color reactive to either setup modal selection or Featured Spotlight Deck
+  const ambientClub = setupModalOpen ? selectedClub : activeSpotlightClub;
+  const ambientPrimary =
+    setupModalOpen && createAClubEnabled
+      ? customPrimaryColor
+      : ambientClub?.primaryColor || '#10b981';
+  const ambientSecondary =
+    setupModalOpen && createAClubEnabled
+      ? customSecondaryColor
+      : ambientClub?.secondaryColor || '#0ea5e9';
+
+  // Stage 6 Phase 2.1: Lightweight 60fps Canvas (3D Perspective Tactical Pitch Grid + Stadium Floodlight Bokeh)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animId = 0;
+    let animationFrameId = 0;
+    let isVisible = !document.hidden;
     let width = (canvas.width = window.innerWidth);
     let height = (canvas.height = window.innerHeight);
+
+    const mouse = { x: width * 0.5, y: height * 0.35, targetX: width * 0.5, targetY: height * 0.35 };
+
+    interface BokehParticle {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      r: number;
+      alpha: number;
+      phase: number;
+    }
+
+    const particles: BokehParticle[] = Array.from({ length: 28 }, (_, i) => ({
+      x: ((i * 173) % 1000) * 0.001 * width,
+      y: ((i * 293) % 1000) * 0.001 * height,
+      vx: ((i % 5) - 2) * 0.14 || 0.1,
+      vy: -0.12 - (i % 4) * 0.06,
+      r: 1.5 + (i % 4) * 1.1,
+      alpha: 0.12 + (i % 5) * 0.06,
+      phase: i * 0.7,
+    }));
 
     const handleResize = () => {
       if (!canvas) return;
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
     };
-    window.addEventListener('resize', handleResize);
 
-    // Create 16 floating footballs across 3 depth layers
-    const balls: FloatingBall[] = Array.from({ length: 16 }, (_, i) => {
-      const depthLayer: 0 | 1 | 2 = i >= 12 ? 2 : i >= 5 ? 1 : 0;
-      const radius =
-        depthLayer === 2
-          ? 34 + (i % 3) * 11 // 34..56px hero foreground footballs
-          : depthLayer === 1
-            ? 19 + (i % 4) * 4 // 19..31px mid-ground footballs
-            : 11 + (i % 3) * 3; // 11..17px background footballs
-      const speedScale = depthLayer === 2 ? 22 : depthLayer === 1 ? 15 : 9;
-      const angle = ((i * 137.5) % 360) * (Math.PI / 180);
-
-      // Bias majority of large balls toward the right & center-right open space
-      const startX =
-        depthLayer === 2
-          ? width * (0.48 + ((i * 19) % 45) * 0.01)
-          : width * (0.12 + ((i * 29) % 82) * 0.01);
-      const startY = height * (0.12 + ((i * 41) % 76) * 0.01);
-
-      return {
-        x: startX,
-        y: startY,
-        vx: Math.cos(angle) * speedScale,
-        vy: Math.sin(angle) * speedScale - 4, // Gentle upward float bias
-        radius,
-        rotation: (i * 0.7) % (Math.PI * 2),
-        vRot: (i % 2 === 0 ? 1 : -1) * (0.25 + (i % 4) * 0.12),
-        depthLayer,
-        accentColor: i % 3 === 0 ? 'sky' : 'emerald',
-        pulsePhase: i * 0.9,
-      };
-    });
-
-    let lastTime = performance.now();
-    const render = (now: number) => {
-      // Pause canvas GPU/CPU work while a modal is open or browser tab is backgrounded
-      if (isModalOpenRef.current || document.hidden) {
-        lastTime = now;
-        animId = requestAnimationFrame(render);
-        return;
-      }
-
-      const rawDt = (now - lastTime) / 1000;
-      const dt = Math.min(rawDt, 0.05);
-      const timeSec = now / 1000;
-      lastTime = now;
-
-      // Deep stadium night base
-      ctx.fillStyle = '#060a12';
-      ctx.fillRect(0, 0, width, height);
-
-      // Subtle stadium floodlight atmospheric glow on top-right
-      const spotGrad = ctx.createRadialGradient(
-        width * 0.75,
-        height * 0.22,
-        20,
-        width * 0.72,
-        height * 0.45,
-        Math.max(width, height) * 0.65
-      );
-      spotGrad.addColorStop(0, 'rgba(16, 185, 129, 0.11)');
-      spotGrad.addColorStop(0.45, 'rgba(14, 165, 233, 0.05)');
-      spotGrad.addColorStop(1, 'rgba(6, 10, 18, 0)');
-      ctx.fillStyle = spotGrad;
-      ctx.fillRect(0, 0, width, height);
-
-      // Subtle perspective pitch geometry in background
-      ctx.save();
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.07)';
-      ctx.lineWidth = 1.2;
-      const padX = width * 0.06;
-      const padY = height * 0.08;
-      const pw = width - padX * 2;
-      const ph = height - padY * 2;
-      ctx.strokeRect(padX, padY, pw, ph);
-      ctx.beginPath();
-      ctx.moveTo(width * 0.56, padY);
-      ctx.lineTo(width * 0.56, padY + ph);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(width * 0.56, height * 0.5, Math.min(pw, ph) * 0.16, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-
-      // Update positions and draw connecting trajectory lines between mid-ground balls
-      for (const b of balls) {
-        b.x += b.vx * dt;
-        b.y += b.vy * dt + Math.sin(timeSec * 1.2 + b.pulsePhase) * 6 * dt;
-        b.rotation += b.vRot * dt;
-
-        const margin = b.radius + 30;
-        if (b.x < -margin) b.x = width + margin;
-        if (b.x > width + margin) b.x = -margin;
-        if (b.y < -margin) b.y = height + margin;
-        if (b.y > height + margin) b.y = -margin;
-      }
-
-      // Subtle constellation pass lines between nearby footballs
-      ctx.save();
-      for (let i = 0; i < balls.length; i++) {
-        for (let j = i + 1; j < balls.length; j++) {
-          if (balls[i].depthLayer === 0 && balls[j].depthLayer === 0) continue;
-          const dx = balls[i].x - balls[j].x;
-          const dy = balls[i].y - balls[j].y;
-          const dist = Math.hypot(dx, dy);
-          if (dist < 250) {
-            ctx.strokeStyle = `rgba(16, 185, 129, ${(1 - dist / 250) * 0.14})`;
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(balls[i].x, balls[i].y);
-            ctx.lineTo(balls[j].x, balls[j].y);
-            ctx.stroke();
-          }
-        }
-      }
-      ctx.restore();
-
-      // Render balls back-to-front by depthLayer
-      for (const layer of [0, 1, 2] as const) {
-        for (const b of balls) {
-          if (b.depthLayer === layer) {
-            drawFloatingFootball(ctx, b, timeSec);
-          }
-        }
-      }
-
-      animId = requestAnimationFrame(render);
+    const handleMouseMove = (e: MouseEvent) => {
+      mouse.targetX = e.clientX;
+      mouse.targetY = e.clientY;
     };
 
-    animId = requestAnimationFrame(render);
+    const handleVisibilityChange = () => {
+      const nextVisible = !document.hidden;
+      if (nextVisible && !isVisible) {
+        isVisible = true;
+        animationFrameId = requestAnimationFrame(render);
+      } else {
+        isVisible = nextVisible;
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('mousemove', handleMouseMove, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    let tick = 0;
+    const render = () => {
+      if (!isVisible) return;
+      tick += 0.012;
+
+      mouse.x += (mouse.targetX - mouse.x) * 0.05;
+      mouse.y += (mouse.targetY - mouse.y) * 0.05;
+
+      ctx.clearRect(0, 0, width, height);
+
+      const parallaxX = ((mouse.x - width * 0.5) / Math.max(1, width)) * 28;
+      const parallaxY = ((mouse.y - height * 0.5) / Math.max(1, height)) * 14;
+
+      // 1. Perspective 3D Tactical Pitch Grid at bottom 42% of viewport
+      const horizonY = height * 0.58 + parallaxY * 0.4;
+      const bottomY = height * 0.98;
+      const centerX = width * 0.5 + parallaxX * 0.5;
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.09)';
+      ctx.lineWidth = 1;
+
+      const numLongLines = 9;
+      for (let i = -numLongLines; i <= numLongLines; i++) {
+        const topSpread = i * (width * 0.032);
+        const bottomSpread = i * (width * 0.095);
+        ctx.beginPath();
+        ctx.moveTo(centerX + topSpread, horizonY);
+        ctx.lineTo(centerX + bottomSpread, bottomY);
+        ctx.stroke();
+      }
+
+      const rows = [0, 0.16, 0.35, 0.58, 0.82, 1.0];
+      for (const t of rows) {
+        const y = horizonY + (bottomY - horizonY) * t;
+        const halfSpan = width * (0.28 + t * 0.58);
+        ctx.beginPath();
+        ctx.moveTo(centerX - halfSpan, y);
+        ctx.lineTo(centerX + halfSpan, y);
+        ctx.stroke();
+      }
+
+      // Perspective Center Circle & Tactical Arc
+      const midY = horizonY + (bottomY - horizonY) * 0.46;
+      ctx.strokeStyle = 'rgba(16, 185, 129, 0.16)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.ellipse(centerX, midY, width * 0.09, height * 0.028, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const pulseAlpha = 0.12 + Math.sin(tick * 2) * 0.05;
+      ctx.strokeStyle = `rgba(56, 189, 248, ${pulseAlpha.toFixed(3)})`;
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath();
+      ctx.moveTo(centerX - width * 0.14, midY + height * 0.06);
+      ctx.quadraticCurveTo(
+        centerX - width * 0.02,
+        midY - height * 0.04,
+        centerX + width * 0.12,
+        midY - height * 0.02
+      );
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+
+      // 2. Smooth Stadium Floodlight Bokeh Particles
+      ctx.fillStyle = '#e2e8f0';
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        if (p.y < -10) p.y = height + 10;
+        if (p.x < -10) p.x = width + 10;
+        if (p.x > width + 10) p.x = -10;
+
+        const twinkle = p.alpha + Math.sin(tick * 2.5 + p.phase) * 0.05;
+        ctx.globalAlpha = Math.max(0.04, Math.min(0.35, twinkle));
+        ctx.beginPath();
+        ctx.arc(p.x + parallaxX * 0.3, p.y + parallaxY * 0.3, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    animationFrameId = requestAnimationFrame(render);
+
     return () => {
-      cancelAnimationFrame(animId);
+      cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 
-  // Keyboard Enter / Space to quick start when no modal is open
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (showSetupModal || showLoadModal || showSettingsModal) return;
-      if (e.key === 'Enter' || e.key === ' ') {
-        e.preventDefault();
-        onQuickStart();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showSetupModal, showLoadModal, showSettingsModal, onQuickStart]);
+  const handleLaunchCustomCareer = () => {
+    const customConfig: CustomClubConfig | null = createAClubEnabled
+      ? {
+          enabled: true,
+          name: customClubName.trim() || 'Custom FC',
+          shortName:
+            (customShortName.trim() || 'CFC').toUpperCase().slice(0, 3) || 'CFC',
+          stadiumName: customStadiumName.trim() || 'Custom Arena',
+          primaryColor: customPrimaryColor,
+          secondaryColor: customSecondaryColor,
+        }
+      : null;
 
-  const latestSave = saveSlots[0] || null;
+    onStartCustomCareer(
+      {
+        name: managerName.trim() || 'Alex Mercer',
+        nationality,
+        age,
+        coachingStyle,
+        tacticalStyle,
+      },
+      selectedClubId,
+      selectedScenario,
+      customConfig
+    );
+    setSetupModalOpen(false);
+  };
+
+  const handleQuickStartFeaturedClub = (clubToManage: Club) => {
+    onStartCustomCareer(
+      {
+        name: managerName.trim() || 'Alex Mercer',
+        nationality,
+        age,
+        coachingStyle,
+        tacticalStyle,
+      },
+      clubToManage.id,
+      'STANDARD',
+      null
+    );
+  };
+
+  const leagueList = useMemo(() => Object.values(LEAGUES_CONFIG), []);
 
   return (
     <div
-      className="relative w-screen h-screen overflow-hidden bg-slate-950 select-none flex flex-col justify-between p-8 lg:p-12"
       data-testid="title-screen"
+      className="relative w-screen h-screen bg-slate-950 text-slate-100 overflow-hidden select-none flex flex-col justify-between"
     >
-      {/* Floating Footballs Animated Canvas */}
+      {/* Dynamic Club Ambient Stadium Floodlight Glow (Smooth 700ms Transition) */}
+      <div
+        className="pointer-events-none absolute -top-28 -left-24 w-[620px] h-[620px] rounded-full blur-[150px] opacity-25 transition-all duration-700"
+        style={{ backgroundColor: ambientPrimary }}
+      />
+      <div
+        className="pointer-events-none absolute -bottom-32 -right-24 w-[620px] h-[620px] rounded-full blur-[160px] opacity-20 transition-all duration-700"
+        style={{ backgroundColor: ambientSecondary }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(15,23,42,0.2)_0%,_rgba(2,6,23,0.88)_75%)]" />
+
+      {/* 60fps Perspective Tactical Pitch & Floodlight Bokeh Canvas */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none"
+        className="absolute inset-0 pointer-events-none z-0"
       />
-      {/* Left readability gradient while keeping right-hand floating footballs vivid */}
-      <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent pointer-events-none" />
 
-      {/* TOP BAR: Broadcast Status Pill + Cloud Save + Settings Button */}
-      <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
-        <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-slate-900/85 border border-slate-800 backdrop-blur-md text-xs font-mono text-slate-300">
-          <img
-            src="/assets/aistudio/touchline_logo.webp"
-            alt="TOUCHLINE"
-            width={28}
-            height={20}
-            decoding="async"
-            className="w-7 h-5 object-contain"
-          />
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-semibold text-white">TOUCHLINE 26</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-emerald-400">{tr('15 LEAGUES', '15 ลีกยุโรป')}</span>
-          <span className="text-slate-600">·</span>
-          <span>{tr('280 CLUBS', '280 สโมสร')}</span>
+      {/* TOP BROADCAST STATUS BAR */}
+      <header className="relative z-10 px-6 md:px-10 py-3.5 border-b border-slate-800/80 bg-slate-950/70 backdrop-blur-md flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-bold tracking-wider">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            FM27 BROADCAST ENGINE
+          </span>
+          <span className="hidden md:inline text-xs font-mono text-slate-400">
+            {tr(
+              'SEASON 2025/26 · 15 EUROPEAN LEAGUES · 280 CLUBS · 100% CLOUD SAVE EDITION',
+              'ฤดูกาล 2025/26 · 15 ลีกยุโรป · 280 สโมสร · ระบบเซฟ Cloud Firestore 100%'
+            )}
+          </span>
         </div>
 
         <div className="flex items-center gap-2.5">
-          {/* Cloud Save Status / Sign-In */}
+          {/* Cloud Auth Pill */}
           {authUser ? (
-            <div className="flex items-center gap-2.5 px-3.5 py-1.5 rounded-xl bg-slate-900/90 border border-emerald-500/40 backdrop-blur-md text-xs">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/40 text-xs">
               <Cloud className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-slate-300 hidden sm:inline">Cloud:</span>
-              <span className="text-white font-medium truncate max-w-[180px]">
+              <span className="text-emerald-200 font-medium truncate max-w-[180px]">
                 {authUser.email || authUser.displayName}
               </span>
-              <button
-                type="button"
-                onClick={onGoogleSignOut}
-                className="text-slate-400 hover:text-white underline cursor-pointer ml-1"
-              >
-                {tr('Sign Out', 'ออกจากระบบ')}
-              </button>
+              <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                {saveSlots.length} {tr('Cloud Saves', 'เซฟบน Cloud')}
+              </span>
+              {onGoogleSignOut && (
+                <button
+                  type="button"
+                  onClick={onGoogleSignOut}
+                  title={tr('Sign Out', 'ออกจากระบบ')}
+                  className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={onGoogleSignIn}
-              className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-emerald-500/40 text-emerald-400 hover:text-emerald-300 text-xs font-medium transition-colors cursor-pointer flex items-center gap-2 backdrop-blur-md"
-            >
-              <Cloud className="w-3.5 h-3.5" />
-              <span>{tr('Cloud Save (Gmail)', 'ซิงก์เซฟเกมผ่าน Gmail')}</span>
-            </button>
+            onGoogleSignIn && (
+              <button
+                type="button"
+                data-testid="google-signin-title-btn"
+                onClick={onGoogleSignIn}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-sky-500/40 text-sky-300 text-xs font-semibold flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <LogIn className="w-3.5 h-3.5 text-sky-400" />
+                <span>{tr('Sign in with Google (Cloud Save)', 'เข้าสู่ระบบ Gmail (ซิงก์เซฟ Cloud)')}</span>
+              </button>
+            )
           )}
 
-          {/* Settings Button (Houses Language, Audio & UI Info) */}
-          <button
-            type="button"
-            data-testid="title-settings-btn"
-            onClick={() => setShowSettingsModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white text-xs font-semibold transition-colors cursor-pointer flex items-center gap-2 backdrop-blur-md"
-          >
-            <Settings className="w-3.5 h-3.5 text-emerald-400" />
-            <span>{tr('Settings', 'ตั้งค่า')}</span>
-          </button>
+          <LanguageSwitcher />
         </div>
       </header>
 
-      {/* MAIN HERO SECTION: Left Command Lockup + Interactive Career Launcher */}
-      <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center my-auto">
-        <div className="lg:col-span-7 space-y-5">
-          {/* Official TOUCHLINE Game Logo & Tagline Lockup */}
-          <div className="space-y-3">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono">
-              <Trophy className="w-3.5 h-3.5" />
-              <span>
+      {/* MAIN 2-COLUMN HERO COMMAND DECK */}
+      <main className="relative z-10 flex-1 max-w-7xl w-full mx-auto px-6 md:px-10 py-4 grid grid-cols-1 lg:grid-cols-12 gap-8 items-center overflow-y-auto lg:overflow-visible">
+        {/* LEFT COLUMN (7 COLS): OFFICIAL BRANDING & SLEEK FM27 ACTION STACK */}
+        <div className="lg:col-span-7 flex flex-col items-start justify-center space-y-5">
+          {/* Official Game Crest & Title Lockup */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <img
+              src="/assets/aistudio/touchline_logo.webp"
+              alt="TOUCHLINE Football Manager"
+              width={520}
+              height={320}
+              fetchPriority="high"
+              loading="eager"
+              decoding="async"
+              data-testid="title-hero-logo"
+              className="w-56 sm:w-64 h-36 sm:h-40 -my-4 -ml-3 object-contain object-left drop-shadow-[0_14px_32px_rgba(16,185,129,0.35)] select-none pointer-events-none"
+            />
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/80 text-[11px] font-mono text-emerald-400">
+                <Sparkles className="w-3 h-3" />
+                <span>FOOTBALL MANAGEMENT SIMULATION</span>
+              </div>
+              <h1 className="text-2xl sm:text-3xl font-display font-extrabold tracking-tight text-white">
+                {tr('EVERY TACTICAL CALL MATTERS.', 'ทุกการตัดสินใจข้างสนามคือชัยชนะ')}
+              </h1>
+              <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
                 {tr(
-                  'FOOTBALL MANAGEMENT SIMULATION · SEASON 2025/26',
-                  'เกมวางแผนบริหารสโมสรฟุตบอล · ฤดูกาล 2025/26'
+                  'Command 280 clubs across 15 European leagues with live 2D pitch physics, UEFA Swiss Phase, dynamic FFP & Board confidence, and 100% Cloud Firestore career sync.',
+                  'คุมทัพ 280 สโมสรจาก 15 ลีกดังยุโรป พร้อมเอนจินสนาม 2D สมจริง, ถ้วยยุโรป Swiss Model, กฎการเงิน FFP และระบบเซฟเกมบน Cloud Firestore 100%'
                 )}
-              </span>
+              </p>
             </div>
-
-            <div className="relative w-full max-w-[380px] flex items-center justify-start pointer-events-none">
-              <img
-                src="/assets/aistudio/touchline_logo.webp"
-                alt="TOUCHLINE — The World Is Your Pitch"
-                width={380}
-                height={263}
-                fetchPriority="high"
-                decoding="async"
-                data-testid="title-hero-logo"
-                className="w-full h-auto max-h-52 sm:max-h-56 object-contain object-left drop-shadow-[0_10px_28px_rgba(16,185,129,0.28)] select-none"
-              />
-            </div>
-
-            <div className="flex items-center gap-2.5 text-xs font-mono font-semibold tracking-[0.28em] text-emerald-400 uppercase">
-              <span className="w-6 h-0.5 bg-emerald-500/70 rounded-full" />
-              <span>THE WORLD IS YOUR PITCH</span>
-            </div>
-
-            <p className="text-slate-300 text-sm sm:text-base leading-relaxed max-w-xl">
-              {tr(
-                'Take full control of the dugout. Build tactical identities, develop U18/U21 wonderkids, negotiate complex transfers, and compete across 15 European leagues and UEFA competitions.',
-                'ก้าวสู่เก้าอี้กุนซือเต็มรูปแบบ วางแผนแท็กติกเชิงลึก ปั้นดาวรุ่ง U18/U21 สู่ทีมชุดใหญ่ เจรจาซื้อขายนักเตะ และพาทีมไล่ล่าแชมป์ครบ 15 ลีกยุโรปและถ้วยสโมสรยุโรป'
-              )}
-            </p>
           </div>
 
-          {/* Primary Action Buttons */}
-          <div className="flex flex-wrap items-center gap-3.5 pt-1">
+          {/* FM27 Vertical Hero Action Stack */}
+          <div className="w-full max-w-xl space-y-2.5 pt-1">
+            {/* 1. CONTINUE CLOUD CAREER (Shown when user has a cloud/session save) */}
+            {latestSave && (
+              <button
+                type="button"
+                data-testid="continue-career-hero-btn"
+                onClick={() => onLoadSlot(latestSave.slotId)}
+                className="w-full group p-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 shadow-xl shadow-emerald-950/50 flex items-center justify-between gap-4 cursor-pointer hover:translate-x-1.5 transition-all duration-200"
+              >
+                <div className="flex items-center gap-3.5 min-w-0 text-left">
+                  <div className="w-11 h-11 rounded-xl bg-slate-950/15 flex items-center justify-center shrink-0">
+                    <Play className="w-5 h-5 fill-slate-950 text-slate-950" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-mono uppercase tracking-wider font-bold text-slate-900/80 flex items-center gap-1.5">
+                      <Cloud className="w-3.5 h-3.5" />
+                      <span>
+                        {tr('CONTINUE CLOUD CAREER', 'เล่นต่อจากเซฟล่าสุดบน CLOUD')}
+                      </span>
+                    </div>
+                    <div className="text-base sm:text-lg font-display font-extrabold text-slate-950 truncate">
+                      {latestSave.clubName} · {latestSave.managerName}
+                    </div>
+                    <div className="text-xs font-mono text-slate-900/90">
+                      {tr('Date:', 'วันที่:')} {latestSave.gameDate} · {tr('Season', 'ฤดูกาล')}{' '}
+                      {latestSave.season}
+                    </div>
+                  </div>
+                </div>
+                <span className="px-3 py-1.5 rounded-xl bg-slate-950 text-emerald-400 font-mono text-xs font-bold shrink-0">
+                  {tr('Resume →', 'เข้าเกม →')}
+                </span>
+              </button>
+            )}
+
+            {/* 2. START NEW CAREER (Opens 2-Step Wizard Modal) */}
             <button
               type="button"
               data-testid="open-setup-modal-btn"
-              onClick={() => setShowSetupModal(true)}
-              className="px-6 py-3.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-bold text-sm rounded-xl transition-all cursor-pointer flex items-center gap-2.5 shadow-lg shadow-emerald-950/60"
+              onClick={() => {
+                setWizardStep(1);
+                setSetupModalOpen(true);
+              }}
+              className={`w-full group p-4 rounded-2xl border flex items-center justify-between gap-4 cursor-pointer hover:translate-x-1.5 transition-all duration-200 ${
+                latestSave
+                  ? 'bg-slate-900/90 hover:bg-slate-800/95 border-slate-700/80 text-white'
+                  : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 border-emerald-400 text-slate-950 shadow-xl shadow-emerald-950/50'
+              }`}
             >
-              <Shield className="w-4 h-4" />
-              <span>
-                {tr(
-                  'Select Club & Create Manager (280 Clubs)',
-                  'เลือกสโมสร & สร้างผู้จัดการทีม (280 สโมสร)'
-                )}
+              <div className="flex items-center gap-3.5 text-left">
+                <div
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                    latestSave
+                      ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-400'
+                      : 'bg-slate-950/15 text-slate-950'
+                  }`}
+                >
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <div
+                    className={`text-base font-display font-extrabold ${
+                      latestSave ? 'text-white' : 'text-slate-950'
+                    }`}
+                  >
+                    {tr(
+                      'START NEW CAREER (280 CLUBS)',
+                      'เริ่มต้นอาชีพผู้จัดการทีมใหม่ (เลือกจาก 280 สโมสร)'
+                    )}
+                  </div>
+                  <div
+                    className={`text-xs ${
+                      latestSave ? 'text-slate-400' : 'text-slate-900/85 font-medium'
+                    }`}
+                  >
+                    {tr(
+                      'Choose any club across 10 countries, Scenario Challenges, or Create-a-Club',
+                      'เลือกสโมสรจาก 15 ลีกยุโรป, โหมดท้าทายพิเศษ หรือสร้างสโมสรของคุณเอง'
+                    )}
+                  </div>
+                </div>
+              </div>
+              <span
+                className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold shrink-0 ${
+                  latestSave
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                    : 'bg-slate-950 text-emerald-400'
+                }`}
+              >
+                {tr('Configure →', 'ตั้งค่า →')}
               </span>
             </button>
 
-            <button
-              type="button"
-              data-testid="quick-start-btn"
-              onClick={onQuickStart}
-              className="px-5 py-3.5 bg-slate-900/90 hover:bg-slate-800 text-white border border-slate-700 font-semibold text-sm rounded-xl transition-all cursor-pointer flex items-center gap-2 backdrop-blur-md"
-            >
-              <Play className="w-4 h-4 text-emerald-400" />
-              <span>
-                {tr(
-                  `Quick Start (${defaultQuickClub?.shortName || 'ARS'})`,
-                  `เริ่มเกมด่วน (${defaultQuickClub?.shortName || 'ARS'})`
-                )}
-              </span>
-            </button>
+            {/* 3. QUICK START DUGOUT (Instant launch with active Spotlight Club + < > selector) */}
+            <div className="w-full p-3.5 rounded-2xl bg-slate-900/85 hover:bg-slate-900 border border-slate-800 flex items-center justify-between gap-3 hover:translate-x-1.5 transition-all duration-200">
+              <button
+                type="button"
+                data-testid="quick-start-btn"
+                onClick={() => handleQuickStartFeaturedClub(activeSpotlightClub)}
+                className="flex-1 flex items-center gap-3.5 text-left cursor-pointer min-w-0"
+              >
+                <div className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400 shrink-0">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-display font-bold text-white flex items-center gap-2">
+                    <span>{tr('QUICK START DUGOUT', 'เริ่มคุมทีมด่วนทันที')}</span>
+                    <span className="px-2 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono text-[11px] truncate">
+                      {activeSpotlightClub.name}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-400 truncate">
+                    {tr(
+                      `Jump straight into the dugout with ${activeSpotlightClub.name} (${activeSpotlightClub.primaryTactic.formation})`,
+                      `กระโดดเข้าคุมทีม ${activeSpotlightClub.name} ทันทีโดยไม่ต้องตั้งค่า (${activeSpotlightClub.primaryTactic.formation})`
+                    )}
+                  </div>
+                </div>
+              </button>
 
+              {/* Inline Club Cycler Arrows */}
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  data-testid="quick-start-prev-club"
+                  onClick={() =>
+                    setSpotlightIndex(
+                      (prev) => (prev - 1 + featuredClubs.length) % featuredClubs.length
+                    )
+                  }
+                  title={tr('Previous Featured Club', 'สโมสรแนะนำก่อนหน้า')}
+                  className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  data-testid="quick-start-next-club"
+                  onClick={() =>
+                    setSpotlightIndex((prev) => (prev + 1) % featuredClubs.length)
+                  }
+                  title={tr('Next Featured Club', 'สโมสรแนะนำถัดไป')}
+                  className="p-2 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* 4. CLOUD SAVE MANAGER */}
             <button
               type="button"
               data-testid="open-load-modal-btn"
-              onClick={() => setShowLoadModal(true)}
-              className="px-5 py-3.5 bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-slate-800 font-medium text-sm rounded-xl transition-all cursor-pointer flex items-center gap-2 tabular-nums backdrop-blur-md"
+              onClick={() => setLoadModalOpen(true)}
+              className="w-full p-3.5 rounded-2xl bg-slate-900/75 hover:bg-slate-800/90 border border-slate-800 text-slate-200 flex items-center justify-between gap-4 cursor-pointer hover:translate-x-1.5 transition-all duration-200"
             >
-              <FolderOpen className="w-4 h-4 text-sky-400" />
-              <span>
-                {tr(`Load Saved Career (${saveSlots.length})`, `โหลดเซฟเกม (${saveSlots.length})`)}
+              <div className="flex items-center gap-3.5 text-left">
+                <div className="w-10 h-10 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center text-emerald-400 shrink-0">
+                  <FolderOpen className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-display font-bold text-white flex items-center gap-2">
+                    <span>{tr('CLOUD SAVE MANAGER', 'จัดการช่องเซฟเกมบน CLOUD')}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-800 text-emerald-400 font-mono text-[11px]">
+                      {saveSlots.length}/5 {tr('Slots', 'สล็อต')}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {authUser
+                      ? tr(
+                          `Synced with ${authUser.email || authUser.displayName}`,
+                          `ซิงก์ข้อมูลกับบัญชี ${authUser.email || authUser.displayName} แล้ว`
+                        )
+                      : tr(
+                          'Sign in with Google/Gmail to sync & load your Cloud Career saves across devices',
+                          'เข้าสู่ระบบด้วย Gmail เพื่อซิงก์และโหลดเซฟเกมบน Cloud ข้ามอุปกรณ์'
+                        )}
+                  </div>
+                </div>
+              </div>
+              <span className="text-xs font-mono text-emerald-400 shrink-0">
+                {tr('Open →', 'เปิดดู →')}
               </span>
             </button>
           </div>
-
-          {/* 3 Compact Feature Pillars */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 max-w-2xl">
-            <div className="p-3.5 rounded-xl bg-slate-900/75 border border-slate-800/90 backdrop-blur-md">
-              <div className="flex items-center gap-2 text-xs font-bold text-emerald-400">
-                <Globe2 className="w-3.5 h-3.5" />
-                <span>{tr('15 Leagues · 280 Clubs', '15 ลีกยุโรป · 280 สโมสร')}</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                {tr(
-                  'Top flight & 2nd divisions with full promotion, relegation & UEFA Swiss Phase.',
-                  'ครบทั้งลีกสูงสุดและลีกรอง พร้อมระบบเลื่อนชั้น-ตกชั้น และถ้วยยุโรประบบ Swiss'
-                )}
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-900/75 border border-slate-800/90 backdrop-blur-md">
-              <div className="flex items-center gap-2 text-xs font-bold text-sky-400">
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{tr('FM Youth & Wonderkids', 'ระบบปั้นเยาวชน & Wonderkids')}</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                {tr(
-                  'Annual Youth Intake, U18/U21 development, senior mentoring & South America scouting.',
-                  'คัดเด็กปั้นประจำปี ทีม U18/U21 ระบบพี่เลี้ยง และส่งแมวมองส่องเพชรเม็ดงาม'
-                )}
-              </p>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-slate-900/75 border border-slate-800/90 backdrop-blur-md">
-              <div className="flex items-center gap-2 text-xs font-bold text-amber-400">
-                <UserCheck className="w-3.5 h-3.5" />
-                <span>{tr('2D Match & Mind Games', 'จำลองแข่งจริง 2D & จิตวิทยา')}</span>
-              </div>
-              <p className="text-xs text-slate-400 mt-1">
-                {tr(
-                  'Live 2D pitch engine, touchline shouts, half-time team talks & tactical roles.',
-                  'ชมเกมสด 2D ตะโกนสั่งข้างสนาม พูดปลุกใจพักครึ่ง และปรับบทบาทนักเตะละเอียด'
-                )}
-              </p>
-            </div>
-          </div>
         </div>
 
-        {/* Right Side (4 Cols): Featured Club / Active Save Preview Card floating over the soccer balls */}
-        <div className="hidden lg:block lg:col-span-5">
-          <div className="ml-auto max-w-sm rounded-2xl bg-slate-900/80 border border-slate-800/90 backdrop-blur-xl p-5 shadow-2xl space-y-4">
-            {latestSave ? (
-              <>
-                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                  <span className="text-xs font-mono font-bold text-emerald-400">
-                    {tr('LATEST SAVED CAREER', 'เซฟเกมล่าสุดของคุณ')}
-                  </span>
-                  <span className="text-xs font-mono text-slate-400">{latestSave.gameDate}</span>
-                </div>
-                <div>
-                  <div className="text-lg font-display font-bold text-white">
-                    {latestSave.clubName}
-                  </div>
-                  <div className="text-xs text-slate-400 mt-0.5">
-                    {tr('Manager:', 'ผู้จัดการทีม:')} {latestSave.managerName} ·{' '}
-                    {tr('Season', 'ฤดูกาล')} {latestSave.season}
-                  </div>
-                </div>
+        {/* RIGHT COLUMN (5 COLS): INTERACTIVE FEATURED CLUB SPOTLIGHT DECK */}
+        <div
+          data-testid="featured-club-spotlight-deck"
+          className="lg:col-span-5 bg-slate-900/85 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-6 shadow-2xl space-y-5 relative overflow-hidden"
+          style={{
+            borderTop: `4px solid ${activeSpotlightClub.primaryColor}`,
+          }}
+        >
+          {/* Subtle top right ambient glow inside card */}
+          <div
+            className="pointer-events-none absolute -top-16 -right-16 w-48 h-48 rounded-full blur-3xl opacity-25 transition-all duration-700"
+            style={{ backgroundColor: activeSpotlightClub.primaryColor }}
+          />
+
+          {/* Deck Header & Club Selector Pills */}
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <div className="text-[11px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
+                {tr('FEATURED CLUB SPOTLIGHT', 'สโมสรไฮไลต์ประจำฤดูกาล')}
+              </div>
+              <div className="text-xs text-slate-400">
+                {tr(
+                  'Click any club to preview kits, warchest & tactics',
+                  'คลิกเลือกสโมสรเพื่อดูชุดแข่ง งบประมาณ และแผนการเล่น'
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() =>
+                  setSpotlightIndex(
+                    (prev) => (prev - 1 + featuredClubs.length) % featuredClubs.length
+                  )
+                }
+                aria-label="Previous Spotlight Club"
+                className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setSpotlightIndex((prev) => (prev + 1) % featuredClubs.length)
+                }
+                aria-label="Next Spotlight Club"
+                className="p-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Club Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+            {featuredClubs.map((fc, idx) => {
+              const active = fc.id === activeSpotlightClub.id;
+              return (
                 <button
+                  key={fc.id}
                   type="button"
-                  onClick={() => onLoadSlot(latestSave.slotId)}
-                  className="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer transition-colors"
+                  data-testid={`spotlight-pill-${fc.id}`}
+                  onClick={() => setSpotlightIndex(idx)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap cursor-pointer transition-all flex items-center gap-1.5 border ${
+                    active
+                      ? 'bg-slate-800 border-emerald-500/60 text-white font-bold shadow-sm'
+                      : 'bg-slate-950/60 border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
                 >
-                  {tr('Continue Saved Career →', 'เล่นต่อจากเซฟล่าสุด →')}
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: fc.primaryColor }}
+                  />
+                  <span>{fc.shortName}</span>
                 </button>
-              </>
-            ) : (
-              defaultQuickClub && (
-                <>
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <span className="text-xs font-mono font-bold text-emerald-400">
-                      {tr('FEATURED CLUB SPOTLIGHT', 'สโมสรแนะนำพร้อมคุมทันที')}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <CompetitionBadge
-                        competitionId={defaultQuickClub.leagueId}
-                        size="xs"
-                      />
-                      <span className="text-xs font-mono text-slate-300">
-                        {LEAGUES_CONFIG[defaultQuickClub.leagueId]?.name}
-                      </span>
-                    </div>
-                  </div>
+              );
+            })}
+          </div>
 
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3.5 min-w-0">
-                      <ClubBadge club={defaultQuickClub} size="lg" />
-                      <div className="min-w-0">
-                        <div className="text-lg font-display font-bold text-white truncate">
-                          {defaultQuickClub.name}
-                        </div>
-                        <div className="text-xs text-slate-400 truncate">
-                          {defaultQuickClub.stadiumName} (
-                          {defaultQuickClub.stadiumCapacity.toLocaleString()}{' '}
-                          {tr('seats', 'ที่นั่ง')})
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <ClubKitJersey club={defaultQuickClub} variant="home" size="xs" />
-                      <ClubKitJersey club={defaultQuickClub} variant="away" size="xs" />
-                    </div>
-                  </div>
+          {/* Club Crest, Identity & League Badge */}
+          <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-slate-950/80 border border-slate-800/90">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <ClubBadge club={activeSpotlightClub} size="lg" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg sm:text-xl font-display font-extrabold text-white truncate">
+                    {activeSpotlightClub.name}
+                  </h2>
+                </div>
+                <div className="text-xs text-amber-400 font-mono tracking-wider">
+                  {getReputationStars(activeSpotlightClub.reputation)}{' '}
+                  <span className="text-slate-400">
+                    (Rep {activeSpotlightClub.reputation})
+                  </span>
+                </div>
+                <div className="text-xs text-slate-400 truncate mt-0.5">
+                  🏟️ {activeSpotlightClub.stadiumName} (
+                  {activeSpotlightClub.stadiumCapacity.toLocaleString()})
+                </div>
+              </div>
+            </div>
+            <div className="shrink-0 flex flex-col items-end gap-1">
+              <CompetitionBadge competitionId={activeSpotlightClub.leagueId} size="sm" />
+              <span className="text-[11px] font-mono text-slate-400">
+                {LEAGUES_CONFIG[activeSpotlightClub.leagueId]?.name}
+              </span>
+            </div>
+          </div>
 
-                  <div className="grid grid-cols-3 gap-2 text-center font-mono text-xs">
-                    <div className="p-2 rounded-lg bg-slate-950/90 border border-slate-800">
-                      <div className="text-slate-400 font-sans">{tr('Budget', 'งบเสริมทัพ')}</div>
-                      <div className="text-emerald-400 font-bold mt-0.5">
-                        €{(defaultQuickClub.finances.transferBudget / 1_000_000).toFixed(1)}M
-                      </div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-slate-950/90 border border-slate-800">
-                      <div className="text-slate-400 font-sans">{tr('Tactic', 'แผนหลัก')}</div>
-                      <div className="text-white font-bold mt-0.5">
-                        {defaultQuickClub.primaryTactic.formation}
-                      </div>
-                    </div>
-                    <div className="p-2 rounded-lg bg-slate-950/90 border border-slate-800">
-                      <div className="text-slate-400 font-sans">{tr('Target', 'เป้าหมาย')}</div>
-                      <div className="text-amber-300 font-bold mt-0.5">
-                        Top {defaultQuickClub.boardExpectations.targetLeaguePosition}
-                      </div>
-                    </div>
-                  </div>
+          {/* 2025/26 Official Kits Showcase (Home / Away / GK) + League Trophy */}
+          <div className="grid grid-cols-4 gap-2.5 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 items-center text-center">
+            <div className="flex flex-col items-center gap-1">
+              <ClubKitJersey club={activeSpotlightClub} variant="home" size="md" />
+              <span className="text-[10px] font-mono text-slate-400">HOME</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <ClubKitJersey club={activeSpotlightClub} variant="away" size="md" />
+              <span className="text-[10px] font-mono text-slate-400">AWAY</span>
+            </div>
+            <div className="flex flex-col items-center gap-1">
+              <ClubKitJersey club={activeSpotlightClub} variant="gk" size="md" />
+              <span className="text-[10px] font-mono text-slate-400">GK</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 border-l border-slate-800 pl-2">
+              <TrophyArtwork competitionId={activeSpotlightClub.leagueId} size="md" />
+              <span className="text-[10px] font-mono text-amber-300">TARGET</span>
+            </div>
+          </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={onQuickStart}
-                      className="py-2.5 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer transition-colors"
-                    >
-                      {tr(`Manage ${defaultQuickClub.shortName}`, `คุมทีม ${defaultQuickClub.shortName} ทันที`)}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowSetupModal(true)}
-                      className="py-2.5 px-3 rounded-xl bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 font-medium text-xs cursor-pointer transition-colors"
-                    >
-                      {tr('Change Club...', 'เปลี่ยนสโมสร...')}
-                    </button>
-                  </div>
-                </>
-              )
-            )}
+          {/* Key Club Metrics Grid */}
+          <div className="grid grid-cols-3 gap-2.5 text-center font-mono">
+            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div className="text-[10px] text-slate-400 uppercase">
+                {tr('Transfer Budget', 'งบเสริมทัพ')}
+              </div>
+              <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                €{(activeSpotlightClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div className="text-[10px] text-slate-400 uppercase">
+                {tr('Primary Tactic', 'แผนหลัก')}
+              </div>
+              <div className="text-sm font-bold text-sky-400 mt-0.5">
+                {activeSpotlightClub.primaryTactic.formation}
+              </div>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div className="text-[10px] text-slate-400 uppercase">
+                {tr('Board Target', 'เป้าหมายบอร์ด')}
+              </div>
+              <div className="text-sm font-bold text-amber-300 mt-0.5">
+                Top {activeSpotlightClub.boardExpectations.targetLeaguePosition}
+              </div>
+            </div>
+          </div>
+
+          {/* Direct Action Buttons on Spotlight Deck */}
+          <div className="flex items-center gap-2.5">
+            <button
+              type="button"
+              data-testid="spotlight-manage-btn"
+              onClick={() => handleQuickStartFeaturedClub(activeSpotlightClub)}
+              className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider cursor-pointer transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50"
+            >
+              <Play className="w-4 h-4 fill-slate-950" />
+              <span>
+                {tr(
+                  `Manage ${activeSpotlightClub.shortName} Now`,
+                  `เริ่มคุมทีม ${activeSpotlightClub.shortName} ทันที`
+                )}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedLeagueId(activeSpotlightClub.leagueId);
+                setSelectedClubId(activeSpotlightClub.id);
+                setWizardStep(2);
+                setSetupModalOpen(true);
+              }}
+              className="py-3 px-3.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold cursor-pointer transition-colors"
+            >
+              {tr('Customize Contract', 'ปรับสัญญาคุมทีม')}
+            </button>
           </div>
         </div>
-      </div>
+      </main>
 
-      {/* BOTTOM BAR: Keyboard Shortcuts & Engine Info */}
-      <footer className="relative z-10 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 font-mono">
-        <span>
+      {/* BOTTOM TICKER BAR */}
+      <footer className="relative z-10 px-6 md:px-10 py-2.5 border-t border-slate-800/80 bg-slate-950/80 backdrop-blur-md flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono text-slate-400">
+        <div className="flex items-center gap-4">
+          <span className="text-emerald-400 font-semibold">
+            ● {tr('LIVE MATCH ENGINE 2.0', 'เอนจินจำลองแมตช์สด 2.0')}
+          </span>
+          <span>·</span>
+          <span>
+            {tr(
+              'UEFA Champions League / Europa / Conference Swiss Model',
+              'ยูฟ่า แชมเปียนส์ลีก / ยูโรปา / คอนเฟอเรนซ์ ระบบ Swiss Model'
+            )}
+          </span>
+        </div>
+        <div>
           {tr(
-            'Enter / Space Quick Start · C Advance Day · Ctrl+K Global Search · Esc Game Menu',
-            'Enter / Space เริ่มเกมทันที · C เดินเวลาวันถัดไป · Ctrl+K ค้นหาด่วน · Esc เมนูหลัก'
+            'Tip: Press [Ctrl+K] anytime in-game to search 6,000+ players & 280 clubs',
+            'เคล็ดลับ: กด [Ctrl+K] ในเกมได้ตลอดเวลาเพื่อค้นหานักเตะกว่า 6,000 คนและ 280 สโมสร'
           )}
-        </span>
-        <span className="hidden sm:inline text-slate-500">
-          TOUCHLINE Deterministic Match & Youth Engine
-        </span>
+        </div>
       </footer>
 
-      {/* TITLE SCREEN SETTINGS MODAL (Language & Audio Preferences) */}
-      {showSettingsModal && (
+      {/* ===================================================================== */}
+      {/* 2-STEP SMOOTH WIZARD MODAL: NEW CAREER SETUP (280 CLUBS + CONTRACT)   */}
+      {/* ===================================================================== */}
+      {setupModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          data-testid="career-setup-modal"
           role="dialog"
           aria-modal="true"
-          data-testid="title-settings-modal"
-          onClick={() => setShowSettingsModal(false)}
         >
-          <div
-            className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-6 space-y-5 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Settings className="w-4 h-4 text-emerald-400" />
-                <h2 className="text-base font-display font-bold text-white">
-                  {tr('Game Settings & Language', 'ตั้งค่าเกมและภาษา')}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="space-y-2">
-                <div className="font-semibold text-slate-300">
-                  {tr('Display Language', 'ภาษาที่ใช้แสดงผล')}
-                </div>
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setLang('en')}
-                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
-                      lang === 'en'
-                        ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="text-emerald-400 font-bold">English</div>
-                    <div className="text-slate-400 mt-0.5">Standard FM terminology</div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLang('th')}
-                    className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
-                      lang === 'th'
-                        ? 'bg-emerald-500/15 border-emerald-500 text-white font-semibold'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    <div className="text-emerald-400 font-bold">ภาษาไทย</div>
-                    <div className="text-slate-400 mt-0.5">เมนูและคำอธิบายภาษาไทย</div>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                <div>
-                  <div className="font-semibold text-white">
-                    {tr('Match & UI Sound Effects', 'เสียงประกอบการแข่งขันและปุ่มกด')}
-                  </div>
-                  <div className="text-slate-400 mt-0.5">
-                    {isMuted ? tr('Muted', 'ปิดเสียงอยู่') : tr('Active', 'เปิดเสียงอยู่')}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const m = soundService.toggleMute();
-                    setIsMuted(m);
-                  }}
-                  className="px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 flex items-center gap-1.5 cursor-pointer"
-                >
-                  {isMuted ? (
-                    <>
-                      <VolumeX className="w-4 h-4 text-rose-400" />
-                      <span>{tr('Unmute', 'เปิดเสียง')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 className="w-4 h-4 text-emerald-400" />
-                      <span>{tr('Mute', 'ปิดเสียง')}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(false)}
-                className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer"
-              >
-                {tr('Done', 'เสร็จสิ้น')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* CUSTOM CAREER & CLUB SELECTION MODAL */}
-      {showSetupModal && (
-        <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4 lg:p-6 transition-opacity duration-200"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="setup-modal-title"
-        >
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-6xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
-              <div className="flex items-center gap-3">
-                <Shield className="w-5 h-5 text-emerald-400" />
-                <h2 id="setup-modal-title" className="text-xl font-display font-bold text-slate-100">
-                  {tr(
-                    'Create Manager Profile & Select Club (15 European Leagues · 280 Clubs)',
-                    'สร้างโปรไฟล์ผู้จัดการทีมและเลือกสโมสร (15 ลีกยุโรป · 280 สโมสร)'
-                  )}
-                </h2>
-                <span className="hidden md:inline-block px-2.5 py-0.5 text-xs font-mono rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                  SEASON 2025/26
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
-                <LanguageSwitcher />
-                <button
-                  type="button"
-                  onClick={() => setShowSetupModal(false)}
-                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                >
-                  {tr('Close (Esc)', 'ปิดหน้าต่าง')}
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Column: Manager Profile + Create-a-Club + Scenario Challenges */}
-              <div className="lg:col-span-4 space-y-4">
-                <h3 className="text-sm font-semibold text-emerald-400">
-                  {tr('1. Manager Profile', '1. ข้อมูลผู้จัดการทีม')}
-                </h3>
-
-                <div>
-                  <label htmlFor="mgr-name-input" className="block text-xs text-slate-400 mb-1">
-                    {tr('Manager Full Name', 'ชื่อ-นามสกุล ผู้จัดการทีม')}
-                  </label>
-                  <input
-                    id="mgr-name-input"
-                    type="text"
-                    value={managerName}
-                    onChange={(e) => {
-                      setManagerName(e.target.value);
-                      setCustomEditedName(true);
-                    }}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100"
-                    placeholder={tr('e.g. Mikel Arteta, Pep Guardiola', 'เช่น Mikel Arteta, Pep Guardiola')}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label htmlFor="mgr-age-input" className="block text-xs text-slate-400 mb-1">
-                      {tr('Age', 'อายุ')}
-                    </label>
-                    <input
-                      id="mgr-age-input"
-                      type="number"
-                      min={28}
-                      max={75}
-                      value={managerAge}
-                      onChange={(e) => setManagerAge(Number(e.target.value) || 38)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100 tabular-nums"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="mgr-nat-select" className="block text-xs text-slate-400 mb-1">
-                      {tr('Nationality', 'สัญชาติ')}
-                    </label>
-                    <select
-                      id="mgr-nat-select"
-                      value={managerNat}
-                      onChange={(e) => setManagerNat(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100"
-                    >
-                      <option value="England">England</option>
-                      <option value="Spain">Spain</option>
-                      <option value="Germany">Germany</option>
-                      <option value="Italy">Italy</option>
-                      <option value="France">France</option>
-                      <option value="Portugal">Portugal</option>
-                      <option value="Netherlands">Netherlands</option>
-                      <option value="Belgium">Belgium</option>
-                      <option value="Turkey">Turkey</option>
-                      <option value="Scotland">Scotland</option>
-                      <option value="Thailand">Thailand</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="mgr-coaching-select" className="block text-xs text-slate-400 mb-1">
-                    {tr('Coaching Style', 'รูปแบบการโค้ช')}
-                  </label>
-                  <select
-                    id="mgr-coaching-select"
-                    value={coachingStyle}
-                    onChange={(e) => setCoachingStyle(e.target.value as ManagerProfile['coachingStyle'])}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100"
-                  >
-                    <option value="Tactician">
-                      {tr('Tactician (Master of tactical systems)', 'Tactician — เชี่ยวชาญการแก้เกมและระบบแท็กติก')}
-                    </option>
-                    <option value="Motivator">
-                      {tr('Motivator (Boosts squad morale & mentality)', 'Motivator — กระตุ้นขวัญกำลังใจนักเตะยอดเยี่ยม')}
-                    </option>
-                    <option value="Youth Developer">
-                      {tr('Youth Developer (Accelerates young player growth)', 'Youth Developer — ปั้นดาวรุ่งพัฒนาไว')}
-                    </option>
-                    <option value="Tracksuit Coach">
-                      {tr('Tracksuit Coach (Intensive on-pitch training)', 'Tracksuit Coach — เน้นการฝึกซ้อมภาคสนามเข้มข้น')}
-                    </option>
-                  </select>
-                </div>
-
-                <div>
-                  <label htmlFor="mgr-tactical-select" className="block text-xs text-slate-400 mb-1">
-                    {tr('Tactical Philosophy', 'ปรัชญาฟุตบอลหลัก')}
-                  </label>
-                  <select
-                    id="mgr-tactical-select"
-                    value={tacticalStyle}
-                    onChange={(e) => setTacticalStyle(e.target.value as AIManagerStyle)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 focus:border-emerald-500 focus:outline-none rounded-lg text-sm text-slate-100"
-                  >
-                    <option value="Possession-focused Manager">
-                      {tr('Possession-focused (Short passing & control)', 'เน้นครองบอลทำชิ่งและคุมจังหวะเกม')}
-                    </option>
-                    <option value="Attacking Manager">
-                      {tr('Attacking Football (High-tempo offensive pressure)', 'เปิดเกมรุกกดดันสูงจังหวะรวดเร็ว')}
-                    </option>
-                    <option value="Counter-attacking Manager">
-                      {tr('Direct Counter-Attack (Compact defense & fast transitions)', 'ตั้งรับรัดกุมและสวนกลับเฉียบคม')}
-                    </option>
-                    <option value="Youth Developer">
-                      {tr('Youth & Dynamic Press (High-energy pressing)', 'เพรสซิ่งแดนบนด้วยขุมกำลังพลังหนุ่ม')}
-                    </option>
-                    <option value="Pragmatic Manager">
-                      {tr('Pragmatic Balance (Adaptable to opponents)', 'สมดุลยืดหยุ่นตามคู่แข่ง')}
-                    </option>
-                  </select>
-                </div>
-
-                {/* Checkpoint 17A: FM Scenario Challenge Modes */}
-                <div className="pt-2 border-t border-slate-800 space-y-2" data-testid="scenario-challenge-selector">
-                  <label htmlFor="scenario-challenge-select" className="block text-xs font-semibold text-amber-400">
-                    {tr('3. FM Scenario Challenge Mode', '3. โหมดภารกิจท้าทาย')}
-                  </label>
-                  <select
-                    id="scenario-challenge-select"
-                    value={scenarioChallenge}
-                    onChange={(e) => setScenarioChallenge(e.target.value as ScenarioChallengeId)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-amber-500/40 focus:border-amber-400 focus:outline-none rounded-lg text-xs text-slate-100"
-                  >
-                    <option value="STANDARD">
-                      {tr('Standard Managerial Career (Default)', 'โหมดอาชีพผู้จัดการทีมมาตรฐาน')}
-                    </option>
-                    <option value="POINTS_DEDUCTION">
-                      {tr('⚠️ Financial Crisis (-10 Points Deduction & Tight Budget)', '⚠️ วิกฤตการเงิน — โดนตัด -10 แต้มตั้งแต่เปิดฤดูกาล')}
-                    </option>
-                    <option value="INJURY_CRISIS">
-                      {tr('🚑 Injury Crisis (Top 5 Stars Out Injured for 3–5 Weeks)', '🚑 วิกฤตแข้งเจ็บระนาว — ตัวหลัก 5 คนเจ็บยาวเปิดซีซั่น')}
-                    </option>
-                    <option value="YOUTH_ONLY">
-                      {tr('🌱 Class of ’27 Academy Challenge (20/20 Youth + Transfer Ban)', '🌱 ปั้นเด็กอคาเดมีล้วน — อคาเดมี 20/20 + ห้ามซื้อนักเตะ')}
-                    </option>
-                  </select>
-                </div>
-
-                {/* Checkpoint 17B: Create-a-Club Customizer */}
-                <div className="pt-2 border-t border-slate-800 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold text-sky-400">
-                      {tr('4. Create-a-Club Customizer', '4. สร้างสโมสรของคุณเอง')}
-                    </span>
-                    <button
-                      type="button"
-                      data-testid="create-a-club-toggle"
-                      onClick={() => setCreateClubEnabled(!createClubEnabled)}
-                      className={`px-2.5 py-1 rounded text-xs font-mono font-semibold cursor-pointer ${
-                        createClubEnabled
-                          ? 'bg-sky-500 text-slate-950'
-                          : 'bg-slate-950 text-slate-400 border border-slate-800'
-                      }`}
-                    >
-                      {createClubEnabled ? tr('ENABLED', 'เปิดใช้งาน') : tr('OFF', 'ปิด')}
-                    </button>
-                  </div>
-
-                  {createClubEnabled && (
-                    <div className="p-3 rounded-xl bg-slate-950 border border-sky-500/40 space-y-2.5 text-xs">
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2">
-                          <label htmlFor="custom-club-name" className="block text-xs text-slate-400 mb-0.5">
-                            {tr('Custom Club Name', 'ชื่อสโมสรใหม่')}
-                          </label>
-                          <input
-                            id="custom-club-name"
-                            type="text"
-                            value={customClubName}
-                            onChange={(e) => setCustomClubName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs text-white"
-                          />
-                        </div>
-                        <div>
-                          <label htmlFor="custom-short-name" className="block text-xs text-slate-400 mb-0.5">
-                            {tr('3-Letter Code', 'ตัวย่อ 3 ตัว')}
-                          </label>
-                          <input
-                            id="custom-short-name"
-                            type="text"
-                            maxLength={4}
-                            value={customShortName}
-                            onChange={(e) => setCustomShortName(e.target.value.toUpperCase())}
-                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-white uppercase"
-                          />
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="col-span-2">
-                          <label htmlFor="custom-stadium-name" className="block text-xs text-slate-400 mb-0.5">
-                            {tr('Stadium Name', 'ชื่อสนามเหย้า')}
-                          </label>
-                          <input
-                            id="custom-stadium-name"
-                            type="text"
-                            value={customStadiumName}
-                            onChange={(e) => setCustomStadiumName(e.target.value)}
-                            className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs text-white"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-slate-400 mb-0.5">
-                            {tr('Club Colors', 'สีประจำสโมสร')}
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="color"
-                              aria-label="Primary Club Color"
-                              value={customPrimaryColor}
-                              onChange={(e) => setCustomPrimaryColor(e.target.value)}
-                              className="w-7 h-7 rounded bg-slate-900 border border-slate-700 cursor-pointer"
-                            />
-                            <input
-                              type="color"
-                              aria-label="Secondary Club Color"
-                              value={customSecondaryColor}
-                              onChange={(e) => setCustomSecondaryColor(e.target.value)}
-                              className="w-7 h-7 rounded bg-slate-900 border border-slate-700 cursor-pointer"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Right Column: League & Club Picker */}
-              <div className="lg:col-span-8 space-y-3.5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-sm font-semibold text-emerald-400">
-                    {tr('2. Select Country, League & Club', '2. เลือกประเทศ ลีก และสโมสรต้นสังกัด')}
-                  </h3>
-                  <span className="text-xs font-mono text-slate-400">
-                    {currentLeagueConfig.countryFlag} · {currentLeagueConfig.name} ({allClubsInSelectedLeague.length} {tr('Clubs', 'สโมสร')})
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl">
+            {/* Modal Header with 2-Step Progress Switcher */}
+            <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/80 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-display font-extrabold text-white flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-emerald-400" />
+                  <span>
+                    {tr(
+                      'NEW MANAGERIAL CAREER SETUP',
+                      'ตั้งค่าเริ่มต้นอาชีพผู้จัดการทีมใหม่'
+                    )}
                   </span>
-                </div>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  {tr(
+                    'Select your club & challenge in Step 1, then sign your official managerial contract in Step 2',
+                    'ขั้นตอนที่ 1: เลือกสโมสรและภารกิจท้าทาย · ขั้นตอนที่ 2: กำหนดโปรไฟล์ผู้จัดการทีมและเซ็นสัญญา'
+                  )}
+                </p>
+              </div>
 
-                <div className="p-3.5 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
-                  {/* Top Control Bar: Country Dropdown + League Dropdown + Quick Club Search */}
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-2.5">
-                    <div className="md:col-span-4">
-                      <label htmlFor="picker-country-select" className="block text-xs text-slate-400 mb-1">
-                        {tr('Country', 'ประเทศ')}
+              {/* Step Pills */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="wizard-step-1-tab"
+                  onClick={() => setWizardStep(1)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold cursor-pointer transition-colors ${
+                    wizardStep === 1
+                      ? 'bg-emerald-500 text-slate-950'
+                      : 'bg-slate-900 border border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  1. {tr('Choose Club & Challenge', 'เลือกสโมสรและภารกิจ')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="wizard-step-2-tab"
+                  onClick={() => setWizardStep(2)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-mono font-bold cursor-pointer transition-colors ${
+                    wizardStep === 2
+                      ? 'bg-emerald-500 text-slate-950'
+                      : 'bg-slate-900 border border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                >
+                  2. {tr('Manager Identity & Contract', 'โปรไฟล์ & เซ็นสัญญา')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSetupModalOpen(false)}
+                  className="ml-2 px-2.5 py-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white text-xs cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {wizardStep === 1 ? (
+                <div className="space-y-5">
+                  {/* Top Row: Country/League Selector + Scenario Challenge + Create-a-Club Toggle */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* League Selector */}
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                      <label className="text-[11px] font-mono uppercase text-slate-400 block">
+                        {tr('1. European League (15 Divisions)', '1. เลือกลีกการแข่งขัน (15 ลีกยุโรป)')}
                       </label>
                       <select
-                        id="picker-country-select"
-                        value={selectedCountryId}
-                        onChange={(e) => handleSelectCountry(e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-900 hover:bg-slate-800/90 border border-slate-700/80 focus:border-emerald-500 focus:outline-none rounded-lg text-xs font-medium text-slate-100 cursor-pointer"
+                        data-testid="setup-league-select"
+                        value={selectedLeagueId}
+                        onChange={(e) => {
+                          const nextLeague = e.target.value as LeagueId;
+                          setSelectedLeagueId(nextLeague);
+                          const firstClub = Object.values(previewClubsMap).find(
+                            (c) => c.leagueId === nextLeague
+                          );
+                          if (firstClub) setSelectedClubId(firstClub.id);
+                        }}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-semibold"
                       >
-                        {countriesList.map((c) => (
-                          <option key={c.countryId} value={c.countryId}>
-                            {c.countryFlag} · {c.countryName} ({c.leagues.length} {tr(c.leagues.length > 1 ? 'Leagues' : 'League', 'ลีก')})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="md:col-span-5">
-                      <label htmlFor="picker-league-select" className="block text-xs text-slate-400 mb-1">
-                        {tr('League & Division Tier', 'ลีกและระดับดิวิชั่น')}
-                      </label>
-                      <select
-                        id="picker-league-select"
-                        value={selectedLeague}
-                        onChange={(e) => handleSelectLeague(e.target.value as LeagueId)}
-                        className="w-full px-3 py-2 bg-slate-900 hover:bg-slate-800/90 border border-emerald-500/40 focus:border-emerald-500 focus:outline-none rounded-lg text-xs font-semibold text-emerald-300 cursor-pointer"
-                      >
-                        {countriesList.map((country) => (
+                        {COUNTRY_GROUPS.map((group) => (
                           <optgroup
-                            key={country.countryId}
-                            label={`${country.countryFlag} — ${country.countryName}`}
+                            key={group.countryId}
+                            label={`${group.flag} ${group.name}`}
                           >
-                            {country.leagues.map((lCfg) => (
-                              <option key={lCfg.id} value={lCfg.id}>
-                                {lCfg.tier === 2
-                                  ? tr('Tier 2 (2nd Division)', 'ลีกรอง (D2)')
-                                  : tr('Tier 1 (Top Flight)', 'ลีกสูงสุด (D1)')}
-                                : {lCfg.name} ({lCfg.targetClubCount} {tr('clubs', 'ทีม')})
-                              </option>
-                            ))}
+                            {leagueList
+                              .filter((l) => l.countryId === group.countryId)
+                              .map((league) => (
+                                <option key={league.id} value={league.id}>
+                                  {league.name} (Tier {league.tier || 1})
+                                </option>
+                              ))}
                           </optgroup>
                         ))}
                       </select>
                     </div>
 
-                    <div className="md:col-span-3">
-                      <label htmlFor="picker-club-search" className="block text-xs text-slate-400 mb-1">
-                        {tr('Search Club', 'ค้นหาชื่อสโมสร')}
+                    {/* Scenario Challenge Selector */}
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+                      <label className="text-[11px] font-mono uppercase text-amber-400 block">
+                        {tr('2. Career Scenario Challenge', '2. โหมดภารกิจท้าทาย (Scenario)')}
                       </label>
-                      <div className="relative">
-                        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" />
+                      <select
+                        data-testid="scenario-challenge-selector"
+                        value={selectedScenario}
+                        onChange={(e) =>
+                          setSelectedScenario(e.target.value as ScenarioChallengeId)
+                        }
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-semibold"
+                      >
+                        {SCENARIO_CHALLENGES.map((sc) => (
+                          <option key={sc.id} value={sc.id}>
+                            {sc.badge} {sc.titleEn}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[11px] text-slate-400">
+                        {
+                          SCENARIO_CHALLENGES.find((s) => s.id === selectedScenario)
+                            ?.descEn
+                        }
+                      </p>
+                    </div>
+
+                    {/* Create-a-Club Toggle */}
+                    <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-mono uppercase text-emerald-400">
+                          {tr('3. Custom Club Builder', '3. โหมดสร้างสโมสรใหม่')}
+                        </span>
                         <input
-                          id="picker-club-search"
-                          type="text"
-                          value={clubSearchQuery}
-                          onChange={(e) => setClubSearchQuery(e.target.value)}
-                          placeholder={tr('Filter club...', 'พิมพ์ชื่อทีม...')}
-                          className="w-full pl-8 pr-3 py-2 bg-slate-900 border border-slate-700/80 focus:border-emerald-500 focus:outline-none rounded-lg text-xs text-slate-100 placeholder:text-slate-500"
+                          type="checkbox"
+                          data-testid="create-a-club-toggle"
+                          checked={createAClubEnabled}
+                          onChange={(e) => setCreateAClubEnabled(e.target.checked)}
+                          className="w-4 h-4 accent-emerald-500 cursor-pointer"
                         />
                       </div>
+                      <p className="text-xs text-slate-300 font-medium mt-1">
+                        {tr(
+                          'Replace selected club slot with your own custom club crest, colors & stadium',
+                          'แทนที่สโมสรที่เลือกด้วยชื่อสโมสร สีชุดแข่ง และสนามของคุณเอง'
+                        )}
+                      </p>
                     </div>
                   </div>
 
-                  {/* Quick Country Grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 pt-1">
-                    {countriesList.map((country) => {
-                      const isCountryActive = country.countryId === selectedCountryId;
-                      return (
-                        <button
-                          key={country.countryId}
-                          type="button"
-                          onClick={() => handleSelectCountry(country.countryId)}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                            isCountryActive
-                              ? 'bg-emerald-500 text-slate-950 font-semibold shadow-sm'
-                              : 'bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white border border-slate-800/80'
-                          }`}
-                        >
-                          <span className="truncate">
-                            <span className="font-mono opacity-80 mr-1">{country.countryFlag}</span>
-                            {country.countryName}
-                          </span>
-                          {country.leagues.length > 1 && (
-                            <span
-                              className={`font-mono px-1 rounded text-xs ${
-                                isCountryActive
-                                  ? 'bg-slate-950/25 text-slate-950 font-bold'
-                                  : 'bg-slate-800 text-emerald-400'
-                              }`}
-                            >
-                              {country.leagues.length}L
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* Division Switcher when selected country has both Tier 1 & Tier 2 */}
-                  {countryLeagues.length > 1 && (
-                    <div className="flex items-center gap-2 pt-1.5 border-t border-slate-800/80">
-                      <span className="text-xs text-slate-400 font-medium shrink-0">
-                        {tr(`Select ${currentLeagueConfig.countryName} Division:`, `เลือกระดับลีกของ ${currentLeagueConfig.countryName}:`)}
-                      </span>
-                      <div className="grid grid-cols-2 gap-2 flex-1">
-                        {countryLeagues.map((lCfg) => {
-                          const isTierActive = lCfg.id === selectedLeague;
-                          return (
-                            <button
-                              key={lCfg.id}
-                              type="button"
-                              onClick={() => handleSelectLeague(lCfg.id)}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                                isTierActive
-                                  ? 'bg-emerald-500/20 border border-emerald-500 text-emerald-300 font-semibold'
-                                  : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
-                              }`}
-                            >
-                              <span className="truncate">{lCfg.name}</span>
-                              <span className="font-mono opacity-80 ml-2 shrink-0">
-                                {lCfg.tier === 2 ? 'D2 · ' : 'D1 · '}
-                                {lCfg.targetClubCount} {tr('clubs', 'ทีม')}
-                              </span>
-                            </button>
-                          );
-                        })}
+                  {/* Optional Create-a-Club Form */}
+                  {createAClubEnabled && (
+                    <div
+                      data-testid="create-a-club-panel"
+                      className="p-4 rounded-xl bg-emerald-950/20 border border-emerald-500/40 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3"
+                    >
+                      <div className="sm:col-span-2">
+                        <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Custom Club Name', 'ชื่อสโมสรใหม่')}
+                        </label>
+                        <input
+                          type="text"
+                          data-testid="custom-club-name-input"
+                          value={customClubName}
+                          onChange={(e) => setCustomClubName(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('3-Letter Code', 'ชื่อย่อ 3 ตัว')}
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={3}
+                          value={customShortName}
+                          onChange={(e) => setCustomShortName(e.target.value.toUpperCase())}
+                          className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-white font-mono uppercase"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Stadium Name', 'ชื่อสนาม')}
+                        </label>
+                        <input
+                          type="text"
+                          value={customStadiumName}
+                          onChange={(e) => setCustomStadiumName(e.target.value)}
+                          className="w-full px-2.5 py-1.5 rounded bg-slate-900 border border-slate-700 text-xs text-white"
+                        />
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1">
+                          <label className="text-[10px] font-mono uppercase text-slate-400 block mb-1">
+                            {tr('Colors', 'สีหลัก/รอง')}
+                          </label>
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              value={customPrimaryColor}
+                              onChange={(e) => setCustomPrimaryColor(e.target.value)}
+                              className="w-8 h-7 rounded bg-slate-900 border border-slate-700 cursor-pointer"
+                            />
+                            <input
+                              type="color"
+                              value={customSecondaryColor}
+                              onChange={(e) => setCustomSecondaryColor(e.target.value)}
+                              className="w-8 h-7 rounded bg-slate-900 border border-slate-700 cursor-pointer"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
-                </div>
 
-                {/* Club List Grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto p-1 pr-1.5">
-                  {leagueClubs.map((c) => {
-                    const isSelected = c.id === activeClub?.id;
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedClubId(c.id);
-                          if (!customEditedName) setManagerName(c.aiManager.name);
-                        }}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          isSelected
-                            ? 'bg-slate-800/95 border-emerald-500 text-white ring-1 ring-emerald-500/40 shadow-md'
-                            : 'bg-slate-950/80 border-slate-800/80 text-slate-300 hover:bg-slate-900 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <ClubBadge club={c} size="xs" />
-                          <span className="text-xs font-semibold truncate">{c.name}</span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-slate-400 font-mono tabular-nums">
-                          <span>Rep {c.reputation}</span>
-                          <span className="text-emerald-400/90">
-                            €{(c.finances.transferBudget / 1_000_000).toFixed(1)}M
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Selected Club Summary */}
-                {activeClub && (
-                  <div
-                    className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5"
-                    style={{ borderLeft: `4px solid ${activeClub.primaryColor}` }}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <ClubBadge club={activeClub} size="md" />
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-base font-bold text-white">{activeClub.name}</span>
-                            <span className="inline-flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-emerald-400">
-                              <CompetitionBadge competitionId={activeClub.leagueId} size="xs" />
-                              <span>{LEAGUES_CONFIG[activeClub.leagueId]?.name}</span>
-                            </span>
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {activeClub.city} · {tr('Stadium:', 'สนาม')} {activeClub.stadiumName} ({activeClub.stadiumCapacity.toLocaleString()} {tr('seats', 'ที่นั่ง')})
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800">
-                          <ClubKitJersey club={activeClub} variant="home" size="xs" showLabel label={tr('Home', 'เหย้า')} />
-                          <ClubKitJersey club={activeClub} variant="away" size="xs" showLabel label={tr('Away', 'เยือน')} />
-                          <ClubKitJersey club={activeClub} variant="gk" size="xs" showLabel label="GK" />
-                        </div>
-                        <TrophyArtwork competitionId={activeClub.leagueId} size="sm" />
-                        <div className="text-right font-mono tabular-nums">
-                          <div className="text-xs text-emerald-400 font-semibold">
-                            {tr('Transfer Budget:', 'งบซื้อขาย:')} €{(activeClub.finances.transferBudget / 1_000_000).toFixed(1)}M
-                          </div>
-                          <div className="text-xs text-slate-400">
-                            {tr('Wage Budget:', 'เพดานค่าเหนื่อย:')} €{(activeClub.finances.wageBudgetPerWeek / 1_000).toFixed(0)}K/{tr('wk', 'สัปดาห์')}
-                          </div>
-                        </div>
-                      </div>
+                  {/* Rich Club Selection Grid */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="text-xs font-mono uppercase text-slate-400">
+                        {tr(
+                          `Clubs in ${LEAGUES_CONFIG[selectedLeagueId]?.name} (${clubsInSelectedLeague.length} Clubs)`,
+                          `รายชื่อสโมสรใน ${LEAGUES_CONFIG[selectedLeagueId]?.name} (${clubsInSelectedLeague.length} ทีม)`
+                        )}
+                      </span>
+                      <span className="text-xs font-mono text-emerald-400">
+                        {tr('Selected:', 'สโมสรที่เลือก:')} {selectedClub?.name}
+                      </span>
                     </div>
-                    <div className="text-xs text-slate-300">
-                      {tr(
-                        `Board Expectation: Top ${activeClub.boardExpectations.targetLeaguePosition} League Finish — ${activeClub.boardExpectations.clubVision}`,
-                        `เป้าหมายบอร์ดบริหาร: อันดับท็อป ${activeClub.boardExpectations.targetLeaguePosition} ของลีก — ${activeClub.boardExpectations.clubVision}`
-                      )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto pr-1">
+                      {clubsInSelectedLeague.map((club) => {
+                        const isSelected = club.id === selectedClubId;
+                        return (
+                          <button
+                            key={club.id}
+                            type="button"
+                            data-testid={`select-club-card-${club.id}`}
+                            onClick={() => setSelectedClubId(club.id)}
+                            className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2.5 ${
+                              isSelected
+                                ? 'bg-emerald-500/15 border-emerald-500 text-white shadow-md'
+                                : 'bg-slate-950/90 hover:bg-slate-800/80 border-slate-800 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <ClubBadge club={club} size="sm" />
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-white truncate">
+                                  {club.name}
+                                </div>
+                                <div className="text-[10px] font-mono text-amber-400">
+                                  {getReputationStars(club.reputation)}
+                                </div>
+                                <div className="text-[10px] font-mono text-emerald-400">
+                                  €{(club.finances.transferBudget / 1_000_000).toFixed(1)}M ·{' '}
+                                  {club.primaryTactic.formation}
+                                </div>
+                              </div>
+                            </div>
+                            <ClubKitJersey club={club} variant="home" size="sm" />
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                /* STEP 2: MANAGER IDENTITY & OFFICIAL APPOINTMENT CONTRACT */
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left 6 Cols: Manager Identity Form */}
+                  <div className="lg:col-span-6 p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-4">
+                    <div className="text-xs font-mono uppercase text-emerald-400 font-bold flex items-center gap-2">
+                      <UserCheck className="w-4 h-4" />
+                      <span>{tr('MANAGER IDENTITY & COACHING PROFILE', 'ข้อมูลประจำตัวผู้จัดการทีม')}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                      <div className="sm:col-span-2">
+                        <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Manager Full Name', 'ชื่อ-นามสกุล ผู้จัดการทีม')}
+                        </label>
+                        <input
+                          type="text"
+                          data-testid="manager-name-input"
+                          value={managerName}
+                          onChange={(e) => setManagerName(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-semibold"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Nationality', 'สัญชาติ')}
+                        </label>
+                        <input
+                          type="text"
+                          value={nationality}
+                          onChange={(e) => setNationality(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Age', 'อายุ')}
+                        </label>
+                        <input
+                          type="number"
+                          min={25}
+                          max={75}
+                          value={age}
+                          onChange={(e) => setAge(Number(e.target.value) || 38)}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Coaching Badge Style', 'สไตล์การคุมทีม')}
+                        </label>
+                        <select
+                          value={coachingStyle}
+                          onChange={(e) =>
+                            setCoachingStyle(
+                              e.target.value as ManagerProfile['coachingStyle']
+                            )
+                          }
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                        >
+                          <option value="Tactician">Tactician (+Tactical Familiarity)</option>
+                          <option value="Motivator">Motivator (+Squad Morale Boost)</option>
+                          <option value="Youth Developer">
+                            Youth Developer (+U21 Growth)
+                          </option>
+                          <option value="Tracksuit Coach">Tracksuit Coach (+Training)</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
+                          {tr('Tactical Style', 'ปรัชญาฟุตบอลหลัก')}
+                        </label>
+                        <select
+                          value={tacticalStyle}
+                          onChange={(e) =>
+                            setTacticalStyle(e.target.value as AIManagerStyle)
+                          }
+                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                        >
+                          <option value="Attacking Manager">Attacking Football</option>
+                          <option value="Possession-focused Manager">
+                            Control Possession (Tiki-Taka)
+                          </option>
+                          <option value="Counter-attacking Manager">
+                            Direct Counter-Attack
+                          </option>
+                          <option value="Youth Developer">Youth & High Press</option>
+                          <option value="Defensive Manager">Pragmatic Low Block</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right 6 Cols: Official Managerial Appointment Contract Card */}
+                  <div
+                    data-testid="official-contract-card"
+                    className="lg:col-span-6 p-5 rounded-2xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 border-2 border-amber-500/40 shadow-xl space-y-4"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-3">
+                        <ClubBadge club={selectedClub} size="md" />
+                        <div>
+                          <div className="text-[10px] font-mono uppercase tracking-widest text-amber-400 font-bold">
+                            {tr(
+                              'OFFICIAL MANAGERIAL CONTRACT OFFER',
+                              'หนังสือสัญญาแต่งตั้งผู้จัดการทีมอย่างเป็นทางการ'
+                            )}
+                          </div>
+                          <h3 className="text-base font-display font-extrabold text-white">
+                            {createAClubEnabled ? customClubName : selectedClub.name}
+                          </h3>
+                        </div>
+                      </div>
+                      <CompetitionBadge competitionId={selectedClub.leagueId} size="sm" />
+                    </div>
+
+                    <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
+                      <p>
+                        {tr(
+                          `The Board of Directors of ${createAClubEnabled ? customClubName : selectedClub.name} hereby appoints `,
+                          `คณะกรรมการบริหารของสโมสร ${createAClubEnabled ? customClubName : selectedClub.name} ขอแต่งตั้งให้ `
+                        )}
+                        <strong className="text-emerald-400 font-bold">
+                          {managerName || 'Alex Mercer'}
+                        </strong>{' '}
+                        {tr(
+                          `as First-Team Manager for the 2025/26 campaign.`,
+                          `ดำรงตำแหน่งผู้จัดการทีมชุดใหญ่อย่างเป็นทางการสำหรับฤดูกาล 2025/26`
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5 font-mono text-xs">
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400">
+                          {tr('TRANSFER WARCHEST', 'งบประมาณเสริมทัพ')}
+                        </div>
+                        <div className="text-sm font-bold text-emerald-400">
+                          €{(selectedClub.finances.transferBudget / 1_000_000).toFixed(1)}M
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400">
+                          {tr('WAGE BUDGET / WK', 'เพดานค่าเหนื่อย/สัปดาห์')}
+                        </div>
+                        <div className="text-sm font-bold text-sky-400">
+                          €{selectedClub.finances.wageBudgetPerWeek.toLocaleString()}/wk
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400">
+                          {tr('BOARD TARGET', 'เป้าหมายบอร์ดบริหาร')}
+                        </div>
+                        <div className="text-sm font-bold text-amber-300">
+                          Top {selectedClub.boardExpectations.targetLeaguePosition} Finish
+                        </div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                        <div className="text-[10px] text-slate-400">
+                          {tr('SCENARIO MODE', 'โหมดความท้าทาย')}
+                        </div>
+                        <div className="text-sm font-bold text-purple-300 truncate">
+                          {selectedScenario}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <span>
+                        ✍️ {tr('Manager Signature:', 'ลงชื่อผู้จัดการทีม:')}{' '}
+                        <em className="text-emerald-300">{managerName || 'Alex Mercer'}</em>
+                      </span>
+                      <span>📅 2025-08-10</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-end gap-3 bg-slate-950/60">
-              <button
-                type="button"
-                onClick={() => setShowSetupModal(false)}
-                className="px-4 py-2 text-xs text-slate-300 hover:text-white cursor-pointer"
-              >
-                {tr('Cancel', 'ยกเลิก')}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const trimmed = managerName.trim() || activeClub?.aiManager.name || 'Mikel Arteta';
-                  const customCfg: CustomClubConfig | null = createClubEnabled
-                    ? {
-                        enabled: true,
-                        name: customClubName.trim() || 'Touchline FC',
-                        shortName: (customShortName.trim() || 'TFC').slice(0, 4).toUpperCase(),
-                        primaryColor: customPrimaryColor,
-                        secondaryColor: customSecondaryColor,
-                        stadiumName: customStadiumName.trim() || 'Touchline Arena',
-                      }
-                    : null;
-                  onStartCustomCareer(
-                    {
-                      name: trimmed,
-                      age: managerAge,
-                      nationality: managerNat,
-                      coachingStyle,
-                      tacticalStyle,
-                    },
-                    activeClub.id,
-                    scenarioChallenge,
-                    customCfg
-                  );
-                }}
-                className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-xl cursor-pointer whitespace-nowrap shadow-lg shadow-emerald-950/50"
-              >
-                {tr(
-                  `Sign Contract & Manage ${createClubEnabled ? customShortName || 'TFC' : activeClub?.shortName}`,
-                  `เซ็นสัญญาเริ่มคุมสโมสร ${createClubEnabled ? customShortName || 'TFC' : activeClub?.shortName}`
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/90 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <ClubBadge club={selectedClub} size="sm" />
+                <div className="text-xs">
+                  <span className="text-slate-400">{tr('Club:', 'สโมสร:')} </span>
+                  <strong className="text-white">
+                    {createAClubEnabled ? customClubName : selectedClub?.name}
+                  </strong>
+                  <span className="text-slate-500 mx-2">·</span>
+                  <span className="text-emerald-400 font-mono">
+                    €{((selectedClub?.finances.transferBudget || 0) / 1_000_000).toFixed(1)}M
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {wizardStep === 2 && (
+                  <button
+                    type="button"
+                    onClick={() => setWizardStep(1)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                  >
+                    ← {tr('Back to Clubs', 'กลับไปเลือกสโมสร')}
+                  </button>
                 )}
-              </button>
+                {wizardStep === 1 && (
+                  <button
+                    type="button"
+                    data-testid="wizard-next-step-btn"
+                    onClick={() => setWizardStep(2)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-emerald-300 text-xs font-semibold cursor-pointer"
+                  >
+                    {tr('Next: Manager & Contract →', 'ถัดไป: โปรไฟล์ & สัญญา →')}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="confirm-start-career-btn"
+                  onClick={handleLaunchCustomCareer}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-emerald-950/50"
+                >
+                  {tr('✍️ Sign Contract & Manage', '✍️ เซ็นสัญญาและเริ่มคุมทีม')}
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* LOAD SAVE SLOT MODAL */}
-      {showLoadModal && (
+      {/* ===================================================================== */}
+      {/* CLOUD SAVE MANAGER MODAL                                              */}
+      {/* ===================================================================== */}
+      {loadModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          data-testid="cloud-save-manager-modal"
           role="dialog"
           aria-modal="true"
-          aria-labelledby="load-modal-title"
         >
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <FolderOpen className="w-4 h-4 text-sky-400" />
-                <h2 id="load-modal-title" className="text-lg font-display font-bold text-slate-100">
-                  {tr('Load Saved Career', 'โหลดเซฟเกม')}
-                </h2>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl">
+            <div className="px-6 py-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Cloud className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h2 className="text-base font-display font-bold text-white">
+                    {tr('CLOUD SAVE MANAGER (FIRESTORE)', 'จัดการเซฟเกมบน CLOUD FIRESTORE')}
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    {authUser
+                      ? tr(
+                          `Signed in as ${authUser.email || authUser.displayName} · 100% Cloud Persistence`,
+                          `เชื่อมต่อบัญชี ${authUser.email || authUser.displayName} · เซฟบน Cloud 100%`
+                        )
+                      : tr(
+                          'Sign in with Google to persist your career across sessions & devices',
+                          'เข้าสู่ระบบด้วย Google เพื่อบันทึกและซิงก์เซฟเกมบน Cloud ถาวร'
+                        )}
+                  </p>
+                </div>
               </div>
               <button
                 type="button"
-                onClick={() => setShowLoadModal(false)}
-                className="px-3 py-1 text-xs text-slate-400 hover:text-white cursor-pointer"
+                onClick={() => setLoadModalOpen(false)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white text-xs cursor-pointer"
               >
-                {tr('Close', 'ปิดหน้าต่าง')}
+                ✕
               </button>
             </div>
-            <div className="p-6 max-h-96 overflow-y-auto space-y-3">
-              {!authUser && (
-                <div className="p-4 rounded-xl bg-slate-950 border border-emerald-500/40 flex items-center justify-between gap-4">
-                  <div className="text-xs text-slate-300">
-                    {tr(
-                      'Sign in with your Google / Gmail account to sync and load career saves directly from Cloud Firestore.',
-                      'เข้าสู่ระบบด้วยบัญชี Google / Gmail เพื่อซิงก์และโหลดข้อมูลเซฟเกมบน Cloud Firestore โดยตรง'
-                    )}
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {!authUser && onGoogleSignIn && (
+                <div className="p-4 rounded-xl bg-sky-950/30 border border-sky-500/40 flex items-center justify-between gap-4">
+                  <div className="text-xs text-slate-200">
+                    <div className="font-bold text-sky-300 mb-0.5">
+                      {tr(
+                        '100% Cloud Save Architecture Active',
+                        'ระบบเซฟเกมทำงานบน Cloud Firestore 100%'
+                      )}
+                    </div>
+                    <p className="text-slate-400">
+                      {tr(
+                        'Sign in with your Google/Gmail account to load and auto-sync your saves.',
+                        'เข้าสู่ระบบด้วยบัญชี Google/Gmail เพื่อโหลดและบันทึกเซฟเกมอัตโนมัติบน Cloud'
+                      )}
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={onGoogleSignIn}
-                    className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer whitespace-nowrap shrink-0"
+                    className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs shrink-0 cursor-pointer"
                   >
-                    {tr('Sign in with Gmail', 'เข้าสู่ระบบด้วย Gmail')}
+                    {tr('Sign in with Google', 'เข้าสู่ระบบ Google')}
                   </button>
                 </div>
               )}
+
               {saveSlots.length === 0 ? (
-                <div className="text-center py-8 text-sm text-slate-400">
-                  {tr(
-                    'No saved careers found yet. Start a new managerial career to save your progress to the Cloud.',
-                    'ยังไม่มีข้อมูลเซฟเกมที่บันทึกไว้ เริ่มต้นอาชีพผู้จัดการทีมใหม่เพื่อบันทึกความก้าวหน้าลง Cloud ได้เลย'
-                  )}
+                <div className="p-8 text-center rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-400 space-y-2">
+                  <Trophy className="w-8 h-8 text-slate-600 mx-auto" />
+                  <div className="text-sm font-semibold text-slate-200">
+                    {tr('No Cloud Career Saves Found', 'ยังไม่มีข้อมูลเซฟเกมบน Cloud')}
+                  </div>
+                  <p>
+                    {tr(
+                      'Start a new career and sign in with Google to save your progress to Cloud Firestore.',
+                      'เริ่มต้นอาชีพผู้จัดการทีมใหม่และเข้าสู่ระบบ Google เพื่อบันทึกเซฟขึ้น Cloud Firestore'
+                    )}
+                  </p>
                 </div>
               ) : (
-                saveSlots.map((slot) => (
-                  <div
-                    key={slot.slotId}
-                    className="flex items-center justify-between p-3.5 rounded-xl bg-slate-950 border border-slate-800"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-white">{slot.clubName}</div>
-                      <div className="text-xs text-slate-400 font-mono tabular-nums">
-                        {tr(
-                          `Manager: ${slot.managerName} · Game Date: ${slot.gameDate} · Season ${slot.season}`,
-                          `ผู้จัดการ: ${slot.managerName} · วันที่ในเกม: ${slot.gameDate} · ฤดูกาล ${slot.season}`
-                        )}
+                <div className="space-y-2.5">
+                  {saveSlots.map((slot) => (
+                    <div
+                      key={slot.slotId}
+                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-4"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-mono text-[10px] uppercase font-bold">
+                            {slot.slotId === 'slot_autosave' ? '☁️ AUTO-SAVE' : slot.slotId}
+                          </span>
+                          <span className="text-sm font-bold text-white">
+                            {slot.clubName}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400 font-mono mt-1">
+                          👔 {slot.managerName} · 📅 {slot.gameDate} · 🏆 {slot.season}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          data-testid={`load-slot-btn-${slot.slotId}`}
+                          onClick={() => {
+                            onLoadSlot(slot.slotId);
+                            setLoadModalOpen(false);
+                          }}
+                          className="px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          {tr('Load Career', 'โหลดเซฟ')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeleteSlot(slot.slotId)}
+                          className="p-2 rounded-lg bg-slate-900 hover:bg-rose-950/60 border border-slate-800 text-slate-400 hover:text-rose-400 cursor-pointer"
+                          title={tr('Delete Save', 'ลบเซฟ')}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onLoadSlot(slot.slotId)}
-                        className="px-3.5 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
-                      >
-                        {tr('Load', 'โหลดเซฟ')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteSlot(slot.slotId)}
-                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-red-950 text-slate-300 hover:text-red-300 text-xs rounded-lg cursor-pointer"
-                      >
-                        {tr('Delete', 'ลบ')}
-                      </button>
-                    </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
             </div>
           </div>

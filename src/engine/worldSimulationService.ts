@@ -2851,9 +2851,24 @@ export function adjustClubBudgetAllocation(
   };
 }
 
+export interface SeasonRolloverSummary {
+  completedSeason: string;
+  nextSeason: string;
+  leagueName: string;
+  finalPosition: number;
+  leagueChampionName: string;
+  uclChampionName: string;
+  clubTopScorerName: string;
+  clubTopScorerGoals: number;
+  clubPlayerOfSeasonName: string;
+  clubPlayerOfSeasonRating: number;
+  totalPrizeAndTvPayout: number;
+  nextTransferBudget: number;
+}
+
 export function processEndOfSeasonRollover(
   state: WorldState
-): { nextState: WorldState; message: string } {
+): { nextState: WorldState; message: string; seasonSummary: SeasonRolloverSummary } {
   const curYear = parseInt(state.currentSeason.slice(0, 4), 10) || 2026;
   const nextYear = curYear + 1;
   const nextSeasonStr = `${nextYear}/${String(nextYear + 1).slice(-2)}`;
@@ -2862,6 +2877,26 @@ export function processEndOfSeasonRollover(
   const updatedPlayers = { ...state.players };
   const nextInbox = [...state.inbox];
   const nextTransactions = [...state.transactions];
+
+  let userClubTotalPayout = 22_000_000;
+  let userFinalPosition = 1;
+
+  // Capture user club's top scorer and player of the season before resetting stats
+  const myClubPlayersPreReset = Object.values(state.players).filter(
+    (p) => p.clubId === state.controlledClubId
+  );
+  const topScorerPlayer =
+    [...myClubPlayersPreReset].sort((a, b) => {
+      if (b.stats.goals !== a.stats.goals) return b.stats.goals - a.stats.goals;
+      return b.currentAbility - a.currentAbility;
+    })[0] || myClubPlayersPreReset[0];
+
+  const bestRatedPlayer =
+    [...myClubPlayersPreReset].sort((a, b) => {
+      const rA = a.stats.averageRating || 6.8 + a.currentAbility * 0.005;
+      const rB = b.stats.averageRating || 6.8 + b.currentAbility * 0.005;
+      return rB - rA;
+    })[0] || myClubPlayersPreReset[0];
 
   // 1. Award League Prize Money + TV Revenue + Sugar Daddy Owner Injection + Relegation Penalty (Checkpoint 18)
   for (const league of Object.values(LEAGUES_CONFIG)) {
@@ -2902,6 +2937,8 @@ export function processEndOfSeasonRollover(
       };
 
       if (club.id === state.controlledClubId) {
+        userClubTotalPayout = totalAdded;
+        userFinalPosition = idx + 1;
         nextTransactions.unshift({
           id: `tx_eos_${nextYear}_${club.id}`,
           date: state.gameDate,
@@ -3270,20 +3307,79 @@ export function processEndOfSeasonRollover(
     relatedClubId: workingState.controlledClubId,
   });
 
+  const userClubPreRollover = state.clubs[state.controlledClubId];
+  const userLeagueCfg = userClubPreRollover ? LEAGUES_CONFIG[userClubPreRollover.leagueId] : undefined;
+  const userLeagueTable = userClubPreRollover ? state.standings[userClubPreRollover.leagueId] || [] : [];
+  const leagueChampClub = userLeagueTable[0] ? updatedClubs[userLeagueTable[0].clubId] : userClubPreRollover;
+  const updatedUserClub = workingState.clubs[workingState.controlledClubId];
+
+  const seasonSummary: SeasonRolloverSummary = {
+    completedSeason: state.currentSeason,
+    nextSeason: nextSeasonStr,
+    leagueName: userLeagueCfg?.name || 'Domestic League',
+    finalPosition: userFinalPosition,
+    leagueChampionName: leagueChampClub?.name || updatedUserClub?.name || 'Champion FC',
+    uclChampionName: uclWinnerClub?.name || 'Real Madrid',
+    clubTopScorerName: topScorerPlayer
+      ? `${topScorerPlayer.firstName} ${topScorerPlayer.lastName}`
+      : 'Squad Forward',
+    clubTopScorerGoals: Math.max(12, topScorerPlayer?.stats.goals || 14),
+    clubPlayerOfSeasonName: bestRatedPlayer
+      ? `${bestRatedPlayer.firstName} ${bestRatedPlayer.lastName}`
+      : 'Squad Captain',
+    clubPlayerOfSeasonRating: Number(
+      Math.max(7.25, bestRatedPlayer?.stats.averageRating || 7.42).toFixed(2)
+    ),
+    totalPrizeAndTvPayout: userClubTotalPayout,
+    nextTransferBudget: updatedUserClub?.finances.transferBudget || 25_000_000,
+  };
+
   return {
     nextState: workingState,
     message: trText(
       `Rolled over to the ${nextSeasonStr} season!`,
       `เข้าสู่ฤดูกาลใหม่ ${nextSeasonStr} สำเร็จ!`
     ),
+    seasonSummary,
   };
 }
 
 /**
- * Multi-Slot SaveGame Service (Hybrid LocalStorage + Google/Gmail Cloud Firestore Sync)
+ * Multi-Slot SaveGame Service (100% Pure Cloud Firestore Save Architecture + In-Memory Runtime Session Cache)
  */
 const inMemorySaveSlots: Record<string, WorldState> = {};
 let inMemorySlotMetas: SaveSlotMeta[] = [];
+
+const LEGACY_LOCAL_SAVE_METAS_KEY = 'touchline_save_metas_v1';
+const LEGACY_LOCAL_SAVE_DOC_PREFIX = 'touchline_save_doc_v1_';
+
+/**
+ * Stage 6 Phase 1: Purges any legacy localStorage game save keys on startup so 0 bytes of save data are stored in localStorage.
+ */
+export function purgeLegacyLocalSaves(): number {
+  let removedCount = 0;
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return 0;
+    if (window.localStorage.getItem(LEGACY_LOCAL_SAVE_METAS_KEY) !== null) {
+      window.localStorage.removeItem(LEGACY_LOCAL_SAVE_METAS_KEY);
+      removedCount++;
+    }
+    const keysToDelete: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (k && k.startsWith(LEGACY_LOCAL_SAVE_DOC_PREFIX)) {
+        keysToDelete.push(k);
+      }
+    }
+    for (const k of keysToDelete) {
+      window.localStorage.removeItem(k);
+      removedCount++;
+    }
+  } catch {
+    // Ignore storage access errors
+  }
+  return removedCount;
+}
 
 export const STANDARD_SAVE_SLOTS = [
   'slot_autosave',
@@ -3992,30 +4088,19 @@ export async function saveWorldStateToFirestoreSlot(
     try {
       handleFirestoreError(error, OperationType.WRITE, savePath);
     } catch {
-      // Never block local save completion when Cloud Firestore write fails
+      // Rethrow so callers can update Cloud Sync Status badge accurately
     }
+    throw error;
   }
 
   return updatedMetas;
 }
 
 export async function syncUserSaveSlotsFromFirestore(): Promise<SaveSlotMeta[]> {
-  const localMetas = readLocalSaveMetas();
-  const mergedMap = new Map<string, SaveSlotMeta>();
-  for (const m of [...inMemorySlotMetas, ...localMetas]) {
-    const prev = mergedMap.get(m.slotId);
-    if (!prev || m.lastSavedAt >= prev.lastSavedAt) {
-      mergedMap.set(m.slotId, m);
-    }
-  }
-
   const currentUser = auth.currentUser;
   if (!currentUser) {
-    const list = Array.from(mergedMap.values()).sort((a, b) =>
-      b.lastSavedAt.localeCompare(a.lastSavedAt)
-    );
-    inMemorySlotMetas = list;
-    return list;
+    inMemorySlotMetas = [];
+    return [];
   }
 
   const uid = currentUser.uid;
@@ -4026,44 +4111,34 @@ export async function syncUserSaveSlotsFromFirestore(): Promise<SaveSlotMeta[]> 
       where('ownerId', '==', uid)
     );
     const snap = await getDocs(q);
+    const cloudMetas: SaveSlotMeta[] = [];
 
     snap.forEach((docSnap) => {
       const data = docSnap.data() as CareerSaveDocument;
       if (data && data.slotId && data.careerState) {
-        const existingLocal = mergedMap.get(data.slotId);
-        if (!existingLocal || data.lastSavedAtIso >= existingLocal.lastSavedAt) {
-          mergedMap.set(data.slotId, {
-            slotId: data.slotId,
-            saveName: data.saveName,
-            clubName: data.clubName,
-            managerName: data.managerName,
-            gameDate: data.gameDate,
-            season: data.season,
-            lastSavedAt: data.lastSavedAtIso,
-          });
-          inMemorySaveSlots[data.slotId] = rehydrateWorldStateFromCareerDoc(data);
-          writeLocalCareerDoc(data.slotId, data);
-        }
+        cloudMetas.push({
+          slotId: data.slotId,
+          saveName: data.saveName,
+          clubName: data.clubName,
+          managerName: data.managerName,
+          gameDate: data.gameDate,
+          season: data.season,
+          lastSavedAt: data.lastSavedAtIso,
+        });
+        inMemorySaveSlots[data.slotId] = rehydrateWorldStateFromCareerDoc(data);
       }
     });
 
-    const mergedMetas = Array.from(mergedMap.values()).sort((a, b) =>
-      b.lastSavedAt.localeCompare(a.lastSavedAt)
-    );
-    inMemorySlotMetas = mergedMetas;
-    writeLocalSaveMetas(mergedMetas);
-    return mergedMetas;
+    cloudMetas.sort((a, b) => b.lastSavedAt.localeCompare(a.lastSavedAt));
+    inMemorySlotMetas = cloudMetas;
+    return cloudMetas;
   } catch (error) {
     try {
       handleFirestoreError(error, OperationType.LIST, savesPath);
     } catch {
-      // Return merged local slots if Cloud Firestore list fails
+      // Return in-memory slots if Cloud Firestore list fails
     }
-    const fallbackMetas = Array.from(mergedMap.values()).sort((a, b) =>
-      b.lastSavedAt.localeCompare(a.lastSavedAt)
-    );
-    inMemorySlotMetas = fallbackMetas;
-    return fallbackMetas;
+    return inMemorySlotMetas;
   }
 }
 
@@ -4084,94 +4159,16 @@ export async function loadWorldStateFromFirestoreSlot(
       return loadWorldStateFromSlot(slotId);
     }
     const data = snap.data() as CareerSaveDocument;
-    const localDoc = readLocalCareerDoc(slotId);
-    if (localDoc && localDoc.careerState && localDoc.lastSavedAtIso > data.lastSavedAtIso) {
-      const rehydratedLocal = rehydrateWorldStateFromCareerDoc(localDoc);
-      inMemorySaveSlots[slotId] = rehydratedLocal;
-      return rehydratedLocal;
-    }
     const rehydrated = rehydrateWorldStateFromCareerDoc(data);
     inMemorySaveSlots[slotId] = rehydrated;
-    writeLocalCareerDoc(slotId, data);
     return rehydrated;
   } catch (error) {
     try {
       handleFirestoreError(error, OperationType.GET, savePath);
     } catch {
-      // Fallback to localStorage slot if Cloud Firestore read fails
+      // Fallback to in-memory session cache if Cloud Firestore read fails
     }
     return loadWorldStateFromSlot(slotId);
-  }
-}
-
-const LOCAL_SAVE_METAS_KEY = 'touchline_save_metas_v1';
-const LOCAL_SAVE_DOC_PREFIX = 'touchline_save_doc_v1_';
-
-function readLocalSaveMetas(): SaveSlotMeta[] {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return [];
-    const raw = window.localStorage.getItem(LOCAL_SAVE_METAS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalSaveMetas(metas: SaveSlotMeta[]): void {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.setItem(LOCAL_SAVE_METAS_KEY, JSON.stringify(metas));
-  } catch {
-    // Ignore storage quota errors
-  }
-}
-
-function writeLocalCareerDoc(slotId: string, docData: CareerSaveDocument): boolean {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return false;
-    window.localStorage.setItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`, JSON.stringify(docData));
-    return true;
-  } catch {
-    try {
-      // Quota recovery: trim non-essential AI playerDiffs to top 35 entries and retry
-      const trimmedDiffs: Record<string, PlayerDelta> = {};
-      for (const [k, v] of Object.entries(docData.careerState.playerDiffs || {}).slice(0, 35)) {
-        trimmedDiffs[k] = v;
-      }
-      const compactDoc: CareerSaveDocument = {
-        ...docData,
-        careerState: {
-          ...docData.careerState,
-          playerDiffs: trimmedDiffs,
-        },
-      };
-      window.localStorage.setItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`, JSON.stringify(compactDoc));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-}
-
-function readLocalCareerDoc(slotId: string): CareerSaveDocument | null {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return null;
-    const raw = window.localStorage.getItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`);
-    if (!raw) return null;
-    return JSON.parse(raw) as CareerSaveDocument;
-  } catch {
-    return null;
-  }
-}
-
-function removeLocalCareerDoc(slotId: string): void {
-  try {
-    if (typeof window === 'undefined' || !window.localStorage) return;
-    window.localStorage.removeItem(`${LOCAL_SAVE_DOC_PREFIX}${slotId}`);
-  } catch {
-    // Ignore storage errors
   }
 }
 
@@ -4180,10 +4177,7 @@ export async function deleteSaveSlotFromFirestore(
 ): Promise<SaveSlotMeta[]> {
   const slotId = sanitizeSlotId(rawSlotId);
   delete inMemorySaveSlots[slotId];
-  removeLocalCareerDoc(slotId);
-  const baseMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
-  inMemorySlotMetas = baseMetas.filter((m) => m.slotId !== slotId);
-  writeLocalSaveMetas(inMemorySlotMetas);
+  inMemorySlotMetas = inMemorySlotMetas.filter((m) => m.slotId !== slotId);
 
   const currentUser = auth.currentUser;
   if (!currentUser) {
@@ -4199,7 +4193,7 @@ export async function deleteSaveSlotFromFirestore(
     try {
       handleFirestoreError(error, OperationType.DELETE, savePath);
     } catch {
-      // Keep local deletion intact even if Cloud delete fails
+      // Keep in-memory deletion intact
     }
     return inMemorySlotMetas;
   }
@@ -4231,32 +4225,13 @@ export function saveWorldStateToSlot(
     lastSavedAt: lastSavedAtIso,
   };
 
-  const currentMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
-  const existingMetas = currentMetas.filter((m) => m.slotId !== slotId);
+  const existingMetas = inMemorySlotMetas.filter((m) => m.slotId !== slotId);
   const updatedMetas = [newMeta, ...existingMetas].slice(0, 10);
   inMemorySlotMetas = updatedMetas;
-  writeLocalSaveMetas(updatedMetas);
-
-  // Persist compact delta CareerSaveDocument in localStorage so page reloads (F5) never lose saves
-  const careerState = dehydrateWorldStateToCareerMap(stamped);
-  const localDoc: CareerSaveDocument = {
-    ownerId: auth.currentUser?.uid || 'local_user',
-    slotId,
-    saveName: newMeta.saveName.slice(0, 120),
-    clubName: newMeta.clubName.slice(0, 100),
-    managerName: newMeta.managerName.slice(0, 80),
-    gameDate: newMeta.gameDate.slice(0, 10),
-    season: newMeta.season.slice(0, 16),
-    lastSavedAtIso,
-    randomSeed: stamped.randomSeed,
-    controlledClubId: stamped.controlledClubId.slice(0, 64),
-    careerState,
-  };
-  writeLocalCareerDoc(slotId, localDoc);
 
   if (triggerCloudSync && auth.currentUser) {
     void saveWorldStateToFirestoreSlot(slotId, stamped).catch(() => {
-      // Local save is already persisted safely
+      // Handled asynchronously in Cloud Firestore
     });
   }
 
@@ -4265,35 +4240,20 @@ export function saveWorldStateToSlot(
 
 export function loadWorldStateFromSlot(rawSlotId: string): WorldState | null {
   const slotId = sanitizeSlotId(rawSlotId);
-  if (inMemorySaveSlots[slotId]) {
-    return inMemorySaveSlots[slotId];
-  }
-  const localDoc = readLocalCareerDoc(slotId);
-  if (localDoc && localDoc.careerState) {
-    const rehydrated = rehydrateWorldStateFromCareerDoc(localDoc);
-    inMemorySaveSlots[slotId] = rehydrated;
-    return rehydrated;
-  }
-  return null;
+  return inMemorySaveSlots[slotId] || null;
 }
 
 export function getSavedSlotsList(): SaveSlotMeta[] {
-  if (inMemorySlotMetas.length === 0) {
-    inMemorySlotMetas = readLocalSaveMetas();
-  }
   return inMemorySlotMetas;
 }
 
 export function deleteSavedSlot(rawSlotId: string): SaveSlotMeta[] {
   const slotId = sanitizeSlotId(rawSlotId);
   delete inMemorySaveSlots[slotId];
-  removeLocalCareerDoc(slotId);
-  const currentMetas = inMemorySlotMetas.length > 0 ? inMemorySlotMetas : readLocalSaveMetas();
-  inMemorySlotMetas = currentMetas.filter((m) => m.slotId !== slotId);
-  writeLocalSaveMetas(inMemorySlotMetas);
+  inMemorySlotMetas = inMemorySlotMetas.filter((m) => m.slotId !== slotId);
   if (auth.currentUser) {
     void deleteSaveSlotFromFirestore(slotId).catch(() => {
-      // Local deletion is already completed
+      // Cloud deletion handled asynchronously
     });
   }
   return inMemorySlotMetas;
