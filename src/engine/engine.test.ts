@@ -20,6 +20,7 @@ import {
   applyMatchResultToWorld,
   applyPostMatchTeamTalk,
   appointNationalTeamManager,
+  arrangeFriendlyMatch,
   assignYouthMentor,
   buildScoutReportForPlayer,
   buildSevenDayCalendarStrip,
@@ -41,6 +42,7 @@ import {
   getDeadlineDayBargains,
   getFanSocialFeed,
   getNextAvailableManualSaveSlot,
+  getWeeklyTrainingReportAndAdvice,
   holdEmergencySquadMeeting,
   importWorldDatabaseJson,
   isTransferDeadlineWindow,
@@ -64,9 +66,11 @@ import {
   saveWorldStateToSlot,
   sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
+  setPlayerIndividualTrainingIntensity,
   signPlayerOnBosmanFree,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
+  simulateU21YouthAndReservesMatchday,
   triggerLoanOptionToBuy,
   simulateExhibitionClash,
   studyNextCoachingLicense,
@@ -1867,5 +1871,39 @@ test('Stage 4 Hotfixes (1D Firestore uefaPots, Coaching License Buffs) & Loan/Wo
     jobOfferItem!.relatedClubId,
     'Accepting headhunting job offer must switch controlledClubId to the approaching club'
   );
+  assert.equal(acceptRes.switchedClub, true);
 });
+
+test('Stage 5 Complete Suite: Weekly Training Risers & Staff Advice, Arrange Friendly Match, and U21 Youth Matchday Simulator', () => {
+  let world = createInitialWorldState(77777);
+  const myClubId = world.controlledClubId;
+
+  // 1. Weekly Training Report & Backroom Staff Advice
+  const report = getWeeklyTrainingReportAndAdvice(world);
+  assert.equal(report.topRisers.length, 4, 'Must return top 4 Weekly Training Risers');
+  assert.ok(report.topRisers[0].weeklyScore >= 5.0, 'Top training riser must have weeklyScore >= 5.0');
+  assert.ok(report.staffAdvice.length >= 1, 'Backroom Staff Meeting must return actionable advice items');
+
+  const firstRiserId = report.topRisers[0].playerId;
+  const intensityRes = setPlayerIndividualTrainingIntensity(world, firstRiserId, 'Light');
+  world = intensityRes.nextState;
+  assert.equal(world.players[firstRiserId].individualTraining.intensity, 'Light');
+
+  // 2. Arrange Friendly Match (Gate Receipts + Squad Fitness Boost)
+  const prevBalance = world.clubs[myClubId].finances.balance;
+  const friendlyRes = arrangeFriendlyMatch(world, 'GIANT');
+  world = friendlyRes.nextState;
+  assert.equal(
+    world.clubs[myClubId].finances.balance,
+    prevBalance + 2_800_000,
+    'Friendly vs European Giant must add €2.8M gate receipts to club balance'
+  );
+
+  // 3. Simulate U21 Youth & Reserves Matchday
+  const u21Res = simulateU21YouthAndReservesMatchday(world);
+  world = u21Res.nextState;
+  assert.ok(u21Res.message.includes('U21'), 'U21 Youth Matchday must return match summary');
+  assert.equal(world.inbox[0].title.includes('U21'), true);
+});
+
 

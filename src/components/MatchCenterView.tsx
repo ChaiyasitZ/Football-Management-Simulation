@@ -2666,6 +2666,103 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
 
                   const ballPullX = (ballX - 50) * 0.16;
                   const ballPullY = (ballY - 50) * 0.12;
+                  const prevEv =
+                    visibleEvents.length >= 2 ? visibleEvents[visibleEvents.length - 2] : null;
+                  const isSetPieceActive =
+                    latestEv?.eventType === 'Corner' || latestEv?.eventType === 'FreeKick';
+
+                  const getDynamicPitchCoords = (
+                    clubObj: Club,
+                    isHomeSide: boolean,
+                    p: Player | null,
+                    idx: number,
+                    baseHoriz: number,
+                    baseVert: number
+                  ): {
+                    horiz: number;
+                    vert: number;
+                    isBallCarrier: boolean;
+                    isAssister: boolean;
+                    setPieceRoleLabel: string | null;
+                  } => {
+                    let horiz = baseHoriz;
+                    let vert = baseVert;
+                    let isBallCarrier = false;
+                    let isAssister = false;
+                    let setPieceRoleLabel: string | null = null;
+
+                    if (p && latestEv) {
+                      const sp = clubObj.primaryTactic.setPieces;
+                      const boxMap = sp?.boxAssignments || {};
+                      const isAttackingSetPiece =
+                        isSetPieceActive && latestEv.teamId === clubObj.id;
+
+                      if (isAttackingSetPiece) {
+                        const attBoxX = isHomeSide ? 89 : 11;
+                        const edgeBoxX = isHomeSide ? 77 : 23;
+                        if (
+                          p.id === latestEv.playerId ||
+                          p.id === sp?.cornerTakerId ||
+                          p.id === sp?.freeKickTakerId
+                        ) {
+                          horiz = ballX;
+                          vert = ballY;
+                          isBallCarrier = true;
+                          setPieceRoleLabel = 'TAKER';
+                        } else if (boxMap.near_post === p.id || (!boxMap.near_post && idx === 8)) {
+                          horiz = attBoxX;
+                          vert = 35;
+                          setPieceRoleLabel = 'NEAR';
+                        } else if (boxMap.far_post === p.id || (!boxMap.far_post && idx === 9)) {
+                          horiz = attBoxX + (isHomeSide ? 2 : -2);
+                          vert = 65;
+                          setPieceRoleLabel = 'FAR';
+                        } else if (
+                          boxMap.challenge_keeper === p.id ||
+                          (!boxMap.challenge_keeper && idx === 4)
+                        ) {
+                          horiz = isHomeSide ? 93 : 7;
+                          vert = 50;
+                          setPieceRoleLabel = 'GK-CHAL';
+                        } else if (boxMap.lurk_edge === p.id || (!boxMap.lurk_edge && idx === 7)) {
+                          horiz = edgeBoxX;
+                          vert = 50;
+                          setPieceRoleLabel = 'EDGE';
+                        } else if (
+                          boxMap.stay_back_1 === p.id ||
+                          (!boxMap.stay_back_1 && idx === 1)
+                        ) {
+                          horiz = 50;
+                          vert = 34;
+                        } else if (
+                          boxMap.stay_back_2 === p.id ||
+                          (!boxMap.stay_back_2 && idx === 2)
+                        ) {
+                          horiz = 50;
+                          vert = 66;
+                        }
+                      } else if (p.id === latestEv.playerId) {
+                        isBallCarrier = true;
+                        horiz = Math.max(
+                          6,
+                          Math.min(94, ballX + (isHomeSide ? -2.2 : 2.2))
+                        );
+                        vert = Math.max(8, Math.min(92, ballY));
+                      } else if (p.id === latestEv.secondaryPlayerId && prevEv) {
+                        isAssister = true;
+                        horiz = Math.max(6, Math.min(94, prevEv.pitchX));
+                        vert = Math.max(8, Math.min(92, prevEv.pitchY));
+                      }
+                    }
+
+                    return {
+                      horiz,
+                      vert,
+                      isBallCarrier,
+                      isAssister,
+                      setPieceRoleLabel,
+                    };
+                  };
 
                   return (
                     <svg
@@ -2689,35 +2786,85 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       <rect x="3" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
                       <rect x="83" y="14" width="14" height="34" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="0.5" />
 
+                      {isSetPieceActive && (
+                        <g data-testid="live-setpiece-routine-badge">
+                          <rect
+                            x="31"
+                            y="3.8"
+                            width="38"
+                            height="4.2"
+                            rx="1.2"
+                            fill="rgba(2, 6, 23, 0.85)"
+                            stroke="#fbbf24"
+                            strokeWidth="0.35"
+                          />
+                          <text
+                            x="50"
+                            y="6.5"
+                            textAnchor="middle"
+                            fontSize="2.1"
+                            fontWeight="bold"
+                            fill="#fde68a"
+                          >
+                            🚩 SET-PIECE BOX ROUTINE ({latestEv?.eventType?.toUpperCase()})
+                          </text>
+                        </g>
+                      )}
+
                       {/* Home 11 Players (Sent-off players removed for 10-man realism & AI/User subs synced) */}
                       {homePhaseCoords.map((coord, idx) => {
                         const { player: p, wasSubbedIn } = getActiveSlotPlayer(homeClub, idx);
                         if (p && sentOffPlayerIds.has(p.id)) return null;
                         const isCapt = p && homeClub.primaryTactic.setPieces?.captainId === p.id;
                         const shirtNum = p?.shirtNumber || idx + 1;
-                        const rawHoriz = Math.max(
+                        const baseHoriz = Math.max(
                           6,
                           Math.min(72, (100 - coord.y) * 0.72 + (idx === 0 ? 0 : ballPullX))
                         );
-                        const rawVert = Math.max(
+                        const baseVert = Math.max(
                           8,
                           Math.min(92, coord.x + (idx === 0 ? 0 : ballPullY))
                         );
-                        const cx = 3 + (rawHoriz / 100) * 94;
-                        const cy = 3 + (rawVert / 100) * 56;
+                        const dyn = getDynamicPitchCoords(
+                          homeClub,
+                          true,
+                          p,
+                          idx,
+                          baseHoriz,
+                          baseVert
+                        );
+                        const cx = 3 + (dyn.horiz / 100) * 94;
+                        const cy = 3 + (dyn.vert / 100) * 56;
                         return (
                           <g
                             key={`home_dot_${idx}`}
                             onClick={() => p && onSelectPlayer(p.id)}
                             className="cursor-pointer transition-all duration-500"
                           >
+                            {(dyn.isBallCarrier || dyn.isAssister) && (
+                              <circle
+                                cx={cx}
+                                cy={cy}
+                                r={dyn.isBallCarrier ? '3.7' : '3.2'}
+                                fill="none"
+                                stroke={dyn.isBallCarrier ? '#fbbf24' : '#38bdf8'}
+                                strokeWidth="0.55"
+                                strokeDasharray={dyn.isAssister ? '1 0.8' : undefined}
+                              />
+                            )}
                             <circle
                               cx={cx}
                               cy={cy}
-                              r="2.4"
+                              r={dyn.isBallCarrier ? '2.7' : '2.4'}
                               fill={homeClub.primaryColor}
-                              stroke={wasSubbedIn ? '#34d399' : '#ffffff'}
-                              strokeWidth="0.45"
+                              stroke={
+                                dyn.isBallCarrier
+                                  ? '#fbbf24'
+                                  : wasSubbedIn
+                                    ? '#34d399'
+                                    : '#ffffff'
+                              }
+                              strokeWidth={dyn.isBallCarrier ? '0.65' : '0.45'}
                             />
                             <text
                               x={cx}
@@ -2729,6 +2876,35 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                             >
                               {shirtNum}
                             </text>
+                            {p && dyn.isBallCarrier && (
+                              <g data-testid="ball-carrier-callout">
+                                <rect
+                                  x={Math.max(4, Math.min(82, cx - 8))}
+                                  y={Math.max(3.5, cy - 6.2)}
+                                  width="16"
+                                  height="2.9"
+                                  rx="0.9"
+                                  fill="rgba(15, 23, 42, 0.92)"
+                                  stroke="#fbbf24"
+                                  strokeWidth="0.3"
+                                />
+                                <text
+                                  x={Math.max(12, Math.min(90, cx))}
+                                  y={Math.max(5.5, cy - 4.2)}
+                                  textAnchor="middle"
+                                  fontSize="1.65"
+                                  fontWeight="bold"
+                                  fill="#fef08a"
+                                >
+                                  #{shirtNum} {p.lastName.slice(0, 7).toUpperCase()}{' '}
+                                  {latestEv?.eventType === 'Goal'
+                                    ? '⚽'
+                                    : latestEv?.eventType === 'Shot'
+                                      ? '🎯'
+                                      : '⚡'}
+                                </text>
+                              </g>
+                            )}
                             {p && (
                               <text
                                 x={cx}
@@ -2736,11 +2912,12 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                                 textAnchor="middle"
                                 fontSize="1.75"
                                 fontWeight="600"
-                                fill="#e2e8f0"
+                                fill={dyn.isBallCarrier ? '#fde047' : '#e2e8f0'}
                               >
                                 {wasSubbedIn ? '🔄' : ''}
                                 {p.lastName.slice(0, 7)}
                                 {isCapt ? ' [C]' : ''}
+                                {dyn.setPieceRoleLabel ? ` (${dyn.setPieceRoleLabel})` : ''}
                               </text>
                             )}
                           </g>
@@ -2753,29 +2930,54 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         if (p && sentOffPlayerIds.has(p.id)) return null;
                         const isCapt = p && awayClub.primaryTactic.setPieces?.captainId === p.id;
                         const shirtNum = p?.shirtNumber || idx + 1;
-                        const rawHoriz = Math.max(
+                        const baseHoriz = Math.max(
                           28,
                           Math.min(94, 100 - (100 - coord.y) * 0.72 + (idx === 0 ? 0 : ballPullX))
                         );
-                        const rawVert = Math.max(
+                        const baseVert = Math.max(
                           8,
                           Math.min(92, 100 - coord.x + (idx === 0 ? 0 : ballPullY))
                         );
-                        const cx = 3 + (rawHoriz / 100) * 94;
-                        const cy = 3 + (rawVert / 100) * 56;
+                        const dyn = getDynamicPitchCoords(
+                          awayClub,
+                          false,
+                          p,
+                          idx,
+                          baseHoriz,
+                          baseVert
+                        );
+                        const cx = 3 + (dyn.horiz / 100) * 94;
+                        const cy = 3 + (dyn.vert / 100) * 56;
                         return (
                           <g
                             key={`away_dot_${idx}`}
                             onClick={() => p && onSelectPlayer(p.id)}
                             className="cursor-pointer transition-all duration-500"
                           >
+                            {(dyn.isBallCarrier || dyn.isAssister) && (
+                              <circle
+                                cx={cx}
+                                cy={cy}
+                                r={dyn.isBallCarrier ? '3.7' : '3.2'}
+                                fill="none"
+                                stroke={dyn.isBallCarrier ? '#fbbf24' : '#38bdf8'}
+                                strokeWidth="0.55"
+                                strokeDasharray={dyn.isAssister ? '1 0.8' : undefined}
+                              />
+                            )}
                             <circle
                               cx={cx}
                               cy={cy}
-                              r="2.4"
+                              r={dyn.isBallCarrier ? '2.7' : '2.4'}
                               fill={awayClub.primaryColor}
-                              stroke={wasSubbedIn ? '#34d399' : '#0f172a'}
-                              strokeWidth="0.45"
+                              stroke={
+                                dyn.isBallCarrier
+                                  ? '#fbbf24'
+                                  : wasSubbedIn
+                                    ? '#34d399'
+                                    : '#0f172a'
+                              }
+                              strokeWidth={dyn.isBallCarrier ? '0.65' : '0.45'}
                             />
                             <text
                               x={cx}
@@ -2787,6 +2989,35 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                             >
                               {shirtNum}
                             </text>
+                            {p && dyn.isBallCarrier && (
+                              <g data-testid="ball-carrier-callout">
+                                <rect
+                                  x={Math.max(4, Math.min(82, cx - 8))}
+                                  y={Math.max(3.5, cy - 6.2)}
+                                  width="16"
+                                  height="2.9"
+                                  rx="0.9"
+                                  fill="rgba(15, 23, 42, 0.92)"
+                                  stroke="#fbbf24"
+                                  strokeWidth="0.3"
+                                />
+                                <text
+                                  x={Math.max(12, Math.min(90, cx))}
+                                  y={Math.max(5.5, cy - 4.2)}
+                                  textAnchor="middle"
+                                  fontSize="1.65"
+                                  fontWeight="bold"
+                                  fill="#fef08a"
+                                >
+                                  #{shirtNum} {p.lastName.slice(0, 7).toUpperCase()}{' '}
+                                  {latestEv?.eventType === 'Goal'
+                                    ? '⚽'
+                                    : latestEv?.eventType === 'Shot'
+                                      ? '🎯'
+                                      : '⚡'}
+                                </text>
+                              </g>
+                            )}
                             {p && (
                               <text
                                 x={cx}
@@ -2794,11 +3025,12 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                                 textAnchor="middle"
                                 fontSize="1.75"
                                 fontWeight="600"
-                                fill="#bae6fd"
+                                fill={dyn.isBallCarrier ? '#fde047' : '#bae6fd'}
                               >
                                 {wasSubbedIn ? '🔄' : ''}
                                 {p.lastName.slice(0, 7)}
                                 {isCapt ? ' [C]' : ''}
+                                {dyn.setPieceRoleLabel ? ` (${dyn.setPieceRoleLabel})` : ''}
                               </text>
                             )}
                           </g>

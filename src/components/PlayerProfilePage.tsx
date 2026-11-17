@@ -461,9 +461,27 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
           {/* Left 8 Cols: 3-Column FM Attribute Table */}
           <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-              <h2 className="text-sm font-display font-bold text-white">
-                {tr('Attributes Breakdown (1–20 Scale)', 'ตารางค่าพลังนักเตะ (สเกล 1–20)')}
-              </h2>
+              <div className="flex flex-wrap items-center gap-3">
+                <h2 className="text-sm font-display font-bold text-white">
+                  {tr('Attributes Breakdown (1–20 Scale)', 'ตารางค่าพลังนักเตะ (สเกล 1–20)')}
+                </h2>
+                <select
+                  aria-label="Compare attributes with player"
+                  data-testid="attr-compare-select"
+                  value={comparePlayerId}
+                  onChange={(e) => setComparePlayerId(e.target.value)}
+                  className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded text-xs text-slate-200 max-w-[200px]"
+                >
+                  <option value="">
+                    {tr('⚔️ Compare 36 Attributes vs...', '⚔️ เปรียบเทียบ 36 ค่าพลังกับ...')}
+                  </option>
+                  {comparisonCandidates.map((cp) => (
+                    <option key={cp.id} value={cp.id}>
+                      {cp.firstName} {cp.lastName} ({cp.positions[0]})
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex flex-wrap items-center gap-3 text-xs font-mono">
                 <span className="text-emerald-400 font-bold" data-testid="attr-growth-legend">
                   ↑ {tr('Recent Gain / Focus', 'กำลังพุ่งขึ้น / โฟกัสซ้อม')}
@@ -476,6 +494,79 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                 <span className="text-slate-300">■ 6–10 Average</span>
               </div>
             </div>
+
+            {/* Stage 5 Pillar 4: Head-to-Head Summary Banner when comparePlayer is active */}
+            {comparePlayer && (
+              <div
+                data-testid="attr-head-to-head-banner"
+                className="p-3 rounded-xl bg-slate-950 border border-sky-500/30 grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-mono"
+              >
+                <div>
+                  <div className="text-[10px] text-slate-400">
+                    {tr('HEAD-TO-HEAD', 'เปรียบเทียบตัวต่อตัว')}
+                  </div>
+                  <div className="font-sans font-bold text-white truncate">
+                    <span className="text-emerald-400">{player.lastName}</span> vs{' '}
+                    <span className="text-sky-400">{comparePlayer.lastName}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400">CA / PA</div>
+                  <div>
+                    <span className="text-emerald-400 font-bold">
+                      {player.currentAbility}/{player.potentialAbility}
+                    </span>{' '}
+                    vs{' '}
+                    <span className="text-sky-400 font-bold">
+                      {comparePlayer.currentAbility}/{comparePlayer.potentialAbility}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400">
+                    {tr('AGE & VALUE', 'อายุ & มูลค่า')}
+                  </div>
+                  <div>
+                    <span className="text-emerald-400">
+                      {age}y (€{(player.marketValue / 1_000_000).toFixed(1)}M)
+                    </span>{' '}
+                    /{' '}
+                    <span className="text-sky-400">
+                      {getAgeAtDate(comparePlayer.dateOfBirth, world.gameDate)}y (€
+                      {(comparePlayer.marketValue / 1_000_000).toFixed(1)}M)
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400">
+                    {tr('WAGE / WK', 'ค่าเหนื่อย/สัปดาห์')}
+                  </div>
+                  <div>
+                    <span className="text-emerald-400">
+                      €{(player.wagePerWeek / 1_000).toFixed(0)}K
+                    </span>{' '}
+                    vs{' '}
+                    <span className="text-sky-400">
+                      €{(comparePlayer.wagePerWeek / 1_000).toFixed(0)}K
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-[10px] text-slate-400">
+                    {tr('SEASON G / A', 'ประตู / แอสซิสต์')}
+                  </div>
+                  <div>
+                    <span className="text-emerald-400">
+                      {player.stats.goals}G {player.stats.assists}A
+                    </span>{' '}
+                    vs{' '}
+                    <span className="text-sky-400">
+                      {comparePlayer.stats.goals}G {comparePlayer.stats.assists}A
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {(() => {
               const devHistory = player.developmentHistory || [];
@@ -538,6 +629,43 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                 return null;
               };
 
+              const renderAttrComparisonCell = (
+                k: string,
+                myVal: number,
+                compVal?: number
+              ) => {
+                if (typeof compVal !== 'number') {
+                  return (
+                    <div className="flex items-center gap-1.5">
+                      {renderGrowthArrow(k, myVal)}
+                      <AttrBadge value={myVal} />
+                    </div>
+                  );
+                }
+                const delta = myVal - compVal;
+                return (
+                  <div className="flex items-center gap-1 font-mono" data-testid="attr-comparison-delta">
+                    {renderGrowthArrow(k, myVal)}
+                    <AttrBadge value={myVal} />
+                    <span className="text-[10px] text-slate-500">vs</span>
+                    <span className="px-1.5 py-0.5 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300 text-[11px] font-bold">
+                      {compVal}
+                    </span>
+                    <span
+                      className={`min-w-[26px] text-center px-1 py-0.5 rounded text-[10px] font-bold ${
+                        delta > 0
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : delta < 0
+                            ? 'bg-rose-500/20 text-rose-300'
+                            : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {delta > 0 ? `+${delta}` : delta}
+                    </span>
+                  </div>
+                );
+              };
+
               return (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Column 1: Technical or Goalkeeping */}
@@ -547,20 +675,29 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                         ? tr('GOALKEEPING', 'ผู้รักษาประตู (Goalkeeping)')
                         : tr('TECHNICAL', 'เทคนิค (Technical)')}
                     </div>
-                    {Object.entries(player.attributes.technical).map(([k, val]) => (
-                      <div
-                        key={k}
-                        className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
-                      >
-                        <span className="text-slate-300 capitalize">
-                          {k.replace(/([A-Z])/g, ' $1')}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {renderGrowthArrow(k, Number(val))}
-                          <AttrBadge value={Number(val)} />
+                    {Object.entries(player.attributes.technical).map(([k, val]) => {
+                      const compVal = comparePlayer
+                        ? Number(
+                            (
+                              comparePlayer.attributes.technical as unknown as Record<
+                                string,
+                                number | undefined
+                              >
+                            )[k] ?? 10
+                          )
+                        : undefined;
+                      return (
+                        <div
+                          key={k}
+                          className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
+                        >
+                          <span className="text-slate-300 capitalize">
+                            {k.replace(/([A-Z])/g, ' $1')}
+                          </span>
+                          {renderAttrComparisonCell(k, Number(val), compVal)}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Column 2: Mental */}
@@ -568,20 +705,29 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     <div className="text-xs font-display font-bold text-sky-400 border-b border-slate-800 pb-1.5 mb-2">
                       {tr('MENTAL', 'จิตใจและไหวพริบ (Mental)')}
                     </div>
-                    {Object.entries(player.attributes.mental).map(([k, val]) => (
-                      <div
-                        key={k}
-                        className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
-                      >
-                        <span className="text-slate-300 capitalize">
-                          {k.replace(/([A-Z])/g, ' $1')}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {renderGrowthArrow(k, Number(val))}
-                          <AttrBadge value={val} />
+                    {Object.entries(player.attributes.mental).map(([k, val]) => {
+                      const compVal = comparePlayer
+                        ? Number(
+                            (
+                              comparePlayer.attributes.mental as unknown as Record<
+                                string,
+                                number | undefined
+                              >
+                            )[k] ?? 10
+                          )
+                        : undefined;
+                      return (
+                        <div
+                          key={k}
+                          className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
+                        >
+                          <span className="text-slate-300 capitalize">
+                            {k.replace(/([A-Z])/g, ' $1')}
+                          </span>
+                          {renderAttrComparisonCell(k, Number(val), compVal)}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Column 3: Physical */}
@@ -589,20 +735,29 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     <div className="text-xs font-display font-bold text-amber-400 border-b border-slate-800 pb-1.5 mb-2">
                       {tr('PHYSICAL', 'ร่างกาย (Physical)')}
                     </div>
-                    {Object.entries(player.attributes.physical).map(([k, val]) => (
-                      <div
-                        key={k}
-                        className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
-                      >
-                        <span className="text-slate-300 capitalize">
-                          {k.replace(/([A-Z])/g, ' $1')}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          {renderGrowthArrow(k, Number(val))}
-                          <AttrBadge value={val} />
+                    {Object.entries(player.attributes.physical).map(([k, val]) => {
+                      const compVal = comparePlayer
+                        ? Number(
+                            (
+                              comparePlayer.attributes.physical as unknown as Record<
+                                string,
+                                number | undefined
+                              >
+                            )[k] ?? 10
+                          )
+                        : undefined;
+                      return (
+                        <div
+                          key={k}
+                          className="flex items-center justify-between py-1 border-b border-slate-900 last:border-none text-xs"
+                        >
+                          <span className="text-slate-300 capitalize">
+                            {k.replace(/([A-Z])/g, ' $1')}
+                          </span>
+                          {renderAttrComparisonCell(k, Number(val), compVal)}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );

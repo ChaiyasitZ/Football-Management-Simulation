@@ -32,6 +32,7 @@ import {
   getDeadlineDayBargains,
   getFanSocialFeed,
   getNextAvailableManualSaveSlot,
+  getWeeklyTrainingReportAndAdvice,
   isTransferDeadlineWindow,
   NATION_YOUTH_RATINGS,
   NATIONAL_TEAMS_CATALOG,
@@ -760,6 +761,11 @@ export const TrainingView: React.FC<{
   onSaveMentoringGroup?: (mentorId: string, menteeIds: string[]) => void;
   onRemoveMentoringGroup?: (groupId: string) => void;
   onPrescribeMedicalRest?: (playerId: string) => void;
+  onSetPlayerTrainingIntensity?: (
+    playerId: string,
+    intensity: 'Light' | 'Medium' | 'Heavy'
+  ) => void;
+  onPromoteYouth?: (playerId: string) => void;
 }> = ({
   world,
   subView = 'all',
@@ -768,11 +774,14 @@ export const TrainingView: React.FC<{
   onSaveMentoringGroup,
   onRemoveMentoringGroup,
   onPrescribeMedicalRest,
+  onSetPlayerTrainingIntensity,
+  onPromoteYouth,
 }) => {
   const { tr } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
   const medicalRiskList = evaluateSquadMedicalRisk(world, club.id);
+  const trainingReport = useMemo(() => getWeeklyTrainingReportAndAdvice(world), [world]);
 
   const veteranMentors = clubPlayers
     .filter((p) => getAgeAtDate(p.dateOfBirth, world.gameDate) >= 24)
@@ -910,6 +919,162 @@ export const TrainingView: React.FC<{
               </button>
             );
           })}
+        </div>
+      </div>
+
+      {/* Stage 5 Pillar 3: Weekly Training Risers & Backroom Staff Advice */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left 6 Cols: Weekly Training Risers & Slumpers */}
+        <div
+          className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+          data-testid="weekly-training-risers-card"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div>
+              <h3 className="text-sm font-display font-bold text-emerald-400">
+                {tr(
+                  '🚀 Weekly Training Risers & Development Report',
+                  '🚀 รายงานดาวรุ่งพัฒนาการเด่นประจำสัปดาห์ (Training Risers)'
+                )}
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                {tr(
+                  'Top 3 standout performers in training sessions this week',
+                  '3 นักเตะที่ซ้อมได้โดดเด่นที่สุดในศูนย์ฝึกสัปดาห์นี้'
+                )}
+              </p>
+            </div>
+            <span className="px-2 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300">
+              {club.trainingFocus} · {club.trainingIntensity}
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {trainingReport.topRisers.map((r) => {
+              const p = world.players[r.playerId];
+              return (
+                <div
+                  key={r.playerId}
+                  onClick={() => onSelectPlayer(r.playerId)}
+                  className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-emerald-500/50 flex items-center justify-between gap-2 text-xs cursor-pointer transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {p && <PlayerAvatar player={p} size="xs" />}
+                    <div className="truncate">
+                      <div className="font-semibold text-white truncate">
+                        {r.name}{' '}
+                        <span className="text-[10px] font-mono text-slate-400">
+                          ({r.position} · {r.age}y)
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-emerald-400 font-mono">
+                        ↑ {r.upgradedAttrLabel} ({r.oldVal}→{r.newVal}) · Focus: {r.focusLabel}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="px-2 py-1 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold">
+                    {r.weeklyScore.toFixed(1)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {trainingReport.overloadedPlayers.length > 0 && (
+            <div className="pt-2 border-t border-slate-800 space-y-1.5">
+              <div className="text-[11px] font-semibold text-amber-400">
+                {tr(
+                  '⚠️ Needs Attention / Fatigue Warning',
+                  '⚠️ นักเตะที่ซ้อมดรอปหรือเริ่มล้าสะสม'
+                )}
+              </div>
+              {trainingReport.overloadedPlayers.map((s) => (
+                <div
+                  key={s.playerId}
+                  onClick={() => onSelectPlayer(s.playerId)}
+                  className="px-2.5 py-1.5 rounded bg-slate-950/80 border border-amber-500/30 flex items-center justify-between text-xs cursor-pointer"
+                >
+                  <span className="text-slate-200 font-medium">
+                    {s.name} ({s.position})
+                  </span>
+                  <span className="text-[11px] font-mono text-amber-300">
+                    Fitness {s.fitness}% · {s.intensity}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Right 6 Cols: Backroom Staff Meeting Advice (1-Click Apply) */}
+        <div
+          className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3"
+          data-testid="backroom-staff-advice-card"
+        >
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+            <div>
+              <h3 className="text-sm font-display font-bold text-sky-400">
+                {tr(
+                  '🧠 Backroom Staff Meeting Advice',
+                  '🧠 คำแนะนำจากที่ประชุมทีมงานสตาฟฟ์โค้ช (1-Click Apply)'
+                )}
+              </h3>
+              <p className="text-[11px] text-slate-400">
+                {tr(
+                  'Actionable recommendations from your Assistant Manager, Physio, and HoYD',
+                  'ข้อเสนอแนะเชิงลึกจากมือขวา หัวหน้าทีมแพทย์ และหัวหน้าอคาเดมี'
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2.5">
+            {trainingReport.staffAdvice.map((adv) => (
+              <div
+                key={adv.id}
+                className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono text-[10px] font-bold">
+                      {tr(adv.roleEn, adv.roleTh)}
+                    </span>
+                    <span className="font-semibold text-white">
+                      {adv.staffName}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    {tr(adv.summaryEn, adv.summaryTh)}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  data-testid={`apply-staff-advice-${adv.actionType}`}
+                  onClick={() => {
+                    if (
+                      adv.actionType === 'REDUCE_OVERLOAD' &&
+                      adv.targetPlayerId &&
+                      onSetPlayerTrainingIntensity
+                    ) {
+                      onSetPlayerTrainingIntensity(adv.targetPlayerId, 'Light');
+                    } else if (
+                      adv.actionType === 'PROMOTE_YOUTH' &&
+                      adv.targetPlayerId &&
+                      onPromoteYouth
+                    ) {
+                      onPromoteYouth(adv.targetPlayerId);
+                    } else if (adv.actionType === 'SET_TEAM_TRAINING' && adv.recommendedFocus) {
+                      onUpdateClubTraining(adv.recommendedFocus, club.trainingIntensity);
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs shrink-0 cursor-pointer"
+                >
+                  ⚡ {tr(adv.actionLabelEn, adv.actionLabelTh)}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -2854,7 +3019,8 @@ export const CompetitionsAndScheduleView: React.FC<{
   world: WorldState;
   initialMode: 'competitions' | 'schedule';
   onSelectPlayer: (playerId: string) => void;
-}> = ({ world, initialMode, onSelectPlayer }) => {
+  onArrangeFriendlyMatch?: (tier: 'LOCAL' | 'EUROPEAN' | 'GIANT') => void;
+}> = ({ world, initialMode, onSelectPlayer, onArrangeFriendlyMatch }) => {
   const { tr } = useLanguage();
   const myClub = world.clubs[world.controlledClubId];
 
@@ -4327,6 +4493,53 @@ export const CompetitionsAndScheduleView: React.FC<{
 
           {subView === 'fixtures' && (
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+              {onArrangeFriendlyMatch && (
+                <div
+                  data-testid="arrange-friendly-panel"
+                  className="p-3.5 rounded-xl bg-slate-950 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3"
+                >
+                  <div>
+                    <div className="text-xs font-display font-bold text-emerald-400">
+                      {tr(
+                        '🤝 Arrange Club Friendly Match (Gate Receipts & Match Sharpness)',
+                        '🤝 จัดแมตช์กระชับมิตรสโมสร (ปั๊มความฟิต Match Sharpness + รายได้ค่าตั๋ว)'
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      {tr(
+                        'Invite an opponent for an immediate exhibition friendly at your stadium (+6% Squad Fitness).',
+                        'เชิญสโมสรคู่แข่งมาเตะอุ่นเครื่องที่สนามเหย้าทันที (+6% ความฟิตยกทีม และรับรายได้ค่าตั๋ว)'
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="friendly-local-btn"
+                      onClick={() => onArrangeFriendlyMatch('LOCAL')}
+                      className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+                    >
+                      {tr('🏟️ Local Club (+€350K)', '🏟️ ทีมท้องถิ่น (+€350K)')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="friendly-euro-btn"
+                      onClick={() => onArrangeFriendlyMatch('EUROPEAN')}
+                      className="px-3 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 text-xs font-semibold cursor-pointer"
+                    >
+                      {tr('🌍 Euro Challenger (+€950K)', '🌍 ทีมดังยุโรป (+€950K)')}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="friendly-giant-btn"
+                      onClick={() => onArrangeFriendlyMatch('GIANT')}
+                      className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold cursor-pointer"
+                    >
+                      {tr('🏆 European Super Giant (+€2.2M)', '🏆 ยักษ์ใหญ่ยุโรป (+€2.2M)')}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-white">
                   {tr(
@@ -4549,6 +4762,7 @@ export const ClubStaffYouthWorldView: React.FC<{
   onImportDatabaseJson?: (rawJson: string) => void;
   onStudyCoachingLicense?: (mode?: 'INSTANT' | 'COURSE_21D') => void;
   onNegotiateBoardAmbition?: (ambition: 'Conservative' | 'Balanced' | 'Ambitious') => void;
+  onSimulateU21Matchday?: () => void;
 }> = ({
   mode,
   subView = 'all',
@@ -4595,6 +4809,7 @@ export const ClubStaffYouthWorldView: React.FC<{
   onImportDatabaseJson,
   onStudyCoachingLicense,
   onNegotiateBoardAmbition,
+  onSimulateU21Matchday,
 }) => {
   const { lang, setLang, tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
@@ -5554,6 +5769,19 @@ export const ClubStaffYouthWorldView: React.FC<{
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {onSimulateU21Matchday && (
+              <button
+                type="button"
+                data-testid="simulate-u21-match-btn"
+                onClick={onSimulateU21Matchday}
+                className="px-3.5 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs rounded-lg cursor-pointer"
+              >
+                {tr(
+                  '⚡ Simulate U21 Youth & Reserves Matchday',
+                  '⚡ จำลองแมตช์ลีกเยาวชน U21 & ทีมสำรอง'
+                )}
+              </button>
+            )}
             {onGenerateAnnualIntake && (
               <button
                 type="button"

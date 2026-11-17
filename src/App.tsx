@@ -43,6 +43,7 @@ import {
   applyForManagerJob,
   applyPostMatchTeamTalk,
   appointNationalTeamManager,
+  arrangeFriendlyMatch,
   assignYouthMentor,
   buildScoutReportForPlayer,
   buildSevenDayCalendarStrip,
@@ -85,9 +86,11 @@ import {
   saveWorldStateToSlot,
   sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
+  setPlayerIndividualTrainingIntensity,
   signPlayerOnBosmanFree,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
+  simulateU21YouthAndReservesMatchday,
   studyNextCoachingLicense,
   submitAndEvaluateTransferOffer,
   syncUserSaveSlotsFromFirestore,
@@ -442,6 +445,15 @@ function TouchlineShell() {
       window.setTimeout(runSave, 50);
     }
   };
+
+  // Stage 5 Pillar 1: Debounced (600ms) Auto-Save whenever world state changes while playing
+  useEffect(() => {
+    if (shellState !== 'playing' || !worldState) return;
+    const debounceId = window.setTimeout(() => {
+      scheduleIdleAutosave(worldState);
+    }, 600);
+    return () => window.clearTimeout(debounceId);
+  }, [worldState, shellState]);
 
   const navigateToRoute = (nextRoute: string) => {
     const normalized = nextRoute.startsWith('#/') ? nextRoute : `#/${nextRoute}`;
@@ -1645,6 +1657,10 @@ function TouchlineShell() {
                     const res = respondToPressConferenceOrJobOffer(world, newsId, optionId);
                     setWorld(res.nextState);
                     showToast(res.message);
+                    if (res.switchedClub) {
+                      scheduleIdleAutosave(res.nextState);
+                      navigateToRoute('#/home/portal');
+                    }
                   }}
                   onAddAiNewsItem={(title, body) => {
                     setWorld({
@@ -1842,6 +1858,20 @@ function TouchlineShell() {
                       setWorld(res.nextState);
                       showToast(res.message);
                     }}
+                    onSetPlayerTrainingIntensity={(playerId, intensity) => {
+                      const res = setPlayerIndividualTrainingIntensity(
+                        world,
+                        playerId,
+                        intensity
+                      );
+                      setWorld(res.nextState);
+                      showToast(res.message);
+                    }}
+                    onPromoteYouth={(playerId) => {
+                      const res = promoteYouthProspectToSenior(world, playerId);
+                      setWorld(res.nextState);
+                      showToast(res.message);
+                    }}
                   />
                 )}
 
@@ -1868,6 +1898,11 @@ function TouchlineShell() {
                     world={world}
                     initialMode={activeSubTab === 'fixtures' ? 'schedule' : 'competitions'}
                     onSelectPlayer={openFullPlayerProfile}
+                    onArrangeFriendlyMatch={(tier) => {
+                      const res = arrangeFriendlyMatch(world, tier);
+                      setWorld(res.nextState);
+                      showToast(res.message);
+                    }}
                   />
                 )}
 
@@ -2168,6 +2203,11 @@ function TouchlineShell() {
                   }}
                   onNegotiateBoardAmbition={(ambition) => {
                     const res = negotiateBoardSeasonAmbition(world, ambition);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onSimulateU21Matchday={() => {
+                    const res = simulateU21YouthAndReservesMatchday(world);
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}

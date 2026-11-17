@@ -8324,5 +8324,489 @@ export function buildSevenDayCalendarStrip(state: WorldState): {
   return result;
 }
 
+/**
+ * Stage 5 Pillar 3: Weekly Training Risers Report & Backroom Staff Advice
+ */
+export function getWeeklyTrainingReportAndAdvice(state: WorldState): {
+  topRisers: {
+    playerId: string;
+    name: string;
+    position: string;
+    age: number;
+    ca: number;
+    pa: number;
+    focusLabel: string;
+    upgradedAttrLabel: string;
+    oldVal: number;
+    newVal: number;
+    weeklyScore: number;
+  }[];
+  overloadedPlayers: {
+    playerId: string;
+    name: string;
+    position: string;
+    fitness: number;
+    intensity: 'Light' | 'Medium' | 'Heavy';
+  }[];
+  staffAdvice: {
+    id: string;
+    roleEn: string;
+    roleTh: string;
+    staffName: string;
+    summaryEn: string;
+    summaryTh: string;
+    actionLabelEn: string;
+    actionLabelTh: string;
+    actionType: 'SET_TEAM_TRAINING' | 'REDUCE_OVERLOAD' | 'PROMOTE_YOUTH';
+    recommendedFocus?: Club['trainingFocus'];
+    targetPlayerId?: string;
+  }[];
+} {
+  const myClub = state.clubs[state.controlledClubId];
+  const squad = Object.values(state.players).filter((p) => p.clubId === myClub.id);
+  const bonuses = getClubStaffBonuses(state, myClub.id);
+  const badgeMods = getCoachingLicenseModifiers(state.manager.coachingBadge);
+
+  const risersRaw = squad
+    .filter((p) => !p.injuryStatus.isInjured)
+    .map((p) => {
+      const age = getAgeAtDate(p.dateOfBirth, state.gameDate);
+      const upside = Math.max(0, p.potentialAbility - p.currentAbility);
+      const devHist = p.developmentHistory || [];
+      const latestPoint = devHist.length > 0 ? devHist[devHist.length - 1] : null;
+      const latestAttrChange =
+        latestPoint && latestPoint.keyAttributeChanges.length > 0
+          ? latestPoint.keyAttributeChanges[0]
+          : null;
+
+      const defaultAttr =
+        p.positions[0] === 'GK'
+          ? 'reflexes'
+          : ['ST', 'AMR', 'AML'].includes(p.positions[0])
+            ? 'finishing'
+            : ['MC', 'AMC', 'DM'].includes(p.positions[0])
+              ? 'passing'
+              : 'tackling';
+
+      const attrKey =
+        latestAttrChange?.attr || p.individualTraining?.attributeFocus || defaultAttr;
+      const prettyAttr = attrKey
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, (c) => c.toUpperCase());
+
+      const rawVal =
+        (p.attributes.technical as unknown as Record<string, number>)[attrKey] ??
+        (p.attributes.mental as unknown as Record<string, number>)[attrKey] ??
+        (p.attributes.physical as unknown as Record<string, number>)[attrKey] ??
+        14;
+      const newVal = Math.min(20, Number(rawVal));
+      const oldVal = Math.max(1, newVal - 1);
+
+      const weeklyScore = Number(
+        (
+          (p.professionalism * 0.25 +
+            p.attributes.mental.determination * 0.25 +
+            (upside > 8 ? 2.2 : 0.9) +
+            (age <= 22 ? 1.4 : 0.4)) *
+          badgeMods.trainingGrowthMultiplier
+        ).toFixed(2)
+      );
+
+      return {
+        playerId: p.id,
+        name: `${p.firstName} ${p.lastName}`,
+        position: p.positions[0],
+        age,
+        ca: p.currentAbility,
+        pa: p.potentialAbility,
+        focusLabel: p.individualTraining?.attributeFocus
+          ? p.individualTraining.attributeFocus.replace(/([A-Z])/g, ' $1')
+          : myClub.trainingFocus,
+        upgradedAttrLabel: prettyAttr,
+        oldVal,
+        newVal,
+        weeklyScore,
+      };
+    })
+    .sort((a, b) => b.weeklyScore - a.weeklyScore)
+    .slice(0, 4);
+
+  const overloadedPlayers = squad
+    .filter(
+      (p) =>
+        (p.individualTraining?.intensity === 'Heavy' && p.fitness < 84) ||
+        p.fitness < 74
+    )
+    .sort((a, b) => a.fitness - b.fitness)
+    .slice(0, 4)
+    .map((p) => ({
+      playerId: p.id,
+      name: `${p.firstName} ${p.lastName}`,
+      position: p.positions[0],
+      fitness: p.fitness,
+      intensity: (p.individualTraining?.intensity || 'Medium') as 'Light' | 'Medium' | 'Heavy',
+    }));
+
+  // Build Backroom Staff Advice
+  const nextFixture = state.fixtures.find(
+    (f) =>
+      f.status === 'Scheduled' &&
+      (f.homeClubId === myClub.id || f.awayClubId === myClub.id)
+  );
+  const oppClub = nextFixture
+    ? state.clubs[
+        nextFixture.homeClubId === myClub.id
+          ? nextFixture.awayClubId
+          : nextFixture.homeClubId
+      ]
+    : undefined;
+
+  const recommendedFocus: Club['trainingFocus'] = oppClub
+    ? oppClub.reputation > myClub.reputation + 3
+      ? 'Defending'
+      : oppClub.primaryTactic.instructions.defensiveLine === 'High'
+        ? 'Attacking'
+        : 'Chance Creation'
+    : 'Possession';
+
+  const staffAdvice: {
+    id: string;
+    roleEn: string;
+    roleTh: string;
+    staffName: string;
+    summaryEn: string;
+    summaryTh: string;
+    actionLabelEn: string;
+    actionLabelTh: string;
+    actionType: 'SET_TEAM_TRAINING' | 'REDUCE_OVERLOAD' | 'PROMOTE_YOUTH';
+    recommendedFocus?: Club['trainingFocus'];
+    targetPlayerId?: string;
+  }[] = [
+    {
+      id: 'adv_assman_focus',
+      roleEn: 'Assistant Manager',
+      roleTh: 'ผู้ช่วยผู้จัดการทีม',
+      staffName:
+        Object.values(state.staff || {}).find(
+          (s) => s.clubId === myClub.id && s.role === 'Assistant Manager'
+        )?.name || 'Carlos Cuesta',
+      summaryEn: oppClub
+        ? `Upcoming opponent ${oppClub.name} deploy a ${oppClub.primaryTactic.formation}. Switching Team Training to "${recommendedFocus}" will sharpen our tactical execution.`
+        : `Recommend setting Weekly Team Training to "${recommendedFocus}" to maximize squad tactical cohesion.`,
+      summaryTh: oppClub
+        ? `คู่แข่งนัดถัดไป ${oppClub.name} ใช้แผน ${oppClub.primaryTactic.formation} แนะนำให้ปรับการซ้อมทีมเป็น "${recommendedFocus}" เพื่อรับมือจุดแข็งของคู่แข่ง`
+        : `แนะนำให้ตั้งค่าการซ้อมทีมประจำสัปดาห์เป็น "${recommendedFocus}" เพื่อยกระดับความเข้าใจแท็กติก`,
+      actionLabelEn: `Set Focus: ${recommendedFocus}`,
+      actionLabelTh: `ปรับซ้อมทีม: ${recommendedFocus}`,
+      actionType: 'SET_TEAM_TRAINING',
+      recommendedFocus,
+    },
+  ];
+
+  if (overloadedPlayers.length > 0) {
+    const tired = overloadedPlayers[0];
+    staffAdvice.push({
+      id: 'adv_physio_load',
+      roleEn: 'Head Physio',
+      roleTh: 'หัวหน้าทีมแพทย์กายภาพ',
+      staffName:
+        Object.values(state.staff || {}).find(
+          (s) =>
+            s.clubId === myClub.id &&
+            (String(s.role).includes('Physio') || String(s.role).includes('Fitness'))
+        )?.name || 'Dr. Gary O’Driscoll',
+      summaryEn: `${tired.name} (${tired.fitness}% Fitness) is showing signs of training fatigue. Switching his individual workload to Light will prevent muscle strain.`,
+      summaryTh: `${tired.name} (ความฟิต ${tired.fitness}%) เริ่มมีอาการล้าสะสม แนะนำให้ลดความเข้มข้นการซ้อมรายบุคคลเป็น Light เพื่อป้องกันกล้ามเนื้อบาดเจ็บ`,
+      actionLabelEn: `Set ${tired.name} to Light`,
+      actionLabelTh: `ปรับ ${tired.name} ซ้อมเบา (Light)`,
+      actionType: 'REDUCE_OVERLOAD',
+      targetPlayerId: tired.playerId,
+    });
+  }
+
+  const topYouth = squad
+    .filter((p) => p.isYouthAcademy || p.squadStatus === 'Youth')
+    .sort((a, b) => b.currentAbility - a.currentAbility)[0];
+  if (topYouth) {
+    staffAdvice.push({
+      id: 'adv_hoyd_promote',
+      roleEn: 'Head of Youth Development',
+      roleTh: 'หัวหน้าศูนย์ฝึกเยาวชน (HoYD)',
+      staffName: bonuses.hoydName,
+      summaryEn: `Academy standout ${topYouth.firstName} ${topYouth.lastName} (CA ${(topYouth.currentAbility / 10).toFixed(1)} · PA ${(topYouth.potentialAbility / 10).toFixed(1)}) is dominating U18 training and ready for Senior Squad integration.`,
+      summaryTh: `ดาวรุ่งโดดเด่นประจำอคาเดมี ${topYouth.firstName} ${topYouth.lastName} (CA ${(topYouth.currentAbility / 10).toFixed(1)} · PA ${(topYouth.potentialAbility / 10).toFixed(1)}) พร้อมก้าวขึ้นสู่ทีมชุดใหญ่แล้ว`,
+      actionLabelEn: `Promote ${topYouth.lastName} to Senior XI`,
+      actionLabelTh: `ดัน ${topYouth.lastName} ขึ้นชุดใหญ่`,
+      actionType: 'PROMOTE_YOUTH',
+      targetPlayerId: topYouth.id,
+    });
+  }
+
+  return {
+    topRisers: risersRaw,
+    overloadedPlayers,
+    staffAdvice,
+  };
+}
+
+export function setPlayerIndividualTrainingIntensity(
+  state: WorldState,
+  playerId: string,
+  intensity: 'Light' | 'Medium' | 'Heavy'
+): { nextState: WorldState; message: string } {
+  const p = state.players[playerId];
+  if (!p) {
+    return { nextState: state, message: 'Player not found.' };
+  }
+  const updatedPlayer: Player = {
+    ...p,
+    fitness: intensity === 'Light' ? Math.min(100, p.fitness + 4) : p.fitness,
+    individualTraining: {
+      roleFocus: p.individualTraining?.roleFocus || p.preferredRole,
+      attributeFocus: p.individualTraining?.attributeFocus || 'passing',
+      intensity,
+    },
+  };
+  return {
+    nextState: {
+      ...state,
+      players: {
+        ...state.players,
+        [playerId]: updatedPlayer,
+      },
+    },
+    message: trText(
+      `Updated ${p.firstName} ${p.lastName}'s individual training workload to ${intensity} (+4% Fitness recovery).`,
+      `ปรับความเข้มข้นการซ้อมรายบุคคลของ ${p.firstName} ${p.lastName} เป็น ${intensity} เรียบร้อยแล้ว (+4% ฟื้นฟูความฟิต)`
+    ),
+  };
+}
+
+/**
+ * Stage 5 Pillar 5.1: Arrange Friendly Match (Boosts Match Sharpness + Gate Receipts)
+ */
+export function arrangeFriendlyMatch(
+  state: WorldState,
+  tier: 'LOCAL' | 'EUROPEAN' | 'GIANT' = 'EUROPEAN'
+): {
+  nextState: WorldState;
+  scoreline: string;
+  gateReceipts: number;
+  sharpnessBoost: number;
+  message: string;
+} {
+  const myClub = state.clubs[state.controlledClubId];
+  const candidates = Object.values(state.clubs).filter((c) => {
+    if (c.id === myClub.id) return false;
+    if (tier === 'LOCAL') return c.reputation < 74;
+    if (tier === 'GIANT') return c.reputation >= 85;
+    return c.reputation >= 74 && c.reputation < 85;
+  });
+  const oppClub =
+    candidates[
+      (state.randomSeed + state.transactions.length * 7) % Math.max(1, candidates.length)
+    ] || Object.values(state.clubs).find((c) => c.id !== myClub.id)!;
+
+  const friendlyFixture: Fixture = {
+    id: `frd_${state.gameDate}_${myClub.id}_${oppClub.id}_${state.transactions.length}`,
+    competitionId: myClub.leagueId,
+    seasonId: state.currentSeason,
+    matchday: 0,
+    kickoffDate: state.gameDate,
+    homeClubId: myClub.id,
+    awayClubId: oppClub.id,
+    status: 'Completed',
+  };
+
+  const simRes = simulateMatch(
+    friendlyFixture,
+    myClub,
+    oppClub,
+    state.players,
+    state.randomSeed + state.transactions.length * 313
+  );
+
+  const gateReceipts =
+    tier === 'GIANT' ? 2_800_000 : tier === 'EUROPEAN' ? 1_650_000 : 850_000;
+  const sharpnessBoost = 6;
+
+  const updatedPlayers: Record<string, Player> = { ...state.players };
+  for (const p of Object.values(state.players)) {
+    if (p.clubId === myClub.id && !p.injuryStatus.isInjured) {
+      updatedPlayers[p.id] = {
+        ...p,
+        matchSharpness: Math.min(100, p.matchSharpness + sharpnessBoost),
+        morale: Math.min(100, p.morale + (simRes.homeGoals >= simRes.awayGoals ? 3 : 1)),
+      };
+    }
+  }
+
+  const newBalance = myClub.finances.balance + gateReceipts;
+  const updatedMyClub: Club = {
+    ...myClub,
+    finances: {
+      ...myClub.finances,
+      balance: newBalance,
+      transferBudget: myClub.finances.transferBudget + Math.round(gateReceipts * 0.5),
+    },
+  };
+
+  const tx: FinanceTransaction = {
+    id: `tx_frd_${Date.now()}`,
+    date: state.gameDate,
+    clubId: myClub.id,
+    category: 'Ticket Sales',
+    amount: gateReceipts,
+    description: trText(
+      `Exhibition Friendly Gate Receipts vs ${oppClub.name} (${simRes.homeGoals}-${simRes.awayGoals})`,
+      `รายได้ค่าบัตรผ่านประตูแมตช์กระชับมิตรพบ ${oppClub.name} (${simRes.homeGoals}-${simRes.awayGoals})`
+    ),
+    balanceAfter: newBalance,
+  };
+
+  const scoreline = `${myClub.shortName} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.shortName}`;
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      clubs: {
+        ...state.clubs,
+        [myClub.id]: updatedMyClub,
+      },
+      transactions: [tx, ...state.transactions],
+      inbox: [
+        {
+          id: `news_frd_${Date.now()}`,
+          gameDate: state.gameDate,
+          category: 'Match Report',
+          title: trText(
+            `Friendly Result: ${myClub.name} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.name} (+6% Squad Sharpness)`,
+            `ผลแมตช์กระชับมิตร: ${myClub.name} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.name} (ความเฉียบคมทั้งทีม +6%)`
+          ),
+          body: trText(
+            `${myClub.name} hosted ${oppClub.name} in a friendly match (${simRes.homeGoals}-${simRes.awayGoals}), generating €${(gateReceipts / 1_000_000).toFixed(2)}M in gate receipts and boosting squad Match Sharpness by +${sharpnessBoost}%.`,
+            `${myClub.name} เปิดบ้านอุ่นเครื่องพบกับ ${oppClub.name} (${simRes.homeGoals}-${simRes.awayGoals}) สร้างรายได้เข้าสโมสร €${(gateReceipts / 1_000_000).toFixed(2)}M พร้อมเพิ่มความเฉียบคม (Match Sharpness) ให้นักเตะทั้งทีม +${sharpnessBoost}%`
+          ),
+          isRead: false,
+          relatedClubId: oppClub.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    scoreline,
+    gateReceipts,
+    sharpnessBoost,
+    message: trText(
+      `Friendly Complete (${scoreline})! Earned €${(gateReceipts / 1_000_000).toFixed(2)}M gate receipts & +${sharpnessBoost}% Match Sharpness across the squad!`,
+      `จบเกมกระชับมิตร (${scoreline})! รับค่าตั๋ว €${(gateReceipts / 1_000_000).toFixed(2)}M และเพิ่มความเฉียบคมทั้งทีม +${sharpnessBoost}%!`
+    ),
+  };
+}
+
+/**
+ * Stage 5 Pillar 5.2: Simulate U21 Youth & Reserves League Matchday
+ */
+export function simulateU21YouthAndReservesMatchday(state: WorldState): {
+  nextState: WorldState;
+  scoreline: string;
+  motmPlayerId: string;
+  motmPlayerName: string;
+  participantsCount: number;
+  message: string;
+} {
+  const myClub = state.clubs[state.controlledClubId];
+  const reserveSquadPlayers = Object.values(state.players).filter(
+    (p) =>
+      p.clubId === myClub.id &&
+      !p.injuryStatus.isInjured &&
+      (p.playInReserves ||
+        p.isYouthAcademy ||
+        p.squadStatus === 'Youth' ||
+        getAgeAtDate(p.dateOfBirth, state.gameDate) <= 21)
+  );
+
+  const participants = reserveSquadPlayers;
+
+  const rng = new SeededRNG(state.randomSeed + state.inbox.length * 41 + 99);
+  const myGoals = rng.int(1, 4);
+  const oppGoals = rng.int(0, 2);
+
+  const attackers = participants.filter((p) => p.positions[0] !== 'GK');
+  const pool = attackers.length > 0 ? attackers : participants;
+  const motm =
+    pool.sort((a, b) => b.potentialAbility - a.potentialAbility)[0] ||
+    Object.values(state.players).find((p) => p.clubId === myClub.id)!;
+
+  const updatedPlayers: Record<string, Player> = { ...state.players };
+
+  for (const rp of reserveSquadPlayers) {
+    const isMotm = rp.id === motm.id;
+    const scored = isMotm ? 1 : rng.chance(0.22) ? 1 : 0;
+    const assisted = rng.chance(0.25) ? 1 : 0;
+    const newApps = rp.stats.appearances + 1;
+    const matchRating = isMotm ? 8.5 : 7.15;
+    const newAvg = Number(
+      ((rp.stats.averageRating * rp.stats.appearances + matchRating) / newApps).toFixed(2)
+    );
+    updatedPlayers[rp.id] = {
+      ...rp,
+      currentAbility: isMotm
+        ? Math.min(rp.potentialAbility, rp.currentAbility + 1)
+        : rp.currentAbility,
+      matchSharpness: Math.min(100, rp.matchSharpness + 5),
+      morale: Math.min(100, rp.morale + 3),
+      stats: {
+        ...rp.stats,
+        appearances: newApps,
+        starts: rp.stats.starts + 1,
+        goals: rp.stats.goals + scored,
+        assists: rp.stats.assists + assisted,
+        minutesPlayed: rp.stats.minutesPlayed + 90,
+        averageRating: newAvg,
+        manOfTheMatch: rp.stats.manOfTheMatch + (isMotm ? 1 : 0),
+      },
+    };
+  }
+
+  const scoreline = `${myClub.shortName} U21 ${myGoals} - ${oppGoals} Premier U21 XI`;
+  const motmName = `${motm.firstName} ${motm.lastName}`;
+
+  return {
+    nextState: {
+      ...state,
+      players: updatedPlayers,
+      inbox: [
+        {
+          id: `news_u21_${Date.now()}`,
+          gameDate: state.gameDate,
+          category: 'Staff',
+          title: trText(
+            `U21 Youth League: ${scoreline} — ${motmName} Named MOTM (+1 CA Growth!)`,
+            `ผลลีกเยาวชน U21: ${scoreline} — ${motmName} คว้า Man of the Match (+1 CA!)`
+          ),
+          body: trText(
+            `Your U21 & Reserves squad recorded a ${myGoals}-${oppGoals} victory (${participants.length} players featured, +5% Match Sharpness). Standout prospect ${motmName} earned an 8.60 rating and gained +1 Current Ability!`,
+            `ทีมเยาวชน U21 และทีมสำรองของคุณคว้าชัยชนะ ${myGoals}-${oppGoals} (นักเตะลงสนาม ${participants.length} คน, ความเฉียบคม +5%) โดย ${motmName} โชว์ฟอร์มยอดเยี่ยมคว้าเรตติ้ง 8.60 พร้อมอัปเกรดค่าพลังแฝงปัจจุบัน +1 CA!`
+          ),
+          isRead: false,
+          relatedPlayerId: motm.id,
+          relatedClubId: myClub.id,
+        },
+        ...state.inbox,
+      ],
+    },
+    scoreline,
+    motmPlayerId: motm.id,
+    motmPlayerName: motmName,
+    participantsCount: Math.max(1, participants.length),
+    message: trText(
+      `U21 Match Complete (${scoreline})! ${motmName} named MOTM (+1 CA) & all U21/Reserve players gained +5% Sharpness!`,
+      `จำลองลีก U21 สำเร็จ (${scoreline})! ${motmName} คว้า MOTM (+1 CA) และดาวรุ่งทุกคนได้รับความเฉียบคม +5%!`
+    ),
+  };
+}
+
+
 
 
