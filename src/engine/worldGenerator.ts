@@ -29,6 +29,7 @@ import {
   generateEuropeanNationsCupFixtures,
   generateInitialDomesticCupFixtures,
   generateLeagueSchedule,
+  generateSeasonSuperCupFixtures,
 } from './leagueEngine';
 import { SeededRNG } from './random';
 import {
@@ -853,19 +854,39 @@ export function createInitialWorldState(
     );
     fixtures.push(...leagueFixtures);
     standings[leagueId] = createInitialStandings(leagueId, currentSeason, leagueClubIds);
+  }
 
-    // Generate Domestic Cup Round of 16 knockout fixtures for Tier 1 leagues
-    if (!config.tier || config.tier === 1) {
-      const cupClubs = leagueClubIds.map((id) => clubs[id]);
-      const cupFixtures = generateInitialDomesticCupFixtures(
-        config.cupId,
-        cupClubs,
+  const resolvedControlledClubId =
+    selectedClubId && clubs[selectedClubId] ? selectedClubId : 'club_eng_pl_1';
+
+  // Generate Multi-Tier Primary National Cups (10) & Secondary League Cups (3: ENG_LC, POR_LC, SCO_LC)
+  for (const config of Object.values(LEAGUES_CONFIG)) {
+    if (config.tier === 2) continue;
+    const countryClubs = Object.values(clubs).filter((c) => c.countryId === config.countryId);
+    const primaryCupFixtures = generateInitialDomesticCupFixtures(
+      config.cupId,
+      countryClubs,
+      currentSeason,
+      undefined,
+      resolvedControlledClubId
+    );
+    fixtures.push(...primaryCupFixtures);
+
+    if (config.leagueCupId) {
+      const leagueCupFixtures = generateInitialDomesticCupFixtures(
+        config.leagueCupId,
+        countryClubs,
         currentSeason,
-        '2025-10-29'
+        undefined,
+        resolvedControlledClubId
       );
-      fixtures.push(...cupFixtures);
+      fixtures.push(...leagueCupFixtures);
     }
   }
+
+  // Generate 9 National Super Cups (Aug 10) + UEFA Super Cup (Aug 12)
+  const superCupFixtures = generateSeasonSuperCupFixtures(currentSeason, 2025, clubs);
+  fixtures.push(...superCupFixtures);
 
   // Generate UEFA Club Competitions (New Format: 36 teams per competition, 4 Pots of 9, Swiss League Phase)
   const uefaQualified = selectUefaQualifiedClubs(clubs);

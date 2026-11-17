@@ -24,11 +24,30 @@ export type CupId =
   | 'NED_CUP'
   | 'BEL_CUP'
   | 'TUR_CUP'
-  | 'SCO_CUP';
+  | 'SCO_CUP'
+  | 'ENG_LC'
+  | 'POR_LC'
+  | 'SCO_LC';
+export type SuperCupId =
+  | 'ENG_SC'
+  | 'ESP_SC'
+  | 'GER_SC'
+  | 'ITA_SC'
+  | 'FRA_SC'
+  | 'POR_SC'
+  | 'NED_SC'
+  | 'BEL_SC'
+  | 'TUR_SC'
+  | 'UEFA_USC';
 export type UefaCompetitionId = 'UEFA_UCL' | 'UEFA_UEL' | 'UEFA_UECL';
 export type InternationalCompetitionId = 'INT_EURO' | 'GLB_CWC';
-export type CompetitionId = LeagueId | CupId | UefaCompetitionId | InternationalCompetitionId;
-export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R16' | 'QF' | 'SF' | 'FINAL';
+export type CompetitionId =
+  | LeagueId
+  | CupId
+  | SuperCupId
+  | UefaCompetitionId
+  | InternationalCompetitionId;
+export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R32' | 'R16' | 'QF' | 'SF' | 'FINAL';
 
 export type NationalTeamCode = 'ENG' | 'ESP' | 'GER' | 'ITA' | 'FRA' | 'BRA' | 'ARG' | 'POR';
 export type PreSeasonTourRegion = 'ASIA' | 'USA' | 'MIDDLE_EAST';
@@ -520,6 +539,13 @@ export interface LeagueConfig {
   tvRevenuePerClub: number;
   tier?: 1 | 2;
   logoUrl?: string;
+  cupLogoUrl?: string;
+  leagueCupId?: CupId;
+  leagueCupName?: string;
+  leagueCupLogoUrl?: string;
+  superCupId?: SuperCupId;
+  superCupName?: string;
+  superCupLogoUrl?: string;
 }
 
 export type MatchEventType =
@@ -621,6 +647,7 @@ export interface Fixture {
   status: 'Scheduled' | 'InProgress' | 'Completed';
   result?: MatchResult;
   uefaStage?: UefaStage;
+  cupRound?: 'R32' | 'R16' | 'QF' | 'SF' | 'FINAL';
   leg?: 1 | 2;
   tieIndex?: number;
 }

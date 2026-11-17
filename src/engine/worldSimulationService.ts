@@ -52,9 +52,12 @@ import {
   recomputeLeagueStandings,
   checkAndAdvanceDomesticCup,
   checkAndAdvanceEuroCup,
+  CUP_COMPETITIONS_META,
   generateEuropeanNationsCupFixtures,
   generateInitialDomesticCupFixtures,
   generateLeagueSchedule,
+  generateSeasonSuperCupFixtures,
+  getCupRoundPrizeMoney,
   createInitialStandings,
   getDomesticCupFixtureWinnerId,
 } from './leagueEngine';
@@ -692,45 +695,160 @@ export function applyMatchResultToWorld(
     nextState = checkAndAdvanceUefaKnockoutPhase(nextState, uefaCompId);
   }
 
-  // Domestic Cup advancement (R16 -> QF -> SF -> FINAL)
-  if (String(existingFixture.competitionId).endsWith('_CUP')) {
-    const cupId = existingFixture.competitionId as import('../types/game').CupId;
-    const newCupFixtures = checkAndAdvanceDomesticCup(
-      cupId,
-      nextState.fixtures,
-      nextState.currentSeason,
-      nextState.gameDate
-    );
-    if (newCupFixtures.length > 0) {
+  // Domestic Primary Cups (*_CUP), League Cups (*_LC), and Super Cups (*_SC / UEFA_USC)
+  const compIdStr = String(existingFixture.competitionId);
+  const isDomesticOrLeagueCup = compIdStr.endsWith('_CUP') || compIdStr.endsWith('_LC');
+  const isSuperCup = compIdStr.endsWith('_SC') || compIdStr === 'UEFA_USC';
+
+  if (isDomesticOrLeagueCup || isSuperCup) {
+    const cupMeta =
+      CUP_COMPETITIONS_META[
+        existingFixture.competitionId as
+          | import('../types/game').CupId
+          | import('../types/game').SuperCupId
+      ];
+    const cupDisplayName = cupMeta?.name || compIdStr;
+    const stage = existingFixture.uefaStage || existingFixture.cupRound || 'R16';
+    const winnerId = getDomesticCupFixtureWinnerId(completedFixture);
+    const loserId =
+      winnerId === completedFixture.homeClubId
+        ? completedFixture.awayClubId
+        : completedFixture.homeClubId;
+
+    // 1. Round-by-Round Prize Money Payout & Giant-Killing Detection
+    if (winnerId && nextState.clubs[winnerId]) {
+      const winClub = { ...nextState.clubs[winnerId] };
+      const loseClub = loserId ? nextState.clubs[loserId] : undefined;
+      const roundPrize = getCupRoundPrizeMoney(compIdStr, stage);
+
+      winClub.finances = {
+        ...winClub.finances,
+        balance: winClub.finances.balance + roundPrize,
+        transferBudget: winClub.finances.transferBudget + Math.round(roundPrize * 0.65),
+      };
+
+      let nextTx = nextState.transactions;
+      if (winClub.id === nextState.controlledClubId) {
+        nextTx = [
+          {
+            id: `tx_cup_prize_${existingFixture.id}`,
+            date: nextState.gameDate,
+            clubId: winClub.id,
+            category: 'Prize Money',
+            amount: roundPrize,
+            description: trText(
+              `${cupDisplayName} (${stage}) Victory Prize Payout`,
+              `เงินรางวัลชนะเลิศรอบ ${stage} ศึก ${cupDisplayName}`
+            ),
+            balanceAfter: winClub.finances.balance,
+          },
+          ...nextTx,
+        ];
+      }
+
+      // Check Giant-Killing (Tier 2 club eliminating Tier 1 club)
+      const winTier = LEAGUES_CONFIG[winClub.leagueId]?.tier || 1;
+      const loseTier = loseClub ? LEAGUES_CONFIG[loseClub.leagueId]?.tier || 1 : 1;
+      let nextMgr = nextState.manager;
+      let giantKillingNews: NewsItem[] = [];
+
+      if (winTier === 2 && loseTier === 1 && loseClub) {
+        if (winClub.id === nextState.controlledClubId) {
+          nextMgr = {
+            ...nextMgr,
+            reputation: Math.min(99, nextMgr.reputation + 2),
+          };
+          winClub.boardExpectations = {
+            ...winClub.boardExpectations,
+            confidence: {
+              ...winClub.boardExpectations.confidence,
+              overall: Math.min(100, winClub.boardExpectations.confidence.overall + 6),
+              squadAtmosphere: Math.min(100, winClub.boardExpectations.confidence.squadAtmosphere + 8),
+            },
+          };
+        }
+        giantKillingNews = [
+          {
+            id: `news_giant_killing_${existingFixture.id}`,
+            gameDate: nextState.gameDate,
+            category: 'Competition',
+            title: trText(
+              `⚡ GIANT-KILLING IN THE CUP: ${winClub.name} (D2) Eliminate Top-Flight ${loseClub.name} in ${cupDisplayName}!`,
+              `⚡ แจ็คผู้ฆ่ายักษ์ศึกบอลถ้วย: ${winClub.name} (ลีกรอง) หักปากกาเซียนเขี่ย ${loseClub.name} ตกรอบ ${cupDisplayName}!`
+            ),
+            body: trText(
+              `Sensational cup magic in the ${cupDisplayName} (${stage})! Second-division side ${winClub.name} stunned top-flight ${loseClub.name} to book their place in the next round.`,
+              `เกิดเหตุการณ์ช็อกวงการในศึก ${cupDisplayName} รอบ ${stage}! สโมสรจากลีกรองอย่าง ${winClub.name} โชว์ฟอร์มสุดยอดโค่นทีมลีกสูงสุด ${loseClub.name} ทะลุเข้าสู่รอบต่อไปได้สำเร็จ!`
+            ),
+            isRead: false,
+            isImportant:
+              winClub.id === nextState.controlledClubId ||
+              loseClub.id === nextState.controlledClubId,
+            relatedClubId: winClub.id,
+          },
+        ];
+      }
+
       nextState = {
         ...nextState,
-        fixtures: [...nextState.fixtures, ...newCupFixtures],
+        clubs: { ...nextState.clubs, [winClub.id]: winClub },
+        transactions: nextTx,
+        manager: nextMgr,
+        inbox: [...giantKillingNews, ...nextState.inbox],
       };
-    } else if (existingFixture.uefaStage === 'FINAL') {
-      const winnerId = getDomesticCupFixtureWinnerId(completedFixture);
-      if (winnerId && nextState.clubs[winnerId]) {
-        const champ = { ...nextState.clubs[winnerId] };
-        const prize = 3_500_000;
-        champ.finances = {
-          ...champ.finances,
-          balance: champ.finances.balance + prize,
-          transferBudget: champ.finances.transferBudget + Math.round(prize * 0.65),
-        };
+    }
+
+    // 2. Advance Knockout Bracket (for *_CUP and *_LC) or Crown Final Champion
+    if (isDomesticOrLeagueCup) {
+      const cupId = existingFixture.competitionId as import('../types/game').CupId;
+      const newCupFixtures = checkAndAdvanceDomesticCup(
+        cupId,
+        nextState.fixtures,
+        nextState.currentSeason,
+        nextState.gameDate
+      );
+      if (newCupFixtures.length > 0) {
         nextState = {
           ...nextState,
-          clubs: { ...nextState.clubs, [champ.id]: champ },
+          fixtures: [...nextState.fixtures, ...newCupFixtures],
+        };
+      } else if (stage === 'FINAL' && winnerId && nextState.clubs[winnerId]) {
+        const champ = nextState.clubs[winnerId];
+        const runnerUp = loserId ? nextState.clubs[loserId] : undefined;
+        const prizeM = (getCupRoundPrizeMoney(compIdStr, 'FINAL') / 1_000_000).toFixed(2);
+        const trpId = `trp_${nextState.currentSeason.replace('/', '')}_${cupId}`;
+        const existingTrp = (nextState.trophyHistory || []).some((t) => t.id === trpId);
+        const nextTrps = existingTrp
+          ? nextState.trophyHistory || []
+          : [
+              {
+                id: trpId,
+                season: nextState.currentSeason,
+                competitionId: cupId,
+                competitionName: cupDisplayName,
+                winnerClubId: champ.id,
+                winnerClubName: champ.name,
+                runnerUpClubId: runnerUp?.id,
+                runnerUpClubName: runnerUp?.name,
+              },
+              ...(nextState.trophyHistory || []),
+            ];
+
+        nextState = {
+          ...nextState,
+          trophyHistory: nextTrps,
           inbox: [
             {
               id: `news_cup_win_${cupId}_${nextState.gameDate}`,
               gameDate: nextState.gameDate,
               category: 'Competition',
               title: trText(
-                `${champ.name} Crowned ${cupId.replace('_CUP', '')} Domestic Cup Champions!`,
-                `${champ.name} ผงาดคว้าแชมป์ฟุตบอลถ้วย ${cupId.replace('_CUP', '')} Cup!`
+                `🏆 ${champ.name} Crowned ${cupDisplayName} Champions!`,
+                `🏆 ${champ.name} ผงาดคว้าแชมป์ ${cupDisplayName}!`
               ),
               body: trText(
-                `${champ.name} have lifted the ${cupId.replace('_CUP', '')} Domestic Cup trophy and received €3.50M in prize money!`,
-                `${champ.name} คว้าแชมป์ ${cupId.replace('_CUP', '')} Cup ไปครองได้สำเร็จ พร้อมรับเงินรางวัล €3.50M!`
+                `${champ.name} have lifted the ${cupDisplayName} trophy and received €${prizeM}M in champion prize money!`,
+                `${champ.name} ผงาดคว้าแชมป์ ${cupDisplayName} ไปครองอย่างยิ่งใหญ่ พร้อมรับเงินรางวัลแชมป์ €${prizeM}M!`
               ),
               isRead: false,
               isImportant: champ.id === nextState.controlledClubId,
@@ -740,6 +858,71 @@ export function applyMatchResultToWorld(
           ],
         };
       }
+    } else if (isSuperCup && winnerId && nextState.clubs[winnerId]) {
+      const champ = nextState.clubs[winnerId];
+      const runnerUp = loserId ? nextState.clubs[loserId] : undefined;
+      const prizeM = (getCupRoundPrizeMoney(compIdStr, 'FINAL') / 1_000_000).toFixed(2);
+      const trpId = `trp_${nextState.currentSeason.replace('/', '')}_${compIdStr}`;
+      const existingTrp = (nextState.trophyHistory || []).some((t) => t.id === trpId);
+      const nextTrps = existingTrp
+        ? nextState.trophyHistory || []
+        : [
+            {
+              id: trpId,
+              season: nextState.currentSeason,
+              competitionId: existingFixture.competitionId,
+              competitionName: cupDisplayName,
+              winnerClubId: champ.id,
+              winnerClubName: champ.name,
+              runnerUpClubId: runnerUp?.id,
+              runnerUpClubName: runnerUp?.name,
+            },
+            ...(nextState.trophyHistory || []),
+          ];
+
+      let nextMgr = nextState.manager;
+      if (champ.id === nextState.controlledClubId && !existingTrp) {
+        nextMgr = {
+          ...nextMgr,
+          reputation: Math.min(99, nextMgr.reputation + 2),
+          careerStats: {
+            ...nextMgr.careerStats,
+            trophies: [
+              {
+                season: nextState.currentSeason,
+                competitionName: cupDisplayName,
+                clubName: champ.name,
+              },
+              ...nextMgr.careerStats.trophies,
+            ],
+          },
+        };
+      }
+
+      nextState = {
+        ...nextState,
+        trophyHistory: nextTrps,
+        manager: nextMgr,
+        inbox: [
+          {
+            id: `news_supercup_win_${compIdStr}_${nextState.gameDate}`,
+            gameDate: nextState.gameDate,
+            category: 'Competition',
+            title: trText(
+              `🛡️ ${champ.name} Lift the ${cupDisplayName} Trophy!`,
+              `🛡️ ${champ.name} ประเดิมคว้าแชมป์ ${cupDisplayName}!`
+            ),
+            body: trText(
+              `${champ.name} defeated ${runnerUp?.name || 'their rivals'} to win the ${cupDisplayName} curtain-raiser (€${prizeM}M prize payout)!`,
+              `${champ.name} เอาชนะ ${runnerUp?.name || 'คู่แข่ง'} ผงาดคว้าแชมป์ ${cupDisplayName} ประเดิมฤดูกาล พร้อมรับเงินรางวัล €${prizeM}M!`
+            ),
+            isRead: false,
+            isImportant: champ.id === nextState.controlledClubId,
+            relatedClubId: champ.id,
+          },
+          ...nextState.inbox,
+        ],
+      };
     }
   }
 
@@ -2958,71 +3141,169 @@ export function processEndOfSeasonRollover(
   // 1b. Record Season Champions into Trophy Cabinet (trophyHistory) & Compute Annual Awards Gala (Ballon d'Or, Golden Boot, Golden Boy)
   const nextTrophyHistory: TrophyHistoryRecord[] = [...(state.trophyHistory || [])];
   let updatedManager = { ...state.manager };
+  const cleanCompletedSeason = state.currentSeason.replace('/', '');
 
+  const pushTrophyOnce = (
+    record: TrophyHistoryRecord,
+    reputationBoost: number
+  ) => {
+    if (!nextTrophyHistory.some((t) => t.id === record.id)) {
+      nextTrophyHistory.unshift(record);
+    }
+    if (record.winnerClubId === state.controlledClubId) {
+      const alreadyInCareer = updatedManager.careerStats.trophies.some(
+        (t) => t.season === record.season && t.competitionName === record.competitionName
+      );
+      if (!alreadyInCareer) {
+        updatedManager = {
+          ...updatedManager,
+          reputation: Math.min(99, updatedManager.reputation + reputationBoost),
+          careerStats: {
+            ...updatedManager.careerStats,
+            trophies: [
+              {
+                season: record.season,
+                competitionName: record.competitionName,
+                clubName: record.winnerClubName,
+              },
+              ...updatedManager.careerStats.trophies,
+            ],
+          },
+        };
+      }
+    }
+  };
+
+  // Record Champions for all 15 Domestic Leagues (Tier 1 & Tier 2)
   for (const league of Object.values(LEAGUES_CONFIG)) {
-    if (league.tier === 2) continue;
     const table = state.standings[league.id] || [];
     if (table[0]) {
       const winnerClub = updatedClubs[table[0].clubId];
       const runnerUpClub = table[1] ? updatedClubs[table[1].clubId] : undefined;
       if (winnerClub) {
-        nextTrophyHistory.unshift({
-          id: `trp_${state.currentSeason.replace('/', '')}_${league.id}`,
-          season: state.currentSeason,
-          competitionId: league.id,
-          competitionName: league.name,
-          winnerClubId: winnerClub.id,
-          winnerClubName: winnerClub.name,
-          runnerUpClubId: runnerUpClub?.id,
-          runnerUpClubName: runnerUpClub?.name,
-        });
-        if (winnerClub.id === state.controlledClubId) {
-          updatedManager = {
-            ...updatedManager,
-            reputation: Math.min(99, updatedManager.reputation + 5),
-            careerStats: {
-              ...updatedManager.careerStats,
-              trophies: [
-                {
-                  season: state.currentSeason,
-                  competitionName: league.name,
-                  clubName: winnerClub.name,
-                },
-                ...updatedManager.careerStats.trophies,
-              ],
-            },
-          };
-        }
+        pushTrophyOnce(
+          {
+            id: `trp_${cleanCompletedSeason}_${league.id}`,
+            season: state.currentSeason,
+            competitionId: league.id,
+            competitionName: league.name,
+            winnerClubId: winnerClub.id,
+            winnerClubName: winnerClub.name,
+            runnerUpClubId: runnerUpClub?.id,
+            runnerUpClubName: runnerUpClub?.name,
+          },
+          league.tier === 2 ? 3 : 5
+        );
       }
     }
   }
 
-  // Check UEFA Champions League Final or Top of Swiss Standings
-  const uclFinal = state.fixtures.find(
-    (f) => f.competitionId === 'UEFA_UCL' && f.uefaStage === 'FINAL' && f.status === 'Completed' && f.result
-  );
-  const uclTable = state.uefaStandings?.UEFA_UCL || [];
-  const uclWinnerId = uclFinal
-    ? getDomesticCupFixtureWinnerId(uclFinal)
-    : uclTable[0]?.clubId || 'club_esp_ll_1';
-  const uclRunnerUpId = uclFinal
-    ? uclFinal.homeClubId === uclWinnerId
-      ? uclFinal.awayClubId
-      : uclFinal.homeClubId
-    : uclTable[1]?.clubId || 'club_eng_pl_2';
-  const uclWinnerClub = uclWinnerId ? updatedClubs[uclWinnerId] : undefined;
-  const uclRunnerUpClub = uclRunnerUpId ? updatedClubs[uclRunnerUpId] : undefined;
-  if (uclWinnerClub) {
-    nextTrophyHistory.unshift({
-      id: `trp_${state.currentSeason.replace('/', '')}_UEFA_UCL`,
-      season: state.currentSeason,
-      competitionId: 'UEFA_UCL',
-      competitionName: 'UEFA Champions League',
-      winnerClubId: uclWinnerClub.id,
-      winnerClubName: uclWinnerClub.name,
-      runnerUpClubId: uclRunnerUpClub?.id,
-      runnerUpClubName: uclRunnerUpClub?.name,
-    });
+  // Record UEFA Club Competitions (UEFA_UCL, UEFA_UEL, UEFA_UECL)
+  let uclWinnerClub: Club | undefined;
+  for (const uefaId of ['UEFA_UCL', 'UEFA_UEL', 'UEFA_UECL'] as UefaCompetitionId[]) {
+    const uefaCfg = UEFA_COMPETITIONS_CONFIG[uefaId];
+    const uefaFinal = state.fixtures.find(
+      (f) =>
+        f.competitionId === uefaId &&
+        f.seasonId === state.currentSeason &&
+        f.uefaStage === 'FINAL' &&
+        f.status === 'Completed' &&
+        f.result
+    );
+    const uefaTable = state.uefaStandings?.[uefaId] || [];
+    const winId = uefaFinal
+      ? getDomesticCupFixtureWinnerId(uefaFinal)
+      : uefaTable[0]?.clubId || (uefaId === 'UEFA_UCL' ? 'club_esp_ll_1' : undefined);
+    const runId = uefaFinal
+      ? uefaFinal.homeClubId === winId
+        ? uefaFinal.awayClubId
+        : uefaFinal.homeClubId
+      : uefaTable[1]?.clubId;
+    const winClub = winId ? updatedClubs[winId] : undefined;
+    const runClub = runId ? updatedClubs[runId] : undefined;
+    if (uefaId === 'UEFA_UCL') {
+      uclWinnerClub = winClub;
+    }
+    if (winClub) {
+      pushTrophyOnce(
+        {
+          id: `trp_${cleanCompletedSeason}_${uefaId}`,
+          season: state.currentSeason,
+          competitionId: uefaId,
+          competitionName: uefaCfg.name,
+          winnerClubId: winClub.id,
+          winnerClubName: winClub.name,
+          runnerUpClubId: runClub?.id,
+          runnerUpClubName: runClub?.name,
+        },
+        uefaId === 'UEFA_UCL' ? 8 : uefaId === 'UEFA_UEL' ? 5 : 4
+      );
+    }
+  }
+
+  // Record All 10 Primary National Cups, 3 League Cups, and 10 Super Cups + Track UEFA Cup Qualifiers
+  const cupWinnersByCountry: Partial<Record<string, string>> = {};
+  const leagueCupWinnersByCountry: Partial<Record<string, string>> = {};
+
+  for (const cupMeta of Object.values(CUP_COMPETITIONS_META)) {
+    const cupFixtures = state.fixtures.filter(
+      (f) => f.competitionId === cupMeta.id && f.seasonId === state.currentSeason
+    );
+    const completedFinal = cupFixtures.find(
+      (f) =>
+        (f.uefaStage === 'FINAL' || f.cupRound === 'FINAL') &&
+        f.status === 'Completed' &&
+        f.result
+    );
+
+    let winId: string | null = completedFinal
+      ? getDomesticCupFixtureWinnerId(completedFinal)
+      : null;
+    let runId: string | undefined = completedFinal
+      ? completedFinal.homeClubId === winId
+        ? completedFinal.awayClubId
+        : completedFinal.homeClubId
+      : undefined;
+
+    // Fallback if a cup didn't reach a completed FINAL fixture (e.g. fast-forwarded test rollover)
+    if (!winId && cupFixtures.length > 0) {
+      const completedInCup = cupFixtures.filter((f) => f.status === 'Completed' && f.result);
+      if (completedInCup.length > 0) {
+        const lastCompleted = completedInCup[completedInCup.length - 1];
+        winId = getDomesticCupFixtureWinnerId(lastCompleted);
+        runId =
+          lastCompleted.homeClubId === winId
+            ? lastCompleted.awayClubId
+            : lastCompleted.homeClubId;
+      } else {
+        winId = cupFixtures[0].homeClubId;
+        runId = cupFixtures[0].awayClubId;
+      }
+    }
+
+    const winClub = winId ? updatedClubs[winId] : undefined;
+    const runClub = runId ? updatedClubs[runId] : undefined;
+    if (winClub) {
+      if (cupMeta.category === 'PRIMARY_CUP') {
+        cupWinnersByCountry[cupMeta.countryId] = winClub.id;
+      } else if (cupMeta.category === 'LEAGUE_CUP') {
+        leagueCupWinnersByCountry[cupMeta.countryId] = winClub.id;
+      }
+
+      pushTrophyOnce(
+        {
+          id: `trp_${cleanCompletedSeason}_${cupMeta.id}`,
+          season: state.currentSeason,
+          competitionId: cupMeta.id,
+          competitionName: cupMeta.name,
+          winnerClubId: winClub.id,
+          winnerClubName: winClub.name,
+          runnerUpClubId: runClub?.id,
+          runnerUpClubName: runClub?.name,
+        },
+        cupMeta.category === 'PRIMARY_CUP' ? 4 : cupMeta.category === 'LEAGUE_CUP' ? 3 : 2
+      );
+    }
   }
 
   // Compute Annual Awards Gala (Ballon d'Or, European Golden Boot, European Golden Boy, Manager of the Season)
@@ -3226,18 +3507,47 @@ export function processEndOfSeasonRollover(
     nextFixtures = [...nextFixtures, ...sched];
 
     if (league.tier !== 2) {
+      const countryClubs = Object.values(updatedClubs).filter(
+        (c) => c.countryId === league.countryId
+      );
       const cupFixtures = generateInitialDomesticCupFixtures(
         league.cupId,
-        clubsInLeague,
+        countryClubs,
         nextSeasonStr,
-        `${nextYear}-10-28`
+        undefined,
+        state.controlledClubId
       );
       nextFixtures = [...nextFixtures, ...cupFixtures];
+
+      if (league.leagueCupId) {
+        const leagueCupFixtures = generateInitialDomesticCupFixtures(
+          league.leagueCupId,
+          countryClubs,
+          nextSeasonStr,
+          undefined,
+          state.controlledClubId
+        );
+        nextFixtures = [...nextFixtures, ...leagueCupFixtures];
+      }
     }
   }
 
-  // 3b. Seed 3-Tier European Cups (UEFA_UCL, UEFA_UEL, UEFA_UECL) from final standings (Checkpoint 18)
-  const uefaQualified = selectUefaQualifiedClubs(updatedClubs, state.standings);
+  // Generate 9 National Super Cups (Aug 10) + UEFA Super Cup (Aug 12) for nextSeasonStr
+  const nextSuperCupFixtures = generateSeasonSuperCupFixtures(
+    nextSeasonStr,
+    nextYear,
+    updatedClubs,
+    nextTrophyHistory
+  );
+  nextFixtures = [...nextFixtures, ...nextSuperCupFixtures];
+
+  // 3b. Seed 3-Tier European Cups (UEFA_UCL, UEFA_UEL, UEFA_UECL) from final standings + Cup & League Cup Winners!
+  const uefaQualified = selectUefaQualifiedClubs(
+    updatedClubs,
+    state.standings,
+    cupWinnersByCountry,
+    leagueCupWinnersByCountry
+  );
   const nextUefaPots: Record<UefaCompetitionId, string[][]> = {
     UEFA_UCL: buildUefaFourPots(uefaQualified.UEFA_UCL, updatedClubs),
     UEFA_UEL: buildUefaFourPots(uefaQualified.UEFA_UEL, updatedClubs),
@@ -3508,7 +3818,8 @@ function buildSeasonBaseFixturesForRehydration(
   randomSeed: number,
   seasonStr: string,
   clubs: Record<string, Club>,
-  uefaPots: Record<UefaCompetitionId, string[][]>
+  uefaPots: Record<UefaCompetitionId, string[][]>,
+  trophyHistory?: TrophyHistoryRecord[]
 ): Fixture[] {
   const startYear = Number(seasonStr.slice(0, 4)) || 2025;
   const rng = new SeededRNG(randomSeed + startYear);
@@ -3527,13 +3838,26 @@ function buildSeasonBaseFixturesForRehydration(
     nextFixtures = [...nextFixtures, ...sched];
 
     if (league.tier !== 2) {
+      const countryClubs = Object.values(clubs).filter(
+        (c) => c.countryId === league.countryId
+      );
       const cupFixtures = generateInitialDomesticCupFixtures(
         league.cupId,
-        clubsInLeague,
+        countryClubs,
         seasonStr,
-        `${startYear}-10-28`
+        `${startYear}-10-22`
       );
       nextFixtures = [...nextFixtures, ...cupFixtures];
+
+      if (league.leagueCupId) {
+        const lcFixtures = generateInitialDomesticCupFixtures(
+          league.leagueCupId,
+          countryClubs,
+          seasonStr,
+          `${startYear}-09-24`
+        );
+        nextFixtures = [...nextFixtures, ...lcFixtures];
+      }
     }
   }
 
@@ -3543,6 +3867,14 @@ function buildSeasonBaseFixturesForRehydration(
       nextFixtures = [...nextFixtures, ...swissFixtures];
     }
   }
+
+  const nextSuperCupFixtures = generateSeasonSuperCupFixtures(
+    seasonStr,
+    startYear,
+    clubs,
+    trophyHistory
+  );
+  nextFixtures = [...nextFixtures, ...nextSuperCupFixtures];
 
   const nextEuroFixtures = generateEuropeanNationsCupFixtures(
     seasonStr,
@@ -3651,7 +3983,8 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
           compacted.randomSeed,
           compacted.currentSeason,
           compacted.clubs,
-          activeUefaPots
+          activeUefaPots,
+          compacted.trophyHistory
         );
   const seasonBaseFixtureIds = new Set(seasonBaseFixtures.map((bf) => bf.id));
 
@@ -3661,7 +3994,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
 
   for (const f of compacted.fixtures) {
     if (f.status === 'Scheduled') {
-      if (!seasonBaseFixtureIds.has(f.id) && scheduledExtraFixtures.length < 120) {
+      if (!seasonBaseFixtureIds.has(f.id) && scheduledExtraFixtures.length < 160) {
         scheduledExtraFixtures.push(f);
       }
       continue;
@@ -3675,6 +4008,8 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
       if (
         f.competitionId === userLeagueId ||
         String(f.competitionId).endsWith('_CUP') ||
+        String(f.competitionId).endsWith('_LC') ||
+        String(f.competitionId).endsWith('_SC') ||
         String(f.competitionId).startsWith('UEFA_') ||
         Object.keys(completedFixtures).length < 600
       ) {
@@ -3806,7 +4141,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     transactions: compacted.transactions.slice(0, 30),
     inbox: compacted.inbox.slice(0, 25),
     mentoringGroups: (compacted.mentoringGroups || []).slice(0, 20),
-    trophyHistory: (compacted.trophyHistory || []).slice(0, 40),
+    trophyHistory: (compacted.trophyHistory || []).slice(0, 120),
     seasonAwardsHistory: (compacted.seasonAwardsHistory || []).slice(0, 15),
     controlledNationalTeamCode: compacted.controlledNationalTeamCode || null,
     scenarioChallenge: compacted.scenarioChallenge || 'STANDARD',
@@ -3919,7 +4254,8 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
           docData.randomSeed,
           docData.season,
           rehydratedClubs,
-          rehydratedUefaPots
+          rehydratedUefaPots,
+          cs.trophyHistory
         );
 
   const completedFixturesMap = cs.completedFixtures || {};

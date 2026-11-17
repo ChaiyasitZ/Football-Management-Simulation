@@ -229,6 +229,13 @@ export const UEFA_KNOCKOUT_DATES: Record<
   Exclude<UefaStage, 'LEAGUE_PHASE'>,
   { mdLeg1: number; dateLeg1: string; mdLeg2?: number; dateLeg2?: string; labelTh: string }
 > = {
+  R32: {
+    mdLeg1: 9,
+    dateLeg1: '2026-02-11',
+    mdLeg2: 10,
+    dateLeg2: '2026-02-18',
+    labelTh: 'รอบ 32 ทีมสุดท้าย (Round of 32)',
+  },
   KPO: {
     mdLeg1: 9,
     dateLeg1: '2026-02-11',
@@ -273,7 +280,8 @@ export const UEFA_KNOCKOUT_DATES: Record<
 export function selectUefaQualifiedClubs(
   clubs: Record<string, Club>,
   standings?: Record<LeagueId, LeagueStanding[]>,
-  cupWinnersByLeague?: Partial<Record<LeagueId, string>>
+  cupWinnersByCountry?: Partial<Record<string, string>>,
+  leagueCupWinnersByCountry?: Partial<Record<string, string>>
 ): Record<UefaCompetitionId, string[]> {
   const ucl: string[] = [];
   const uel: string[] = [];
@@ -290,32 +298,32 @@ export function selectUefaQualifiedClubs(
 
     const usedInCountry = new Set<string>();
     const quotaCount = rule.totalPerCompetition;
-    const cupWinnerId = cupWinnersByLeague?.[rule.leagueId];
+    const primaryCupWinnerId =
+      cupWinnersByCountry?.[rule.countryCode] || cupWinnersByCountry?.[rule.leagueId];
+    const leagueCupWinnerId =
+      leagueCupWinnersByCountry?.[rule.countryCode] || leagueCupWinnersByCountry?.[rule.leagueId];
 
-    // 1. Pick UCL qualifiers (league top N + Cup Winner or next highest league position)
+    // 1. Pick UCL qualifiers (Top `quotaCount` clubs in the league table)
     const countryUcl: string[] = [];
     for (const cid of orderedClubIds) {
-      if (countryUcl.length >= rule.leagueSpots) break;
-      countryUcl.push(cid);
-      usedInCountry.add(cid);
-    }
-    if (cupWinnerId && !usedInCountry.has(cupWinnerId) && clubs[cupWinnerId]?.leagueId === rule.leagueId) {
-      countryUcl.push(cupWinnerId);
-      usedInCountry.add(cupWinnerId);
-    } else {
-      // Cup winner already qualified via league position -> pass down to next league rank!
-      for (const cid of orderedClubIds) {
-        if (countryUcl.length >= quotaCount) break;
-        if (!usedInCountry.has(cid)) {
-          countryUcl.push(cid);
-          usedInCountry.add(cid);
-        }
+      if (countryUcl.length >= quotaCount) break;
+      if (!usedInCountry.has(cid)) {
+        countryUcl.push(cid);
+        usedInCountry.add(cid);
       }
     }
     ucl.push(...countryUcl);
 
-    // 2. Pick UEL qualifiers (next `quotaCount` clubs in the league)
+    // 2. Pick UEL qualifiers (Primary National Cup Winner if not in UCL + next highest league clubs)
     const countryUel: string[] = [];
+    if (
+      primaryCupWinnerId &&
+      !usedInCountry.has(primaryCupWinnerId) &&
+      clubs[primaryCupWinnerId]?.countryId === rule.countryCode
+    ) {
+      countryUel.push(primaryCupWinnerId);
+      usedInCountry.add(primaryCupWinnerId);
+    }
     for (const cid of orderedClubIds) {
       if (countryUel.length >= quotaCount) break;
       if (!usedInCountry.has(cid)) {
@@ -325,8 +333,16 @@ export function selectUefaQualifiedClubs(
     }
     uel.push(...countryUel);
 
-    // 3. Pick UECL qualifiers (next `quotaCount` clubs in the league)
+    // 3. Pick UECL qualifiers (League Cup Winner if not in UCL/UEL + next highest league clubs)
     const countryUecl: string[] = [];
+    if (
+      leagueCupWinnerId &&
+      !usedInCountry.has(leagueCupWinnerId) &&
+      clubs[leagueCupWinnerId]?.countryId === rule.countryCode
+    ) {
+      countryUecl.push(leagueCupWinnerId);
+      usedInCountry.add(leagueCupWinnerId);
+    }
     for (const cid of orderedClubIds) {
       if (countryUecl.length >= quotaCount) break;
       if (!usedInCountry.has(cid)) {

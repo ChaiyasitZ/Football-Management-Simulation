@@ -10,11 +10,17 @@ import {
   Player,
   PositionGroup,
   PreSeasonTourRegion,
+  SuperCupId,
   UefaCompetitionId,
   WorldState,
 } from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
-import { getLeaguePlayerLeaders } from '../engine/leagueEngine';
+import {
+  CUP_COMPETITIONS_META,
+  getCupRoundPrizeMoney,
+  getDomesticCupFixtureWinnerId,
+  getLeaguePlayerLeaders,
+} from '../engine/leagueEngine';
 import {
   getUefaKnockoutBracketSummary,
   UEFA_COMPETITIONS_CONFIG,
@@ -3077,9 +3083,11 @@ export const CompetitionsAndScheduleView: React.FC<{
 
   const [compCategory, setCompCategory] = useState<'domestic' | 'cups' | 'uefa' | 'data_hub'>('domestic');
   const [selectedLeague, setSelectedLeague] = useState<LeagueId>(myClub.leagueId);
-  const [selectedCup, setSelectedCup] = useState<CupId>(
+  const [cupTierFilter, setCupTierFilter] = useState<'PRIMARY_CUP' | 'LEAGUE_CUP' | 'SUPER_CUP'>('PRIMARY_CUP');
+  const [selectedCup, setSelectedCup] = useState<CupId | SuperCupId>(
     LEAGUES_CONFIG[myClub.leagueId]?.cupId || 'ENG_CUP'
   );
+  const [cupDisplayMode, setCupDisplayMode] = useState<'bracket_tree' | 'fixtures'>('bracket_tree');
   const [selectedMatchday, setSelectedMatchday] = useState<number>(1);
   const [subView, setSubView] = useState<'table' | 'fixtures' | 'stats'>(
     initialMode === 'schedule' ? 'fixtures' : 'table'
@@ -3171,6 +3179,7 @@ export const CompetitionsAndScheduleView: React.FC<{
           </button>
           <button
             type="button"
+            data-testid="comp-category-cups-btn"
             onClick={() => setCompCategory('cups')}
             className={`px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200 cursor-pointer ${
               compCategory === 'cups'
@@ -3178,7 +3187,10 @@ export const CompetitionsAndScheduleView: React.FC<{
                 : 'bg-slate-950 text-amber-300 hover:text-white border border-amber-500/40'
             }`}
           >
-            {tr('🏅 Domestic Knockout Cups (FA Cup, Copa del Rey, etc.)', '🏅 ฟุตบอลถ้วยน็อกเอาต์ในประเทศ (FA Cup, โกปา เดล เรย์ ฯลฯ)')}
+            {tr(
+              '🏅 Domestic Cups, League Cups & Super Cups (23 Trophies)',
+              '🏅 ฟุตบอลถ้วยในประเทศ, ลีกคัพ & ซูเปอร์คัพ (ครบ 23 ถ้วย)'
+            )}
           </button>
           <button
             type="button"
@@ -3641,109 +3653,469 @@ export const CompetitionsAndScheduleView: React.FC<{
           })()}
         </div>
       ) : compCategory === 'cups' ? (
-        <div className="space-y-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2">
-            {domesticCupsList.map((l) => (
-              <button
-                key={l.cupId}
-                type="button"
-                onClick={() => setSelectedCup(l.cupId)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-2 ${
-                  selectedCup === l.cupId
-                    ? 'bg-amber-500 text-slate-950'
-                    : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
-                }`}
-              >
-                <CompetitionBadge competitionId={l.cupId} size="xs" />
-                <span>
-                  {l.countryFlag} {l.cupName}
-                </span>
-              </button>
-            ))}
-          </div>
+        (() => {
+          const allCupMetas = Object.values(CUP_COMPETITIONS_META);
+          const filteredCupMetas = allCupMetas.filter((m) => m.category === cupTierFilter);
+          const activeCupMeta =
+            CUP_COMPETITIONS_META[selectedCup] ||
+            filteredCupMetas[0] ||
+            CUP_COMPETITIONS_META.ENG_CUP;
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
-                <CompetitionBadge competitionId={selectedCup} size="md" />
-                <div>
-                  <h3 className="text-base font-display font-bold text-white">
-                    {domesticCupsList.find((l) => l.cupId === selectedCup)?.cupName} —{' '}
-                    {tr('Single-Leg Knockout Bracket (Extra Time & Penalties)', 'สายการแข่งขันน็อกเอาต์นัดเดียวรู้ผล (ต่อเวลาพิเศษ & ดวลจุดโทษ)')}
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    {tr(
-                      'Winners advance automatically from Round of 16 → Quarter-Finals → Semi-Finals → Grand Final (€3.50M Champion Prize).',
-                      'ผู้ชนะจะผ่านเข้าสู่รอบถัดไปอัตโนมัติ (รอบ 16 ทีม → รอบ 8 ทีม → รอบรองชนะเลิศ → รอบชิงชนะเลิศ เงินรางวัลแชมป์ €3.50M)'
-                    )}
-                  </p>
+          const cupSeasonFixtures = selectedCupFixtures.filter(
+            (f) => f.seasonId === world.currentSeason
+          );
+          const hasR32 =
+            cupSeasonFixtures.some((f) => (f.uefaStage || f.cupRound) === 'R32') ||
+            ['ENG_CUP', 'ESP_CUP', 'GER_CUP', 'ITA_CUP', 'FRA_CUP', 'ENG_LC'].includes(
+              selectedCup
+            );
+          const isSuperCup = activeCupMeta.category === 'SUPER_CUP';
+
+          const stageOrder: ('R32' | 'R16' | 'QF' | 'SF' | 'FINAL')[] = isSuperCup
+            ? ['FINAL']
+            : hasR32
+              ? ['R32', 'R16', 'QF', 'SF', 'FINAL']
+              : selectedCup === 'SCO_CUP' || selectedCup === 'SCO_LC'
+                ? ['QF', 'SF', 'FINAL']
+                : ['R16', 'QF', 'SF', 'FINAL'];
+
+          const expectedTiesByStage: Record<'R32' | 'R16' | 'QF' | 'SF' | 'FINAL', number> = {
+            R32: 16,
+            R16: 8,
+            QF: 4,
+            SF: 2,
+            FINAL: 1,
+          };
+
+          const stageTitleLabel = (st: 'R32' | 'R16' | 'QF' | 'SF' | 'FINAL') => {
+            if (st === 'R32') return tr('ROUND OF 32 (T1 + T2)', 'รอบ 32 ทีม (ลีกสูงสุด + ลีกรอง)');
+            if (st === 'R16') return tr('ROUND OF 16', 'รอบ 16 ทีมสุดท้าย');
+            if (st === 'QF') return tr('QUARTER-FINALS', 'รอบก่อนรองชนะเลิศ (8 ทีม)');
+            if (st === 'SF') return tr('SEMI-FINALS', 'รอบรองชนะเลิศ (4 ทีม)');
+            return isSuperCup
+              ? tr('SUPER CUP CURTAIN-RAISER FINAL', 'นัดชิงชนะเลิศ ซูเปอร์คัพ')
+              : tr('GRAND FINAL', 'รอบชิงชนะเลิศ (Grand Final)');
+          };
+
+          return (
+            <div className="space-y-4" data-testid="domestic-cups-hub">
+              {/* Sub-Category Switcher: Primary National Cups (10) | League Cups (3) | Super Cups (10) */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="cup-filter-primary-btn"
+                    onClick={() => {
+                      setCupTierFilter('PRIMARY_CUP');
+                      const userCup = LEAGUES_CONFIG[myClub.leagueId]?.cupId || 'ENG_CUP';
+                      setSelectedCup(userCup);
+                    }}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      cupTierFilter === 'PRIMARY_CUP'
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    <span>🏆 {tr('Primary National Cups (10)', 'ถ้วยหลักประจำชาติ (10 ถ้วย — FA Cup / Copa del Rey ฯลฯ)')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="cup-filter-league-cup-btn"
+                    onClick={() => {
+                      setCupTierFilter('LEAGUE_CUP');
+                      const userLc = LEAGUES_CONFIG[myClub.leagueId]?.leagueCupId || 'ENG_LC';
+                      setSelectedCup(userLc);
+                    }}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      cupTierFilter === 'LEAGUE_CUP'
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-950 text-emerald-300 hover:text-white border border-emerald-500/40'
+                    }`}
+                  >
+                    <span>🥈 {tr('Secondary League Cups (3 — Carabao / Allianz / SPFL)', 'ถ้วยลีกคัพ (3 ประเทศ — คาราบาวคัพ / โปรตุเกส / สกอตแลนด์)')}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="cup-filter-super-cup-btn"
+                    onClick={() => {
+                      setCupTierFilter('SUPER_CUP');
+                      const userSc = LEAGUES_CONFIG[myClub.leagueId]?.superCupId || 'ENG_SC';
+                      setSelectedCup(userSc);
+                    }}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      cupTierFilter === 'SUPER_CUP'
+                        ? 'bg-sky-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-950 text-sky-300 hover:text-white border border-sky-500/40'
+                    }`}
+                  >
+                    <span>🛡️ {tr('National & UEFA Super Cups (10)', 'ถ้วยซูเปอร์คัพเปิดฤดูกาล (9 ชาติ + UEFA Super Cup)')}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="cup-mode-bracket-tree-btn"
+                    onClick={() => setCupDisplayMode('bracket_tree')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                      cupDisplayMode === 'bracket_tree'
+                        ? 'bg-amber-500/20 border border-amber-400 text-amber-300'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    🌳 {tr('Visual Bracket Tree', 'ผังสายการแข่งขัน (Bracket Tree)')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="cup-mode-fixtures-btn"
+                    onClick={() => setCupDisplayMode('fixtures')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                      cupDisplayMode === 'fixtures'
+                        ? 'bg-amber-500/20 border border-amber-400 text-amber-300'
+                        : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    📅 {tr('Round Match List', 'รายการแข่งรายรอบ')}
+                  </button>
                 </div>
               </div>
-              <TrophyArtwork
-                competitionId={selectedCup}
-                size="md"
-                showLabel
-                customLabel={domesticCupsList.find((l) => l.cupId === selectedCup)?.cupName}
-              />
-            </div>
 
-            {(['R16', 'QF', 'SF', 'FINAL'] as const).map((stage) => {
-              const stageFixes = selectedCupFixtures.filter((f) => f.uefaStage === stage);
-              if (stageFixes.length === 0) return null;
-              return (
-                <div key={stage} className="space-y-2">
-                  <div className="text-xs font-mono font-bold text-amber-400">
-                    {stage === 'R16'
-                      ? tr('ROUND OF 16', 'รอบ 16 ทีมสุดท้าย (Round of 16)')
-                      : stage === 'QF'
-                        ? tr('QUARTER-FINALS', 'รอบก่อนรองชนะเลิศ (Quarter-Finals)')
-                        : stage === 'SF'
-                          ? tr('SEMI-FINALS', 'รอบรองชนะเลิศ (Semi-Finals)')
-                          : tr('GRAND FINAL', 'รอบชิงชนะเลิศ (Grand Final)')}
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {stageFixes.map((fix) => {
-                      const h = world.clubs[fix.homeClubId];
-                      const a = world.clubs[fix.awayClubId];
-                      return (
-                        <div
-                          key={fix.id}
-                          className="flex items-center justify-between px-4 py-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
-                        >
-                          <div className="flex items-center gap-2 w-40 truncate">
-                            <ClubBadge club={h} size="xs" />
-                            <span className="font-medium text-white truncate">{h?.name}</span>
-                          </div>
-                          <div className="text-center font-mono">
-                            {fix.status === 'Completed' && fix.result ? (
-                              <div>
-                                <span className="px-2.5 py-1 rounded bg-slate-900 font-bold text-emerald-400">
-                                  {fix.result.homeGoals} - {fix.result.awayGoals}
-                                </span>
-                                {fix.result.penaltyShootout && (
-                                  <div className="text-[10px] text-amber-400 mt-0.5">
-                                    Pens: {fix.result.penaltyShootout.homePenalties}-
-                                    {fix.result.penaltyShootout.awayPenalties}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-slate-400">{fix.kickoffDate}</span>
+              {/* Competition Selector Pills with Verified FotMob Logos */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2">
+                {filteredCupMetas.map((cMeta) => (
+                  <button
+                    key={cMeta.id}
+                    type="button"
+                    data-testid={`select-cup-${cMeta.id}`}
+                    onClick={() => setSelectedCup(cMeta.id)}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-2 transition-all ${
+                      selectedCup === cMeta.id
+                        ? 'bg-amber-500 text-slate-950 shadow-sm'
+                        : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
+                    }`}
+                  >
+                    <CompetitionBadge competitionId={cMeta.id} size="xs" />
+                    <span>
+                      {cMeta.countryFlag} {cMeta.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Active Cup Header + Prize Money Breakdown + UEFA Qualification Badge */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+                <div className="flex items-start justify-between gap-4 border-b border-slate-800/80 pb-4">
+                  <div className="flex items-start gap-4 flex-1 min-w-0">
+                    <CompetitionBadge competitionId={selectedCup} size="lg" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-lg font-display font-bold text-white">
+                          {activeCupMeta.name}
+                        </h3>
+                        {activeCupMeta.qualifiesFor && (
+                          <span className="px-2.5 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-mono font-bold">
+                            🎟️{' '}
+                            {activeCupMeta.qualifiesFor === 'UEFA_UEL'
+                              ? tr('Winner → UEFA Europa League', 'แชมป์ได้สิทธิ์ลุย UEFA Europa League')
+                              : tr('Winner → UEFA Conference League', 'แชมป์ได้สิทธิ์ลุย UEFA Conference League')}
+                          </span>
+                        )}
+                        {hasR32 && !isSuperCup && (
+                          <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-mono">
+                            ⚡ {tr('Multi-Tier Draw (Tier 1 + Tier 2 Clubs)', 'จับสลากรวมลีกสูงสุด + ลีกรอง (Giant-Killing)')}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">
+                        {isSuperCup
+                          ? tr(
+                              'Annual single-leg curtain-raiser clash between the reigning League Champion and Cup Winner (Extra Time & Penalties if level).',
+                              'ศึกชิงโล่เปิดฤดูกาลนัดเดียวรู้ผลระหว่างแชมป์ลีกปะทะแชมป์บอลถ้วย (หากเสมอต่อเวลาพิเศษและดวลจุดโทษ)'
+                            )
+                          : tr(
+                              'Single-leg knockout format with Extra Time & Penalty Shootouts. Lower-division clubs upsetting top-flight opponents trigger a Giant-Killing reputation & board confidence boost!',
+                              'แข่งขันน็อกเอาต์นัดเดียวรู้ผล (ต่อเวลาพิเศษและดวลจุดโทษ) หากทีมลีกรองล้มทีมลีกสูงสุดจะได้โบนัส Giant-Killing เพิ่มชื่อเสียงและความเชื่อมั่นบอร์ด!'
                             )}
+                      </p>
+                      {/* Round-by-Round Prize Money Strip */}
+                      <div className="flex flex-wrap items-center gap-2 mt-2.5">
+                        {stageOrder.map((st) => {
+                          const prize = getCupRoundPrizeMoney(selectedCup, st);
+                          const prizeLabel =
+                            prize >= 1_000_000
+                              ? `€${(prize / 1_000_000).toFixed(2)}M`
+                              : `€${Math.round(prize / 1_000)}K`;
+                          return (
+                            <span
+                              key={st}
+                              className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300"
+                            >
+                              <strong className="text-amber-400">{st}:</strong> +{prizeLabel}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="shrink-0">
+                    <TrophyArtwork
+                      competitionId={selectedCup}
+                      size="lg"
+                      showLabel
+                      customLabel={activeCupMeta.shortName}
+                    />
+                  </div>
+                </div>
+
+                {/* MODE 1: VISUAL KNOCKOUT BRACKET TREE (R32 -> R16 -> QF -> SF -> FINAL) */}
+                {cupDisplayMode === 'bracket_tree' ? (
+                  <div
+                    data-testid="cup-visual-bracket-tree"
+                    className="overflow-x-auto pb-2"
+                  >
+                    <div
+                      className={`grid gap-3 min-w-[780px] ${
+                        stageOrder.length === 5
+                          ? 'grid-cols-5'
+                          : stageOrder.length === 4
+                            ? 'grid-cols-4'
+                            : stageOrder.length === 3
+                              ? 'grid-cols-3'
+                              : 'grid-cols-1 max-w-xl mx-auto'
+                      }`}
+                    >
+                      {stageOrder.map((st) => {
+                        const stageFixes = cupSeasonFixtures
+                          .filter((f) => (f.uefaStage || f.cupRound) === st)
+                          .sort((a, b) => (a.tieIndex ?? 0) - (b.tieIndex ?? 0));
+                        const expectedCount = expectedTiesByStage[st];
+                        const prize = getCupRoundPrizeMoney(selectedCup, st);
+                        const prizeStr =
+                          prize >= 1_000_000
+                            ? `€${(prize / 1_000_000).toFixed(2)}M`
+                            : `€${Math.round(prize / 1_000)}K`;
+
+                        return (
+                          <div
+                            key={st}
+                            data-testid={`cup-bracket-col-${st}`}
+                            className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5"
+                          >
+                            <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                              <div className="min-w-0">
+                                <div className="text-xs font-mono font-extrabold text-amber-400 truncate">
+                                  {st === 'FINAL' ? `🏆 ${stageTitleLabel(st)}` : stageTitleLabel(st)}
+                                </div>
+                                <div className="text-[10px] font-mono text-slate-400">
+                                  {stageFixes[0]?.kickoffDate || tr('Upcoming Draw', 'รอจับสลากรอบถัดไป')}
+                                </div>
+                              </div>
+                              <span className="shrink-0 whitespace-nowrap px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono">
+                                +{prizeStr}
+                              </span>
+                            </div>
+
+                            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-0.5">
+                              {stageFixes.length > 0
+                                ? stageFixes.map((fix, idx) => {
+                                    const h = world.clubs[fix.homeClubId];
+                                    const a = world.clubs[fix.awayClubId];
+                                    const hTier = h ? LEAGUES_CONFIG[h.leagueId]?.tier || 1 : 1;
+                                    const aTier = a ? LEAGUES_CONFIG[a.leagueId]?.tier || 1 : 1;
+                                    const isCrossTierTie = hTier !== aTier;
+                                    const winnerId = getDomesticCupFixtureWinnerId(fix);
+                                    const winClub = winnerId ? world.clubs[winnerId] : null;
+                                    const isGiantKillingResult =
+                                      Boolean(winClub) &&
+                                      (LEAGUES_CONFIG[winClub!.leagueId]?.tier || 1) === 2 &&
+                                      isCrossTierTie;
+                                    const involvesUser =
+                                      fix.homeClubId === myClub.id || fix.awayClubId === myClub.id;
+
+                                    return (
+                                      <div
+                                        key={fix.id}
+                                        className={`p-2.5 rounded-lg border text-[11px] space-y-1.5 ${
+                                          involvesUser
+                                            ? 'bg-emerald-950/30 border-emerald-500/60'
+                                            : isGiantKillingResult
+                                              ? 'bg-amber-950/30 border-amber-500/60'
+                                              : 'bg-slate-900/90 border-slate-800'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                                          <span>Tie #{idx + 1}</span>
+                                          {isGiantKillingResult ? (
+                                            <span className="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 font-bold">
+                                              ⚡ GIANT-KILLING!
+                                            </span>
+                                          ) : isCrossTierTie ? (
+                                            <span className="text-amber-300">
+                                              ⚡ D1 vs D2 Clash
+                                            </span>
+                                          ) : (
+                                            <span>{fix.kickoffDate}</span>
+                                          )}
+                                        </div>
+
+                                        {/* Home Club Row */}
+                                        <div
+                                          className={`flex items-center justify-between gap-1.5 ${
+                                            winnerId === fix.homeClubId
+                                              ? 'text-emerald-300 font-bold'
+                                              : 'text-slate-200'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                            <ClubBadge club={h} size="xs" />
+                                            <span className="truncate">{h?.shortName || h?.name}</span>
+                                            {hTier === 2 && (
+                                              <span className="px-1 rounded bg-slate-800 text-[9px] font-mono text-amber-300">
+                                                D2
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className="font-mono">
+                                            {fix.status === 'Completed' && fix.result
+                                              ? fix.result.homeGoals
+                                              : '-'}
+                                          </span>
+                                        </div>
+
+                                        {/* Away Club Row */}
+                                        <div
+                                          className={`flex items-center justify-between gap-1.5 ${
+                                            winnerId === fix.awayClubId
+                                              ? 'text-emerald-300 font-bold'
+                                              : 'text-slate-200'
+                                          }`}
+                                        >
+                                          <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                            <ClubBadge club={a} size="xs" />
+                                            <span className="truncate">{a?.shortName || a?.name}</span>
+                                            {aTier === 2 && (
+                                              <span className="px-1 rounded bg-slate-800 text-[9px] font-mono text-amber-300">
+                                                D2
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className="font-mono">
+                                            {fix.status === 'Completed' && fix.result
+                                              ? fix.result.awayGoals
+                                              : '-'}
+                                          </span>
+                                        </div>
+
+                                        {fix.result?.penaltyShootout && (
+                                          <div className="text-[10px] font-mono text-amber-400 text-right">
+                                            Pens: {fix.result.penaltyShootout.homePenalties}-
+                                            {fix.result.penaltyShootout.awayPenalties}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                : Array.from({ length: expectedCount }, (_, idx) => (
+                                    <div
+                                      key={`proj_${st}_${idx}`}
+                                      className="p-2.5 rounded-lg bg-slate-900/45 border border-dashed border-slate-800 text-[11px] text-slate-400 space-y-1 font-mono"
+                                    >
+                                      <div className="text-[10px] text-slate-400">
+                                        {st} Tie #{idx + 1}
+                                      </div>
+                                      <div className="truncate">
+                                        • Winner Prev Tie #{idx * 2 + 1}
+                                      </div>
+                                      <div className="truncate">
+                                        • Winner Prev Tie #{idx * 2 + 2}
+                                      </div>
+                                    </div>
+                                  ))}
+                            </div>
                           </div>
-                          <div className="flex items-center justify-end gap-2 w-40 truncate">
-                            <span className="font-medium text-white truncate">{a?.name}</span>
-                            <ClubBadge club={a} size="xs" />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  /* MODE 2: DETAILED ROUND-BY-ROUND MATCH LIST */
+                  <div className="space-y-4">
+                    {stageOrder.map((stage) => {
+                      const stageFixes = cupSeasonFixtures.filter(
+                        (f) => (f.uefaStage || f.cupRound) === stage
+                      );
+                      if (stageFixes.length === 0) return null;
+                      return (
+                        <div key={stage} className="space-y-2">
+                          <div className="text-xs font-mono font-bold text-amber-400">
+                            {stageTitleLabel(stage)}
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                            {stageFixes.map((fix) => {
+                              const h = world.clubs[fix.homeClubId];
+                              const a = world.clubs[fix.awayClubId];
+                              const hTier = h ? LEAGUES_CONFIG[h.leagueId]?.tier || 1 : 1;
+                              const aTier = a ? LEAGUES_CONFIG[a.leagueId]?.tier || 1 : 1;
+                              return (
+                                <div
+                                  key={fix.id}
+                                  className="flex items-center justify-between px-4 py-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+                                >
+                                  <div className="flex items-center gap-2 w-44 truncate">
+                                    <ClubBadge club={h} size="xs" />
+                                    <span className="font-medium text-white truncate">
+                                      {h?.name}
+                                    </span>
+                                    {hTier === 2 && (
+                                      <span className="px-1 rounded bg-slate-800 text-[9px] font-mono text-amber-300">
+                                        D2
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="text-center font-mono">
+                                    {fix.status === 'Completed' && fix.result ? (
+                                      <div>
+                                        <span className="px-2.5 py-1 rounded bg-slate-900 font-bold text-emerald-400">
+                                          {fix.result.homeGoals} - {fix.result.awayGoals}
+                                        </span>
+                                        {fix.result.penaltyShootout && (
+                                          <div className="text-[10px] text-amber-400 mt-0.5">
+                                            Pens: {fix.result.penaltyShootout.homePenalties}-
+                                            {fix.result.penaltyShootout.awayPenalties}
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-slate-400">{fix.kickoffDate}</span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center justify-end gap-2 w-44 truncate">
+                                    {aTier === 2 && (
+                                      <span className="px-1 rounded bg-slate-800 text-[9px] font-mono text-amber-300">
+                                        D2
+                                      </span>
+                                    )}
+                                    <span className="font-medium text-white truncate">
+                                      {a?.name}
+                                    </span>
+                                    <ClubBadge club={a} size="xs" />
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                )}
+              </div>
+            </div>
+          );
+        })()
       ) : compCategory === 'uefa' ? (
         <div className="space-y-4">
           {/* 3 UEFA Competitions Selector + 4 Sub-Tabs */}

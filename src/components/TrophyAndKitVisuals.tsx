@@ -1,21 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { Club, CupId, LeagueId, UefaCompetitionId } from '../types/game';
+import { Club, CupId, LeagueId, SuperCupId, UefaCompetitionId } from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { UEFA_COMPETITIONS_CONFIG } from '../engine/uefaEngine';
 
 /* ============================================================================
-   1. AUTHENTIC COMPETITION & LEAGUE EMBLEMS (15 Leagues, 3 UEFA, 10 Cups, Global)
+   1. AUTHENTIC COMPETITION & LEAGUE EMBLEMS (15 Leagues, 4 UEFA, 13 Domestic Cups, 9 Super Cups, Global)
 ============================================================================ */
 
 export type CompetitionVisualId =
   | LeagueId
   | UefaCompetitionId
   | CupId
+  | SuperCupId
   | 'FIFA_CWC'
+  | 'GLB_CWC'
   | 'EURO_NATIONS'
+  | 'INT_EURO'
   | 'WORLD_CUP';
 
-interface CompStyleMeta {
+export interface CompStyleMeta {
   shortCode: string;
   title: string;
   subtitle: string;
@@ -26,7 +29,7 @@ interface CompStyleMeta {
   fotmobLogoUrl?: string;
 }
 
-const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
+export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   // UEFA Competitions
   UEFA_UCL: {
     shortCode: 'UCL',
@@ -57,6 +60,16 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#4ade80',
     motif: 'uecl_spire',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/10216.png',
+  },
+  UEFA_USC: {
+    shortCode: 'USC',
+    title: 'UEFA Super Cup',
+    subtitle: 'European Champions Curtain-Raiser',
+    primary: '#0f172a',
+    secondary: '#0284c7',
+    accent: '#fde047',
+    motif: 'starball',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/74.png',
   },
   // Top 5 Leagues
   ENG_PL: {
@@ -211,11 +224,11 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     motif: 'ligue_1',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/110.png',
   },
-  // Domestic Cups
+  // Primary Domestic National Cups (10)
   ENG_CUP: {
     shortCode: 'FA CUP',
     title: 'Emirates FA Cup',
-    subtitle: 'English Knockout Cup',
+    subtitle: 'English Primary Knockout Cup',
     primary: '#7f1d1d',
     secondary: '#dc2626',
     accent: '#ffffff',
@@ -225,7 +238,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   ESP_CUP: {
     shortCode: 'COPA',
     title: 'Copa del Rey',
-    subtitle: 'Spanish Royal Cup',
+    subtitle: 'Spanish Royal Knockout Cup',
     primary: '#78350f',
     secondary: '#d97706',
     accent: '#fef08a',
@@ -235,7 +248,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   GER_CUP: {
     shortCode: 'DFB-POKAL',
     title: 'DFB-Pokal',
-    subtitle: 'German Knockout Cup',
+    subtitle: 'German National Knockout Cup',
     primary: '#064e3b',
     secondary: '#ca8a04',
     accent: '#fde047',
@@ -245,7 +258,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   ITA_CUP: {
     shortCode: 'COPPA',
     title: 'Coppa Italia Frecciarossa',
-    subtitle: 'Italian National Cup',
+    subtitle: 'Italian National Knockout Cup',
     primary: '#0c4a6e',
     secondary: '#dc2626',
     accent: '#22c55e',
@@ -255,7 +268,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   FRA_CUP: {
     shortCode: 'CDF',
     title: 'Coupe de France',
-    subtitle: 'French Knockout Cup',
+    subtitle: 'French National Knockout Cup',
     primary: '#172554',
     secondary: '#2563eb',
     accent: '#ef4444',
@@ -265,7 +278,7 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   POR_CUP: {
     shortCode: 'TAÇA',
     title: 'Taça de Portugal',
-    subtitle: 'Portuguese Cup',
+    subtitle: 'Portuguese Primary Cup',
     primary: '#7f1d1d',
     secondary: '#16a34a',
     accent: '#facc15',
@@ -275,42 +288,164 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   NED_CUP: {
     shortCode: 'KNVB',
     title: 'TOTO KNVB Beker',
-    subtitle: 'Dutch Knockout Cup',
+    subtitle: 'Dutch National Knockout Cup',
     primary: '#7c2d12',
     secondary: '#ea580c',
     accent: '#ffffff',
     motif: 'cup_shield',
-    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/212.png',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/235.png',
   },
   BEL_CUP: {
     shortCode: 'CROKY',
     title: 'Croky Cup',
-    subtitle: 'Belgian Cup',
+    subtitle: 'Belgian National Cup',
     primary: '#450a0a',
     secondary: '#eab308',
     accent: '#ffffff',
     motif: 'cup_shield',
-    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/171.png',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/149.png',
   },
   TUR_CUP: {
     shortCode: 'ZTK',
     title: 'Ziraat Türkiye Kupası',
-    subtitle: 'Turkish Cup',
+    subtitle: 'Turkish National Cup',
     primary: '#7f1d1d',
     secondary: '#dc2626',
     accent: '#facc15',
     motif: 'cup_shield',
-    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/206.png',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/151.png',
   },
   SCO_CUP: {
     shortCode: 'SCO CUP',
     title: 'Scottish Gas Scottish Cup',
-    subtitle: 'Scottish Knockout Cup',
+    subtitle: 'Scottish Primary Knockout Cup',
     primary: '#1e3a8a',
     secondary: '#38bdf8',
     accent: '#ffffff',
     motif: 'cup_shield',
-    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/189.png',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/137.png',
+  },
+  // Secondary League Cups (3 Authentic European League Cups)
+  ENG_LC: {
+    shortCode: 'EFL CUP',
+    title: 'EFL Carabao Cup',
+    subtitle: 'English League Cup',
+    primary: '#064e3b',
+    secondary: '#10b981',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/133.png',
+  },
+  POR_LC: {
+    shortCode: 'ALLIANZ',
+    title: 'Taça da Liga (Allianz Cup)',
+    subtitle: 'Portuguese League Cup',
+    primary: '#1e3a8a',
+    secondary: '#0284c7',
+    accent: '#38bdf8',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/187.png',
+  },
+  SCO_LC: {
+    shortCode: 'SPFL CUP',
+    title: 'Scottish League Cup (Premier Sports Cup)',
+    subtitle: 'Scottish League Cup',
+    primary: '#311042',
+    secondary: '#9333ea',
+    accent: '#facc15',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/180.png',
+  },
+  // National Super Cups (9)
+  ENG_SC: {
+    shortCode: 'SHIELD',
+    title: 'FA Community Shield',
+    subtitle: 'English Super Cup',
+    primary: '#7f1d1d',
+    secondary: '#dc2626',
+    accent: '#fde047',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/247.png',
+  },
+  ESP_SC: {
+    shortCode: 'SUPERCOPA',
+    title: 'Supercopa de España',
+    subtitle: 'Spanish Super Cup',
+    primary: '#78350f',
+    secondary: '#f59e0b',
+    accent: '#fef08a',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/139.png',
+  },
+  GER_SC: {
+    shortCode: 'SUPERCUP',
+    title: 'DFL-Supercup',
+    subtitle: 'German Super Cup',
+    primary: '#1f2937',
+    secondary: '#dc2626',
+    accent: '#facc15',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/8924.png',
+  },
+  ITA_SC: {
+    shortCode: 'SUPERCOPPA',
+    title: 'Supercoppa Italiana',
+    subtitle: 'Italian Super Cup',
+    primary: '#0c4a6e',
+    secondary: '#0284c7',
+    accent: '#fde047',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/222.png',
+  },
+  FRA_SC: {
+    shortCode: 'TDC',
+    title: 'Trophée des Champions',
+    subtitle: 'French Super Cup',
+    primary: '#1e1b4b',
+    secondary: '#2563eb',
+    accent: '#bef264',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/207.png',
+  },
+  POR_SC: {
+    shortCode: 'SUPERTAÇA',
+    title: 'Supertaça Cândido de Oliveira',
+    subtitle: 'Portuguese Super Cup',
+    primary: '#7f1d1d',
+    secondary: '#ca8a04',
+    accent: '#fde047',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/188.png',
+  },
+  NED_SC: {
+    shortCode: 'CRUYFF',
+    title: 'Johan Cruyff Shield',
+    subtitle: 'Dutch Super Cup',
+    primary: '#7c2d12',
+    secondary: '#ea580c',
+    accent: '#fde047',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/237.png',
+  },
+  BEL_SC: {
+    shortCode: 'BEL SC',
+    title: 'Belgian Super Cup',
+    subtitle: 'Belgian Super Cup',
+    primary: '#450a0a',
+    secondary: '#dc2626',
+    accent: '#facc15',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/9862.png',
+  },
+  TUR_SC: {
+    shortCode: 'SÜPER KUPA',
+    title: 'Turkcell Süper Kupa',
+    subtitle: 'Turkish Super Cup',
+    primary: '#7f1d1d',
+    secondary: '#dc2626',
+    accent: '#fde047',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/10366.png',
   },
   // Global / International
   FIFA_CWC: {
@@ -323,7 +458,27 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/78.png',
   },
+  GLB_CWC: {
+    shortCode: 'CWC',
+    title: 'FIFA Club World Cup',
+    subtitle: 'Global Club Championship',
+    primary: '#1c1917',
+    secondary: '#d97706',
+    accent: '#fde047',
+    motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/78.png',
+  },
   EURO_NATIONS: {
+    shortCode: 'EURO',
+    title: 'UEFA European Championship',
+    subtitle: 'International Nations Tournament',
+    primary: '#172554',
+    secondary: '#2563eb',
+    accent: '#facc15',
+    motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/50.png',
+  },
+  INT_EURO: {
     shortCode: 'EURO',
     title: 'UEFA European Championship',
     subtitle: 'International Nations Tournament',
@@ -345,29 +500,141 @@ const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
   },
 };
 
-export const CompetitionBadge: React.FC<{
-  competitionId: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
-  className?: string;
-}> = ({ competitionId, size = 'md', className = '' }) => {
-  const [imgError, setImgError] = useState(false);
-  const leagueCfg = LEAGUES_CONFIG[competitionId as LeagueId];
-  const meta: CompStyleMeta = COMPETITION_STYLE_MAP[competitionId] || {
-    shortCode: competitionId.slice(0, 4).toUpperCase(),
-    title: leagueCfg?.name || UEFA_COMPETITIONS_CONFIG[competitionId as UefaCompetitionId]?.name || competitionId,
+/**
+ * Resolves the primary FotMob dark CDN URL and the automatic step-2 standard FotMob CDN URL
+ * (`leaguelogo/dark/<id>.png` -> `leaguelogo/<id>.png`) for any competition ID or trophy name.
+ */
+export function resolveFotMobCompetitionLogoUrls(competitionIdOrName: string): {
+  darkUrl?: string;
+  standardUrl?: string;
+  meta: CompStyleMeta;
+} {
+  const raw = (competitionIdOrName || '').trim();
+  const upper = raw.toUpperCase();
+  const leagueCfg = LEAGUES_CONFIG[raw as LeagueId];
+
+  let matchedKey = raw;
+  if (!COMPETITION_STYLE_MAP[matchedKey]) {
+    if (COMPETITION_STYLE_MAP[upper]) {
+      matchedKey = upper;
+    } else if (upper.includes('CARABAO') || upper.includes('EFL CUP') || upper.includes('ENG_LC')) {
+      matchedKey = 'ENG_LC';
+    } else if (upper.includes('ALLIANZ') || upper.includes('TAÇA DA LIGA') || upper.includes('POR_LC')) {
+      matchedKey = 'POR_LC';
+    } else if (upper.includes('PREMIER SPORTS') || upper.includes('SCOTTISH LEAGUE CUP') || upper.includes('SCO_LC')) {
+      matchedKey = 'SCO_LC';
+    } else if (upper.includes('COMMUNITY SHIELD') || upper.includes('ENG_SC')) {
+      matchedKey = 'ENG_SC';
+    } else if (upper.includes('SUPERCOPA') || upper.includes('ESP_SC')) {
+      matchedKey = 'ESP_SC';
+    } else if (upper.includes('DFL-SUPERCUP') || upper.includes('GER_SC')) {
+      matchedKey = 'GER_SC';
+    } else if (upper.includes('SUPERCOPPA') || upper.includes('ITA_SC')) {
+      matchedKey = 'ITA_SC';
+    } else if (upper.includes('TROPHÉE DES CHAMPIONS') || upper.includes('FRA_SC')) {
+      matchedKey = 'FRA_SC';
+    } else if (upper.includes('SUPERTAÇA') || upper.includes('POR_SC')) {
+      matchedKey = 'POR_SC';
+    } else if (upper.includes('CRUYFF') || upper.includes('NED_SC')) {
+      matchedKey = 'NED_SC';
+    } else if (upper.includes('BELGIAN SUPER') || upper.includes('BEL_SC')) {
+      matchedKey = 'BEL_SC';
+    } else if (upper.includes('SÜPER KUPA') || upper.includes('TUR_SC')) {
+      matchedKey = 'TUR_SC';
+    } else if (upper.includes('UEFA SUPER CUP') || upper.includes('UEFA_USC')) {
+      matchedKey = 'UEFA_USC';
+    } else if (upper.includes('FA CUP') || upper.includes('ENG_CUP')) {
+      matchedKey = 'ENG_CUP';
+    } else if (upper.includes('COPA DEL REY') || upper.includes('ESP_CUP')) {
+      matchedKey = 'ESP_CUP';
+    } else if (upper.includes('DFB-POKAL') || upper.includes('GER_CUP')) {
+      matchedKey = 'GER_CUP';
+    } else if (upper.includes('COPPA ITALIA') || upper.includes('ITA_CUP')) {
+      matchedKey = 'ITA_CUP';
+    } else if (upper.includes('COUPE DE FRANCE') || upper.includes('FRA_CUP')) {
+      matchedKey = 'FRA_CUP';
+    } else if (upper.includes('TAÇA DE PORTUGAL') || upper.includes('POR_CUP')) {
+      matchedKey = 'POR_CUP';
+    } else if (upper.includes('KNVB') || upper.includes('NED_CUP')) {
+      matchedKey = 'NED_CUP';
+    } else if (upper.includes('CROKY') || upper.includes('BEL_CUP')) {
+      matchedKey = 'BEL_CUP';
+    } else if (upper.includes('TÜRKIYE KUPASI') || upper.includes('ZIRAAT') || upper.includes('TUR_CUP')) {
+      matchedKey = 'TUR_CUP';
+    } else if (upper.includes('SCOTTISH CUP') || upper.includes('SCO_CUP')) {
+      matchedKey = 'SCO_CUP';
+    } else if (upper.includes('CHAMPIONS LEAGUE') || upper.includes('UEFA_UCL')) {
+      matchedKey = 'UEFA_UCL';
+    } else if (upper.includes('EUROPA LEAGUE') || upper.includes('UEFA_UEL')) {
+      matchedKey = 'UEFA_UEL';
+    } else if (upper.includes('CONFERENCE LEAGUE') || upper.includes('UEFA_UECL')) {
+      matchedKey = 'UEFA_UECL';
+    } else if (upper.includes('PREMIER LEAGUE') || upper.includes('ENG_PL')) {
+      matchedKey = 'ENG_PL';
+    } else if (upper.includes('HYPERMOTION') || upper.includes('ESP_SD')) {
+      matchedKey = 'ESP_SD';
+    } else if (upper.includes('LALIGA') || upper.includes('ESP_LL')) {
+      matchedKey = 'ESP_LL';
+    } else if (upper.includes('2. BUNDESLIGA') || upper.includes('GER_2B')) {
+      matchedKey = 'GER_2B';
+    } else if (upper.includes('BUNDESLIGA') || upper.includes('GER_BL')) {
+      matchedKey = 'GER_BL';
+    } else if (upper.includes('SERIE B') || upper.includes('ITA_SB')) {
+      matchedKey = 'ITA_SB';
+    } else if (upper.includes('SERIE A') || upper.includes('ITA_SA')) {
+      matchedKey = 'ITA_SA';
+    } else if (upper.includes('LIGUE 2') || upper.includes('FRA_L2')) {
+      matchedKey = 'FRA_L2';
+    } else if (upper.includes('LIGUE 1') || upper.includes('FRA_L1')) {
+      matchedKey = 'FRA_L1';
+    } else if (upper.includes('PRIMEIRA LIGA') || upper.includes('LIGA PORTUGAL') || upper.includes('POR_LP')) {
+      matchedKey = 'POR_LP';
+    } else if (upper.includes('EREDIVISIE') || upper.includes('NED_ED')) {
+      matchedKey = 'NED_ED';
+    } else if (upper.includes('PRO LEAGUE') || upper.includes('JUPILER') || upper.includes('BEL_PL')) {
+      matchedKey = 'BEL_PL';
+    } else if (upper.includes('SÜPER LİG') || upper.includes('SUPER LIG') || upper.includes('TUR_SL')) {
+      matchedKey = 'TUR_SL';
+    } else if (upper.includes('SCOTTISH PREMIERSHIP') || upper.includes('SCO_PR')) {
+      matchedKey = 'SCO_PR';
+    } else if (upper.includes('CHAMPIONSHIP') || upper.includes('ENG_CH')) {
+      matchedKey = 'ENG_CH';
+    }
+  }
+
+  const meta: CompStyleMeta = COMPETITION_STYLE_MAP[matchedKey] || {
+    shortCode: raw.slice(0, 4).toUpperCase(),
+    title:
+      leagueCfg?.name ||
+      UEFA_COMPETITIONS_CONFIG[raw as UefaCompetitionId]?.name ||
+      raw,
     subtitle: 'Official Competition',
     primary: '#0f172a',
     secondary: '#10b981',
     accent: '#ffffff',
     motif: 'heraldic',
-    fotmobLogoUrl: leagueCfg?.logoUrl,
+    fotmobLogoUrl: leagueCfg?.logoUrl || leagueCfg?.cupLogoUrl,
   };
 
-  const resolvedLogoUrl = meta.fotmobLogoUrl || leagueCfg?.logoUrl;
+  const darkUrl = meta.fotmobLogoUrl || leagueCfg?.logoUrl || leagueCfg?.cupLogoUrl;
+  const standardUrl = darkUrl
+    ? darkUrl.replace('/leaguelogo/dark/', '/leaguelogo/')
+    : undefined;
+
+  return { darkUrl, standardUrl, meta };
+}
+
+export const CompetitionBadge: React.FC<{
+  competitionId: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  className?: string;
+}> = ({ competitionId, size = 'md', className = '' }) => {
+  const { darkUrl, standardUrl, meta } = resolveFotMobCompetitionLogoUrls(competitionId);
+  const [fallbackStage, setFallbackStage] = useState<'dark' | 'standard' | 'svg'>('dark');
 
   useEffect(() => {
-    setImgError(false);
-  }, [resolvedLogoUrl]);
+    setFallbackStage('dark');
+  }, [darkUrl]);
 
   const dims =
     size === 'xs'
@@ -385,7 +652,14 @@ export const CompetitionBadge: React.FC<{
     lg: 48,
   };
 
-  if (resolvedLogoUrl && !imgError) {
+  const activeLogoUrl =
+    fallbackStage === 'dark'
+      ? darkUrl
+      : fallbackStage === 'standard'
+        ? standardUrl
+        : undefined;
+
+  if (activeLogoUrl && fallbackStage !== 'svg') {
     const px = pixelSizeMap[size];
     return (
       <div
@@ -394,14 +668,20 @@ export const CompetitionBadge: React.FC<{
         data-testid={`comp-badge-${competitionId}`}
       >
         <img
-          src={resolvedLogoUrl}
+          src={activeLogoUrl}
           alt={meta.title}
           width={px}
           height={px}
           loading="lazy"
           decoding="async"
           referrerPolicy="no-referrer"
-          onError={() => setImgError(true)}
+          onError={() => {
+            if (fallbackStage === 'dark' && standardUrl && standardUrl !== darkUrl) {
+              setFallbackStage('standard');
+            } else {
+              setFallbackStage('svg');
+            }
+          }}
           className="w-full h-full object-contain drop-shadow-sm select-none"
         />
       </div>
@@ -639,7 +919,7 @@ export const CompetitionBadge: React.FC<{
 };
 
 /* ============================================================================
-   2. REAL COMPETITION TROPHIES (Distinct Authentic Geometries for Every League & Cup)
+   2. REAL COMPETITION TROPHIES (FotMob Primary Medallion + SVG Fallback Geometries)
 ============================================================================ */
 
 export type TrophyType =
@@ -689,6 +969,13 @@ export function resolveTrophyType(competitionIdOrName: string): TrophyType {
   if (id.includes('BOOT') || id.includes('SCORER')) return 'GOLDEN_BOOT';
   if (
     id.includes('CUP') ||
+    id.includes('_LC') ||
+    id.includes('_SC') ||
+    id.includes('SHIELD') ||
+    id.includes('SUPERCOPA') ||
+    id.includes('SUPERCUP') ||
+    id.includes('SUPERCOPPA') ||
+    id.includes('SUPERTAÇA') ||
     id.includes('POKAL') ||
     id.includes('COPA') ||
     id.includes('COPPA') ||
@@ -719,6 +1006,15 @@ export const TrophyArtwork: React.FC<{
   className = '',
 }) => {
   const resolved = trophyType || resolveTrophyType(competitionId);
+  const { darkUrl, standardUrl, meta } = resolveFotMobCompetitionLogoUrls(
+    customLabel && !COMPETITION_STYLE_MAP[competitionId] ? customLabel : competitionId
+  );
+  const [fallbackStage, setFallbackStage] = useState<'dark' | 'standard' | 'svg'>('dark');
+
+  useEffect(() => {
+    setFallbackStage('dark');
+  }, [darkUrl]);
+
   const dims =
     size === 'xs'
       ? 'w-6 h-6'
@@ -731,6 +1027,48 @@ export const TrophyArtwork: React.FC<{
             : 'w-12 h-12';
 
   const uid = `trp-${resolved}-${size}`;
+  const isIndividualAward = resolved === 'BALLON_DOR' || resolved === 'GOLDEN_BOOT';
+  const activeLogoUrl =
+    !isIndividualAward && fallbackStage === 'dark'
+      ? darkUrl
+      : !isIndividualAward && fallbackStage === 'standard'
+        ? standardUrl
+        : undefined;
+
+  if (activeLogoUrl && fallbackStage !== 'svg') {
+    return (
+      <div
+        className={`inline-flex flex-col items-center justify-center shrink-0 select-none ${className}`}
+        title={customLabel || meta.title || `${resolved.replace(/_/g, ' ')} Trophy`}
+        data-testid={`trophy-artwork-${resolved}`}
+      >
+        <div
+          className={`${dims} relative rounded-full p-1 bg-gradient-to-br from-amber-300/25 via-slate-900/90 to-amber-500/20 border border-amber-400/45 shadow-md flex items-center justify-center`}
+        >
+          <img
+            src={activeLogoUrl}
+            alt={customLabel || meta.title}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={() => {
+              if (fallbackStage === 'dark' && standardUrl && standardUrl !== darkUrl) {
+                setFallbackStage('standard');
+              } else {
+                setFallbackStage('svg');
+              }
+            }}
+            className="w-full h-full object-contain drop-shadow select-none"
+          />
+        </div>
+        {showLabel && (
+          <span className="mt-1 text-[10px] font-mono text-amber-300 font-semibold truncate max-w-[110px]">
+            {customLabel || meta.shortCode || resolved.replace(/_/g, ' ')}
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

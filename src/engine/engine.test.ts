@@ -3,10 +3,16 @@ import assert from 'node:assert/strict';
 import { LEAGUES_CONFIG } from './leaguesConfig';
 import { createInitialWorldState } from './worldGenerator';
 import {
+  CUP_COMPETITIONS_META,
   generateLeagueSchedule,
+  getCupRoundPrizeMoney,
   getLeaguePlayerLeaders,
   recomputeLeagueStandings,
 } from './leagueEngine';
+import {
+  COMPETITION_STYLE_MAP,
+  resolveFotMobCompetitionLogoUrls,
+} from '../components/TrophyAndKitVisuals';
 import {
   computeSetPieceThreatScore,
   reconcileMatchResultEventsAndStats,
@@ -1972,4 +1978,152 @@ test('Stage 7 Complete Suite: Deadline Day Hourly Countdown (08:00-23:00), Live 
   clearInMemorySaveCache();
   assert.equal(getSavedSlotsList().length, 0, 'clearInMemorySaveCache must empty session save slots');
 });
+
+test('Stage 8 Complete Suite: Verified FotMob Cup Logos (2-Step Resolver), 3 League Cups (ENG_LC/POR_LC/SCO_LC), 10 Super Cups, Multi-Tier R32 Draw, Giant-Killing Bonus & UEL/UECL Cup Qualification', () => {
+  const world = createInitialWorldState(10808);
+
+  // 1. Verify Fixed FotMob Cup IDs (NED_CUP=235, BEL_CUP=149, TUR_CUP=151, SCO_CUP=137) + League Cups + Super Cups + 2-Step Resolver
+  assert.ok(COMPETITION_STYLE_MAP.NED_CUP.fotmobLogoUrl?.endsWith('/235.png'), 'NED_CUP must use FotMob ID 235');
+  assert.ok(COMPETITION_STYLE_MAP.BEL_CUP.fotmobLogoUrl?.endsWith('/149.png'), 'BEL_CUP must use FotMob ID 149');
+  assert.ok(COMPETITION_STYLE_MAP.TUR_CUP.fotmobLogoUrl?.endsWith('/151.png'), 'TUR_CUP must use FotMob ID 151');
+  assert.ok(COMPETITION_STYLE_MAP.SCO_CUP.fotmobLogoUrl?.endsWith('/137.png'), 'SCO_CUP must use FotMob ID 137');
+  assert.ok(COMPETITION_STYLE_MAP.ENG_LC.fotmobLogoUrl?.endsWith('/133.png'), 'ENG_LC (Carabao Cup) must use FotMob ID 133');
+  assert.ok(COMPETITION_STYLE_MAP.POR_LC.fotmobLogoUrl?.endsWith('/187.png'), 'POR_LC (Taça da Liga) must use FotMob ID 187');
+  assert.ok(COMPETITION_STYLE_MAP.SCO_LC.fotmobLogoUrl?.endsWith('/180.png'), 'SCO_LC (Scottish League Cup) must use FotMob ID 180');
+  assert.ok(COMPETITION_STYLE_MAP.ENG_SC.fotmobLogoUrl?.endsWith('/247.png'), 'ENG_SC (Community Shield) must use FotMob ID 247');
+  assert.ok(COMPETITION_STYLE_MAP.UEFA_USC.fotmobLogoUrl?.endsWith('/74.png'), 'UEFA_USC (UEFA Super Cup) must use FotMob ID 74');
+
+  const resolvedUrls = resolveFotMobCompetitionLogoUrls('NED_CUP');
+  assert.ok(
+    resolvedUrls.darkUrl?.includes('/leaguelogo/dark/235.png'),
+    'Primary URL must point to dark FotMob CDN path'
+  );
+  assert.ok(
+    resolvedUrls.standardUrl?.includes('/leaguelogo/235.png') &&
+      !resolvedUrls.standardUrl?.includes('/dark/'),
+    'Fallback URL must point to standard non-dark FotMob CDN path'
+  );
+
+  // 2. Verify Multi-Tier R32 Draw in 2-Tier Countries (ENG_CUP has 16 R32 fixtures = 32 clubs including Tier 2 Championship clubs)
+  const engCupR32 = world.fixtures.filter(
+    (f) => f.competitionId === 'ENG_CUP' && f.cupRound === 'R32'
+  );
+  assert.equal(engCupR32.length, 16, 'ENG_CUP must start at R32 with 16 ties (32 clubs)');
+  const engCupClubIds = new Set(engCupR32.flatMap((f) => [f.homeClubId, f.awayClubId]));
+  const hasChampionshipClubs = [...engCupClubIds].some(
+    (cid) => world.clubs[cid]?.leagueId === 'ENG_CH'
+  );
+  assert.equal(hasChampionshipClubs, true, 'ENG_CUP R32 must include Tier 2 Championship clubs');
+
+  // 3. Verify 3 Secondary League Cups (ENG_LC, POR_LC, SCO_LC) and 10 Super Cups (ENG_SC..TUR_SC + UEFA_USC) are generated
+  const engLcFixes = world.fixtures.filter((f) => f.competitionId === 'ENG_LC');
+  const porLcFixes = world.fixtures.filter((f) => f.competitionId === 'POR_LC');
+  const scoLcFixes = world.fixtures.filter((f) => f.competitionId === 'SCO_LC');
+  assert.equal(engLcFixes.length, 16, 'ENG_LC (Carabao Cup) must start with 16 R32 fixtures');
+  assert.equal(porLcFixes.length, 8, 'POR_LC (Allianz Cup) must start with 8 R16 fixtures');
+  assert.equal(scoLcFixes.length, 4, 'SCO_LC (Premier Sports Cup) must start with 4 QF fixtures (8 clubs)');
+
+  const superCupIds = [
+    'ENG_SC',
+    'ESP_SC',
+    'GER_SC',
+    'ITA_SC',
+    'FRA_SC',
+    'POR_SC',
+    'NED_SC',
+    'BEL_SC',
+    'TUR_SC',
+    'UEFA_USC',
+  ];
+  for (const scId of superCupIds) {
+    const scFix = world.fixtures.find((f) => f.competitionId === scId);
+    assert.ok(scFix, `Super Cup ${scId} Final fixture must be scheduled in opening week`);
+    assert.equal(scFix!.cupRound, 'FINAL');
+  }
+
+  // 4. Verify Round-by-Round Cup Prize Money & Giant-Killing Bonus (Tier 2 club beating Tier 1 club)
+  assert.ok(getCupRoundPrizeMoney('ENG_CUP', 'R32') > 0);
+  assert.ok(getCupRoundPrizeMoney('ENG_CUP', 'FINAL') >= 2_000_000);
+
+  const tier2Club = Object.values(world.clubs).find((c) => c.leagueId === 'ENG_CH')!;
+  const tier1Club = Object.values(world.clubs).find((c) => c.leagueId === 'ENG_PL')!;
+  const giantKillFixtureId = 'test_giant_kill_fa_cup_1';
+  const giantKillFixture = {
+    id: giantKillFixtureId,
+    competitionId: 'ENG_CUP' as const,
+    seasonId: world.currentSeason,
+    matchday: 1,
+    kickoffDate: '2025-10-22',
+    homeClubId: tier2Club.id,
+    awayClubId: tier1Club.id,
+    status: 'Scheduled' as const,
+    cupRound: 'R32' as const,
+    uefaStage: 'R32' as const,
+  };
+  const stateWithGiantKillTie = {
+    ...world,
+    controlledClubId: tier2Club.id,
+    fixtures: [...world.fixtures, giantKillFixture],
+  };
+
+  const prevRep = stateWithGiantKillTie.manager.reputation;
+  const prevBoardConf =
+    stateWithGiantKillTie.clubs[tier2Club.id].boardExpectations.confidence.overall;
+  const prevBalance = stateWithGiantKillTie.clubs[tier2Club.id].finances.balance;
+
+  const baseSim = simulateMatch(
+    giantKillFixture,
+    tier2Club,
+    tier1Club,
+    stateWithGiantKillTie.players,
+    404,
+    undefined,
+    undefined,
+    { isKnockout: true }
+  );
+
+  const afterGiantKill = applyMatchResultToWorld(stateWithGiantKillTie, giantKillFixtureId, {
+    ...baseSim,
+    homeGoals: 2,
+    awayGoals: 1,
+    penaltyShootout: undefined,
+  });
+
+  assert.ok(
+    afterGiantKill.clubs[tier2Club.id].finances.balance > prevBalance,
+    'Cup round victory must award round prize money to winning club balance'
+  );
+  assert.equal(
+    afterGiantKill.manager.reputation,
+    Math.min(99, prevRep + 2),
+    'Giant-killing victory by controlled Tier 2 club must boost manager reputation by +2'
+  );
+  assert.equal(
+    afterGiantKill.clubs[tier2Club.id].boardExpectations.confidence.overall,
+    Math.min(100, prevBoardConf + 3 + 6),
+    'Giant-killing victory by controlled Tier 2 club must boost board confidence (+3 win +6 giant-killing)'
+  );
+  assert.ok(
+    afterGiantKill.inbox.some((n) => n.title.includes('GIANT-KILLING')),
+    'Giant-killing victory must publish a GIANT-KILLING headline in the inbox'
+  );
+
+  // 5. Verify Trophy History & UEFA Qualification from Domestic Cups on Season Rollover
+  assert.equal(Object.keys(CUP_COMPETITIONS_META).length, 23, 'CUP_COMPETITIONS_META must cover all 23 cups');
+  const rolled = processEndOfSeasonRollover(world).nextState;
+  const s1Trophies = (rolled.trophyHistory || []).filter((t) => t.season === '2025/26');
+  assert.ok(
+    s1Trophies.some((t) => t.competitionId === 'ENG_CUP'),
+    'Season rollover must record FA Cup champion in trophyHistory'
+  );
+  assert.ok(
+    s1Trophies.some((t) => t.competitionId === 'ENG_LC'),
+    'Season rollover must record Carabao Cup champion in trophyHistory'
+  );
+  assert.ok(
+    s1Trophies.some((t) => t.competitionId === 'ENG_SC'),
+    'Season rollover must record Community Shield champion in trophyHistory'
+  );
+});
+
 
