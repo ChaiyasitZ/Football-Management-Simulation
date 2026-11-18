@@ -13,7 +13,15 @@ export type LeagueId =
   | 'ESP_SD'
   | 'GER_2B'
   | 'ITA_SB'
-  | 'FRA_L2';
+  | 'FRA_L2'
+  | 'ENG_L1'
+  | 'AUT_BL'
+  | 'SUI_SL'
+  | 'GRE_SL'
+  | 'KSA_SPL'
+  | 'USA_MLS'
+  | 'BRA_SA'
+  | 'JPN_J1';
 export type CupId =
   | 'ENG_CUP'
   | 'ESP_CUP'
@@ -27,7 +35,14 @@ export type CupId =
   | 'SCO_CUP'
   | 'ENG_LC'
   | 'POR_LC'
-  | 'SCO_LC';
+  | 'SCO_LC'
+  | 'AUT_CUP'
+  | 'SUI_CUP'
+  | 'GRE_CUP'
+  | 'KSA_CUP'
+  | 'USA_CUP'
+  | 'BRA_CUP'
+  | 'JPN_CUP';
 export type SuperCupId =
   | 'ENG_SC'
   | 'ESP_SC'
@@ -41,16 +56,19 @@ export type SuperCupId =
   | 'UEFA_USC';
 export type UefaCompetitionId = 'UEFA_UCL' | 'UEFA_UEL' | 'UEFA_UECL';
 export type InternationalCompetitionId = 'INT_EURO' | 'GLB_CWC';
+export type FriendlyCompetitionId = 'PRE_SEASON_FRIENDLY';
 export type CompetitionId =
   | LeagueId
   | CupId
   | SuperCupId
   | UefaCompetitionId
-  | InternationalCompetitionId;
+  | InternationalCompetitionId
+  | FriendlyCompetitionId;
 export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R32' | 'R16' | 'QF' | 'SF' | 'FINAL';
 
 export type NationalTeamCode = 'ENG' | 'ESP' | 'GER' | 'ITA' | 'FRA' | 'BRA' | 'ARG' | 'POR';
-export type PreSeasonTourRegion = 'ASIA' | 'USA' | 'MIDDLE_EAST';
+export type PreSeasonTourRegion = 'ASIA' | 'USA' | 'MIDDLE_EAST' | 'ALPINE';
+export type PreSeasonCampFocus = 'FITNESS_BOOTCAMP' | 'TACTICAL_DRILLS' | 'TEAM_COHESION';
 export type MindGameTone = 'attack' | 'praise' | 'deflect';
 export type ScenarioChallengeId = 'STANDARD' | 'POINTS_DEDUCTION' | 'INJURY_CRISIS' | 'YOUTH_ONLY';
 export type WeatherCondition = 'Clear' | 'Light Rain' | 'Heavy Rain' | 'Strong Wind' | 'Snow';
@@ -472,6 +490,8 @@ export interface Club {
   sugarDaddyType?: 'FRONT_END' | 'BACK_END' | 'UNDERWRITER' | 'NONE';
   transferEmbargoUntil?: string | null;
   preSeasonTourCompletedSeason?: string | null;
+  preSeasonTourRegion?: PreSeasonTourRegion | null;
+  preSeasonCampFocus?: PreSeasonCampFocus;
   pointsDeduction?: number;
   affiliateClubIds?: string[];
   supporterConfidence?: number; // 1-100
@@ -537,7 +557,8 @@ export interface LeagueConfig {
   relegationSpots: number;
   prizePoolTotal: number;
   tvRevenuePerClub: number;
-  tier?: 1 | 2;
+  tier?: 1 | 2 | 3;
+  region?: 'EUROPE' | 'ASIA' | 'AMERICAS' | 'MIDDLE_EAST';
   logoUrl?: string;
   cupLogoUrl?: string;
   leagueCupId?: CupId;

@@ -79,6 +79,7 @@ import {
   sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
   setPlayerIndividualTrainingIntensity,
+  setPreSeasonCampFocus,
   signPlayerOnBosmanFree,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
@@ -111,10 +112,10 @@ import {
   togglePlayerInstructionWithExclusions,
 } from './tacticsEngine';
 
-test('15 European Leagues & 280 Clubs configuration and generation', () => {
+test('23 World & European Leagues & 394 Clubs configuration and generation', () => {
   const world = createInitialWorldState(12345);
   const allClubs = Object.values(world.clubs);
-  assert.equal(allClubs.length, 280, 'World must contain exactly 280 clubs across 15 leagues');
+  assert.equal(allClubs.length, 394, 'World must contain exactly 394 clubs across 23 leagues');
 
   assert.equal(
     allClubs.filter((c) => c.leagueId === 'ENG_PL').length,
@@ -301,7 +302,7 @@ test('Double round-robin schedule generator produces exact matchdays with zero d
 
 test('Match Engine deterministic simulation, event coherence, mid-match splice reconciliation, and standings update', () => {
   const world = createInitialWorldState(99999);
-  const fixture = world.fixtures[0];
+  const fixture = world.fixtures.find((f) => f.competitionId === 'ENG_PL')!;
   const homeClub = world.clubs[fixture.homeClubId];
   const awayClub = world.clubs[fixture.awayClubId];
 
@@ -522,7 +523,7 @@ test('WorldClockService advances dates cleanly and Cloud Firestore native Map de
     careerState: careerMap,
   });
 
-  assert.equal(Object.keys(rehydrated.clubs).length, 280);
+  assert.equal(Object.keys(rehydrated.clubs).length, 394);
   assert.equal(
     Object.keys(rehydrated.players).length,
     Object.keys(multiWeekState.players).length
@@ -704,7 +705,10 @@ test('Deep Squad Management & Tactics: 25-man / 8-HG Registration, Attribute Syn
   // 4. Verify Squad Hierarchy 3-match consecutive benching drops Star Player morale & triggers Inbox unrest
   const starPlayer = clubPlayers.find((p) => p.squadStatus === 'Star Player')!;
   const userFixture = world.fixtures.find(
-    (f) => f.status === 'Scheduled' && (f.homeClubId === club.id || f.awayClubId === club.id)
+    (f) =>
+      f.status === 'Scheduled' &&
+      f.competitionId === club.leagueId &&
+      (f.homeClubId === club.id || f.awayClubId === club.id)
   )!;
   const home = world.clubs[userFixture.homeClubId];
   const away = world.clubs[userFixture.awayClubId];
@@ -872,7 +876,7 @@ test('FM Youth System, Global Wonderkids, Verified Portraits, Domestic Cups & Se
 
   const rolledOver = processEndOfSeasonRollover(budgetAdjusted.nextState);
   assert.notEqual(rolledOver.nextState.currentSeason, world.currentSeason);
-  assert.equal(Object.keys(rolledOver.nextState.clubs).length, 280);
+  assert.equal(Object.keys(rolledOver.nextState.clubs).length, 394);
 });
 
 test('Phase 2 (Checkpoints 5–8): 8-Axis Radar, 3-Mode Tactical Pitch & Chemistry, Live Shouts & Shot Map, Bosman, Takeovers & Job Center', () => {
@@ -2109,7 +2113,7 @@ test('Stage 8 Complete Suite: Verified FotMob Cup Logos (2-Step Resolver), 3 Lea
   );
 
   // 5. Verify Trophy History & UEFA Qualification from Domestic Cups on Season Rollover
-  assert.equal(Object.keys(CUP_COMPETITIONS_META).length, 23, 'CUP_COMPETITIONS_META must cover all 23 cups');
+  assert.equal(Object.keys(CUP_COMPETITIONS_META).length, 30, 'CUP_COMPETITIONS_META must cover all 30 cups');
   const rolled = processEndOfSeasonRollover(world).nextState;
   const s1Trophies = (rolled.trophyHistory || []).filter((t) => t.season === '2025/26');
   assert.ok(
@@ -2125,5 +2129,130 @@ test('Stage 8 Complete Suite: Verified FotMob Cup Logos (2-Step Resolver), 3 Lea
     'Season rollover must record Community Shield champion in trophyHistory'
   );
 });
+
+test('Stage 9 Complete Suite: 23 Playable Leagues (8 New), 30 Domestic/Super Cups, Global Stars & Realistic Pre-Season Overhaul', () => {
+  let world = createInitialWorldState(90909);
+  const myClubId = world.controlledClubId;
+  const allClubs = Object.values(world.clubs);
+
+  // 1. Verify 23 Playable Leagues & 394 Clubs
+  assert.equal(Object.keys(LEAGUES_CONFIG).length, 23, 'LEAGUES_CONFIG must contain 23 playable leagues');
+  assert.equal(allClubs.length, 394, 'World must generate 394 clubs across 23 leagues');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'ENG_L1').length, 16, 'EFL League One must have 16 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'AUT_BL').length, 12, 'Austrian Bundesliga must have 12 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'SUI_SL').length, 12, 'Swiss Super League must have 12 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'GRE_SL').length, 14, 'Greek Super League must have 14 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'KSA_SPL').length, 14, 'Saudi Pro League must have 14 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'USA_MLS').length, 16, 'MLS must have 16 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'BRA_SA').length, 16, 'Brasileirão Série A must have 16 clubs');
+  assert.equal(allClubs.filter((c) => c.leagueId === 'JPN_J1').length, 14, 'J1 League must have 14 clubs');
+
+  // 2. Verify Global Stars in KSA_SPL, USA_MLS, BRA_SA, JPN_J1, AUT_BL, GRE_SL
+  const playerFullNames = new Set(
+    Object.values(world.players).map((p) => `${p.firstName} ${p.lastName}`)
+  );
+  assert.ok(playerFullNames.has('Lionel Messi'), 'Inter Miami must have Lionel Messi');
+  assert.ok(playerFullNames.has('Luis Suarez'), 'Inter Miami must have Luis Suarez');
+  assert.ok(playerFullNames.has('Cristiano Ronaldo'), 'Al-Nassr must have Cristiano Ronaldo');
+  assert.ok(playerFullNames.has('Karim Benzema'), 'Al-Ittihad must have Karim Benzema');
+  assert.ok(playerFullNames.has('Neymar Junior'), 'Santos FC must have Neymar Junior');
+  assert.ok(playerFullNames.has('Memphis Depay'), 'Corinthians must have Memphis Depay');
+  assert.ok(playerFullNames.has('Yuya Osako'), 'Vissel Kobe must have Yuya Osako');
+
+  // 3. Verify FotMob competition logos for all 8 new leagues, 7 new cups, and PRE_SEASON_FRIENDLY
+  assert.ok(COMPETITION_STYLE_MAP.ENG_L1.fotmobLogoUrl?.endsWith('/108.png'));
+  assert.ok(COMPETITION_STYLE_MAP.AUT_BL.fotmobLogoUrl?.endsWith('/38.png'));
+  assert.ok(COMPETITION_STYLE_MAP.SUI_SL.fotmobLogoUrl?.endsWith('/69.png'));
+  assert.ok(COMPETITION_STYLE_MAP.GRE_SL.fotmobLogoUrl?.endsWith('/135.png'));
+  assert.ok(COMPETITION_STYLE_MAP.KSA_SPL.fotmobLogoUrl?.endsWith('/536.png'));
+  assert.ok(COMPETITION_STYLE_MAP.USA_MLS.fotmobLogoUrl?.endsWith('/130.png'));
+  assert.ok(COMPETITION_STYLE_MAP.BRA_SA.fotmobLogoUrl?.endsWith('/268.png'));
+  assert.ok(COMPETITION_STYLE_MAP.JPN_J1.fotmobLogoUrl?.endsWith('/223.png'));
+  assert.ok(COMPETITION_STYLE_MAP.AUT_CUP.fotmobLogoUrl?.endsWith('/278.png'));
+  assert.ok(COMPETITION_STYLE_MAP.SUI_CUP.fotmobLogoUrl?.endsWith('/575.png'));
+  assert.ok(COMPETITION_STYLE_MAP.GRE_CUP.fotmobLogoUrl?.endsWith('/145.png'));
+  assert.ok(COMPETITION_STYLE_MAP.KSA_CUP.fotmobLogoUrl?.endsWith('/9475.png'));
+  assert.ok(COMPETITION_STYLE_MAP.USA_CUP.fotmobLogoUrl?.endsWith('/9441.png'));
+  assert.ok(COMPETITION_STYLE_MAP.BRA_CUP.fotmobLogoUrl?.endsWith('/203.png'));
+  assert.ok(COMPETITION_STYLE_MAP.JPN_CUP.fotmobLogoUrl?.endsWith('/225.png'));
+  assert.ok(COMPETITION_STYLE_MAP.PRE_SEASON_FRIENDLY.fotmobLogoUrl?.endsWith('/105.png'));
+
+  // 4. Verify Realistic Pre-Season Start Date (2025-07-15), Baseline Friendlies, Camp Focus & Tour Scheduling
+  assert.equal(world.gameDate, '2025-07-15', 'Career must start on July 15 (2025-07-15) for Pre-Season');
+  const initialPreSeasonFixes = world.fixtures.filter(
+    (f) => f.competitionId === 'PRE_SEASON_FRIENDLY' && (f.homeClubId === myClubId || f.awayClubId === myClubId)
+  );
+  assert.equal(initialPreSeasonFixes.length, 2, 'Controlled club must start with 2 baseline PRE_SEASON_FRIENDLY matches');
+
+  const prevFam = world.clubs[myClubId].primaryTactic.familiarity;
+  const focusRes = setPreSeasonCampFocus(world, 'TACTICAL_DRILLS');
+  world = focusRes.nextState;
+  assert.equal(world.clubs[myClubId].preSeasonCampFocus, 'TACTICAL_DRILLS');
+  assert.equal(
+    world.clubs[myClubId].primaryTactic.familiarity,
+    Math.min(100, prevFam + 6),
+    'TACTICAL_DRILLS camp focus must boost tactical familiarity by +6%'
+  );
+
+  const tourRes = organizePreSeasonTour(world, 'ALPINE');
+  assert.equal(tourRes.success, true, 'ALPINE Pre-Season Tour must succeed');
+  world = tourRes.nextState;
+  assert.equal(world.clubs[myClubId].preSeasonTourRegion, 'ALPINE');
+  const allPreSeasonFixes = world.fixtures.filter(
+    (f) => f.competitionId === 'PRE_SEASON_FRIENDLY' && (f.homeClubId === myClubId || f.awayClubId === myClubId)
+  );
+  assert.equal(
+    allPreSeasonFixes.length,
+    5,
+    'Organizing Pre-Season Tour must add 3 regional tour friendlies (2 baseline + 3 tour = 5 total)'
+  );
+
+  // 5. Verify playing a PRE_SEASON_FRIENDLY grants +10 sharpness, +5 familiarity, and 0 disciplinary suspensions
+  const sampleFriendly = allPreSeasonFixes[0];
+  const hClub = world.clubs[sampleFriendly.homeClubId];
+  const aClub = world.clubs[sampleFriendly.awayClubId];
+  const simFriendly = simulateMatch(sampleFriendly, hClub, aClub, world.players, 101);
+  const firstParticipantId = Object.keys(simFriendly.playerRatings).find(
+    (pid) => world.players[pid]?.clubId === myClubId
+  )!;
+  const sharpnessBeforeFriendly = world.players[firstParticipantId].matchSharpness;
+  const famBeforeFriendly = world.clubs[myClubId].primaryTactic.familiarity;
+
+  // Inject a red card event into the friendly result to verify it does NOT cause a league suspension
+  const afterFriendly = applyMatchResultToWorld(world, sampleFriendly.id, {
+    ...simFriendly,
+    events: [
+      ...simFriendly.events,
+      {
+        id: 'ev_red_frd',
+        fixtureId: sampleFriendly.id,
+        minute: 75,
+        eventType: 'RedCard',
+        teamId: myClubId,
+        playerId: firstParticipantId,
+        playerName: 'Test Player',
+        text: 'Red card in friendly',
+        pitchX: 50,
+        pitchY: 50,
+      },
+    ],
+  });
+  assert.equal(
+    afterFriendly.players[firstParticipantId].matchSharpness,
+    Math.min(100, sharpnessBeforeFriendly + 10),
+    'PRE_SEASON_FRIENDLY participant must gain +10 Match Sharpness'
+  );
+  assert.equal(
+    afterFriendly.clubs[myClubId].primaryTactic.familiarity,
+    Math.min(100, famBeforeFriendly + 5),
+    'PRE_SEASON_FRIENDLY must grant +5 Tactical Familiarity'
+  );
+  assert.equal(
+    afterFriendly.players[firstParticipantId].suspensionMatchesRemaining || 0,
+    0,
+    'Red cards in PRE_SEASON_FRIENDLY must NOT trigger competitive suspensions'
+  );
+});
+
 
 

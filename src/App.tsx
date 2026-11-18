@@ -36,7 +36,7 @@ import {
 import { createInitialWorldState } from './engine/worldGenerator';
 import { autoRegisterSquadIds } from './engine/tacticsEngine';
 import { ClubBadge } from './components/ClubBadge';
-import { ClubKitJersey, TrophyArtwork } from './components/TrophyAndKitVisuals';
+import { TrophyArtwork } from './components/TrophyAndKitVisuals';
 import {
   activateReleaseClauseTransfer,
   adjustClubBudgetAllocation,
@@ -92,6 +92,7 @@ import {
   sendPlayerToAffiliateLoan,
   sendPreMatchMindGame,
   setPlayerIndividualTrainingIntensity,
+  setPreSeasonCampFocus,
   signPlayerOnBosmanFree,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
@@ -1721,6 +1722,21 @@ function TouchlineShell() {
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
+                  onOrganizePreSeasonTour={(region) => {
+                    const res = organizePreSeasonTour(world, region);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onSetPreSeasonCampFocus={(focus) => {
+                    const res = setPreSeasonCampFocus(world, focus);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onArrangeFriendlyMatch={(tier) => {
+                    const res = arrangeFriendlyMatch(world, tier);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
                 />
               )}
 
@@ -1732,6 +1748,21 @@ function TouchlineShell() {
                   onAdvanceDay={handleAdvanceDay}
                   onSendMindGame={(tone) => {
                     const res = sendPreMatchMindGame(world, tone);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onOrganizePreSeasonTour={(region) => {
+                    const res = organizePreSeasonTour(world, region);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onSetPreSeasonCampFocus={(focus) => {
+                    const res = setPreSeasonCampFocus(world, focus);
+                    setWorld(res.nextState);
+                    showToast(res.message);
+                  }}
+                  onArrangeFriendlyMatch={(tier) => {
+                    const res = arrangeFriendlyMatch(world, tier);
                     setWorld(res.nextState);
                     showToast(res.message);
                   }}
@@ -2678,8 +2709,8 @@ function TouchlineShell() {
                   </div>
 
                   <div className="flex items-center justify-center gap-6 py-2">
-                    <ClubBadge club={unveiledClub} size="lg" />
-                    <ClubKitJersey club={unveiledClub} variant="home" size="lg" />
+                    <ClubBadge club={unveiledClub} size="xl" showRing />
+                    <TrophyArtwork competitionId={unveiledClub.leagueId} size="lg" />
                   </div>
 
                   <div>

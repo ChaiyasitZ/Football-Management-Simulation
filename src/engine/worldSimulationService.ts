@@ -19,6 +19,7 @@ import {
   PlayerTrait,
   PositionCode,
   PositionGroup,
+  PreSeasonCampFocus,
   PreSeasonTourRegion,
   ScenarioChallengeId,
   ScoutAssignment,
@@ -239,6 +240,7 @@ export function applyMatchResultToWorld(
   const updatedTransactions = [...state.transactions];
   const updatedInbox = [...state.inbox];
   let updatedManager = { ...state.manager, careerStats: { ...state.manager.careerStats } };
+  const isPreSeasonFriendly = existingFixture.competitionId === 'PRE_SEASON_FRIENDLY';
 
   const rng = new SeededRNG(state.randomSeed + fixtureIdx * 31);
 
@@ -359,17 +361,19 @@ export function applyMatchResultToWorld(
       }
     }
 
-    const matchYellows = yellowsByPlayer[playerId] || 0;
-    const matchReds = redsByPlayer[playerId] || 0;
+    const matchYellows = isPreSeasonFriendly ? 0 : yellowsByPlayer[playerId] || 0;
+    const matchReds = isPreSeasonFriendly ? 0 : redsByPlayer[playerId] || 0;
     const newSeasonYellows = p.stats.yellowCards + matchYellows;
     const newSeasonReds = p.stats.redCards + matchReds;
 
-    // Disciplinary Suspensions: Red Card = 2 matches, every 5th Yellow Card = 1 match
+    // Disciplinary Suspensions: Red Card = 2 matches, every 5th Yellow Card = 1 match (competitive fixtures only)
     let addedSuspension = 0;
-    if (matchReds > 0) {
-      addedSuspension = 2;
-    } else if (matchYellows > 0 && newSeasonYellows > 0 && newSeasonYellows % 5 === 0) {
-      addedSuspension = 1;
+    if (!isPreSeasonFriendly) {
+      if (matchReds > 0) {
+        addedSuspension = 2;
+      } else if (matchYellows > 0 && newSeasonYellows > 0 && newSeasonYellows % 5 === 0) {
+        addedSuspension = 1;
+      }
     }
 
     if (addedSuspension > 0 && p.clubId === state.controlledClubId) {
@@ -394,7 +398,7 @@ export function applyMatchResultToWorld(
     updatedPlayers[playerId] = {
       ...p,
       fitness: newFitness,
-      matchSharpness: Math.min(100, p.matchSharpness + 5),
+      matchSharpness: Math.min(100, p.matchSharpness + (isPreSeasonFriendly ? 10 : 5)),
       morale: newMorale,
       satisfaction: Math.min(100, p.satisfaction + 2),
       consecutiveBenched: 0,
@@ -451,7 +455,7 @@ export function applyMatchResultToWorld(
     const isKeyHierarchy =
       p.squadStatus === 'Star Player' || p.squadStatus === 'Important Player';
 
-    if (isKeyHierarchy && newConsecutiveBenched >= 3) {
+    if (!isPreSeasonFriendly && isKeyHierarchy && newConsecutiveBenched >= 3) {
       newMorale = Math.max(20, p.morale - 12);
       newSatisfaction = Math.max(15, p.satisfaction - 15);
       if (newConsecutiveBenched >= 4) {
@@ -486,13 +490,14 @@ export function applyMatchResultToWorld(
       morale: newMorale,
       satisfaction: newSatisfaction,
       transferListed: newTransferListed,
-      consecutiveBenched: newConsecutiveBenched,
+      consecutiveBenched: isPreSeasonFriendly ? p.consecutiveBenched || 0 : newConsecutiveBenched,
     };
   }
 
-  // Grow Tactical Familiarity (+4% per match played in current formation)
+  // Grow Tactical Familiarity (+5% in Pre-Season Friendlies, +4% per competitive match played in current formation)
+  const familiarityBoost = isPreSeasonFriendly ? 5 : 4;
   for (const c of [homeClub, awayClub]) {
-    const newFam = Math.min(100, c.primaryTactic.familiarity + 4);
+    const newFam = Math.min(100, c.primaryTactic.familiarity + familiarityBoost);
     c.primaryTactic = {
       ...c.primaryTactic,
       familiarity: newFam,
@@ -3088,10 +3093,11 @@ export function processEndOfSeasonRollover(
     table.forEach((row, idx) => {
       const club = updatedClubs[row.clubId];
       if (!club) return;
-      const isRelegated = league.tier !== 2 && idx >= table.length - relSpots;
+      const isRelegated =
+        league.tier !== 2 && league.tier !== 3 && relSpots > 0 && idx >= table.length - relSpots;
       const positionPrize = Math.max(
-        1_500_000,
-        (20 - idx) * (league.tier === 2 ? 650_000 : 2_200_000)
+        1_200_000,
+        (20 - idx) * (league.tier === 3 ? 350_000 : league.tier === 2 ? 650_000 : 2_200_000)
       );
       const tvMoney = league.tvRevenuePerClub || 15_000_000;
       const relegationDropPenalty = isRelegated ? -4_000_000 : 0;
@@ -3436,8 +3442,8 @@ export function processEndOfSeasonRollover(
       loanedFromClubId: null,
       currentAbility: nextCa,
       attributes: nextAttrs,
-      fitness: 100,
-      matchSharpness: 85,
+      fitness: 90,
+      matchSharpness: 64,
       suspensionMatchesRemaining: 0,
       stats: {
         appearances: 0,
@@ -3451,6 +3457,47 @@ export function processEndOfSeasonRollover(
         minutesPlayed: 0,
         manOfTheMatch: 0,
       },
+    };
+  }
+
+  // 2b. Multi-Tier Promotion & Relegation Swaps (including ENG_PL <-> ENG_CH <-> ENG_L1)
+  const promoRelegationPairs: Array<{ upper: LeagueId; lower: LeagueId; spots: number }> = [
+    { upper: 'ENG_PL', lower: 'ENG_CH', spots: 3 },
+    { upper: 'ENG_CH', lower: 'ENG_L1', spots: 3 },
+    { upper: 'ESP_LL', lower: 'ESP_SD', spots: 3 },
+    { upper: 'GER_BL', lower: 'GER_2B', spots: 2 },
+    { upper: 'ITA_SA', lower: 'ITA_SB', spots: 3 },
+    { upper: 'FRA_L1', lower: 'FRA_L2', spots: 2 },
+  ];
+  const pendingLeagueAssignments: Record<string, LeagueId> = {};
+  for (const pair of promoRelegationPairs) {
+    const upperTable = state.standings[pair.upper] || [];
+    const lowerTable = state.standings[pair.lower] || [];
+    if (upperTable.length >= pair.spots && lowerTable.length >= pair.spots) {
+      const relegatedIds = upperTable.slice(-pair.spots).map((r) => r.clubId);
+      const promotedIds = lowerTable.slice(0, pair.spots).map((r) => r.clubId);
+      for (const cid of relegatedIds) {
+        pendingLeagueAssignments[cid] = pair.lower;
+      }
+      for (const cid of promotedIds) {
+        pendingLeagueAssignments[cid] = pair.upper;
+      }
+    }
+  }
+  for (const [cid, newLeagueId] of Object.entries(pendingLeagueAssignments)) {
+    if (updatedClubs[cid]) {
+      updatedClubs[cid] = {
+        ...updatedClubs[cid],
+        leagueId: newLeagueId,
+      };
+    }
+  }
+  // Reset pre-season tour state for all clubs for the new season
+  for (const [cid, c] of Object.entries(updatedClubs)) {
+    updatedClubs[cid] = {
+      ...c,
+      preSeasonTourCompletedSeason: undefined,
+      preSeasonTourRegion: undefined,
     };
   }
 
@@ -3506,7 +3553,7 @@ export function processEndOfSeasonRollover(
     );
     nextFixtures = [...nextFixtures, ...sched];
 
-    if (league.tier !== 2) {
+    if (league.tier !== 2 && league.tier !== 3) {
       const countryClubs = Object.values(updatedClubs).filter(
         (c) => c.countryId === league.countryId
       );
@@ -3529,6 +3576,43 @@ export function processEndOfSeasonRollover(
         );
         nextFixtures = [...nextFixtures, ...leagueCupFixtures];
       }
+    }
+  }
+
+  // Schedule 2 baseline Pre-Season Friendly fixtures for the controlled club in nextSeasonStr
+  const userCtrlClub = updatedClubs[state.controlledClubId];
+  if (userCtrlClub) {
+    const friendlyOpponents = Object.values(updatedClubs).filter(
+      (c) => c.id !== userCtrlClub.id && c.leagueId !== userCtrlClub.leagueId
+    );
+    if (friendlyOpponents.length >= 2) {
+      const opp1 = friendlyOpponents[rng.int(0, friendlyOpponents.length - 1)];
+      let opp2 = friendlyOpponents[rng.int(0, friendlyOpponents.length - 1)];
+      if (opp2.id === opp1.id) {
+        opp2 = friendlyOpponents.find((c) => c.id !== opp1.id) || opp2;
+      }
+      nextFixtures.push(
+        {
+          id: `fix_preseason_${nextYear}_base_1_${userCtrlClub.id}`,
+          competitionId: 'PRE_SEASON_FRIENDLY',
+          seasonId: nextSeasonStr,
+          matchday: 1,
+          kickoffDate: `${nextYear}-07-22`,
+          homeClubId: userCtrlClub.id,
+          awayClubId: opp1.id,
+          status: 'Scheduled',
+        },
+        {
+          id: `fix_preseason_${nextYear}_base_2_${userCtrlClub.id}`,
+          competitionId: 'PRE_SEASON_FRIENDLY',
+          seasonId: nextSeasonStr,
+          matchday: 2,
+          kickoffDate: `${nextYear}-08-02`,
+          homeClubId: opp2.id,
+          awayClubId: userCtrlClub.id,
+          status: 'Scheduled',
+        }
+      );
     }
   }
 
@@ -3837,7 +3921,7 @@ function buildSeasonBaseFixturesForRehydration(
     );
     nextFixtures = [...nextFixtures, ...sched];
 
-    if (league.tier !== 2) {
+    if (league.tier !== 2 && league.tier !== 3) {
       const countryClubs = Object.values(clubs).filter(
         (c) => c.countryId === league.countryId
       );
@@ -5666,7 +5750,7 @@ export function organizePreSeasonTour(
       nextState: state,
       success: false,
       message: trText(
-        `Your club has already completed a Pre-Season Commercial Tour in the ${state.currentSeason} season.`,
+        `Your club has already completed a Pre-Season Tour in the ${state.currentSeason} season.`,
         `สโมสรของคุณได้จัดทัวร์ปรีซีซั่นประจำฤดูกาล ${state.currentSeason} ไปเรียบร้อยแล้ว`
       ),
     };
@@ -5676,23 +5760,59 @@ export function organizePreSeasonTour(
     region === 'ASIA'
       ? {
           revenue: 4_500_000,
-          labelEn: 'Asia Commercial Tour (Tokyo & Seoul)',
-          labelTh: 'ทัวร์เอเชีย (โตเกียว & โซล)',
+          sharpnessBoost: 5,
+          fitnessBoost: 2,
+          moraleBoost: 3,
+          familiarityBoost: 3,
+          targetLeagues: ['JPN_J1'] as LeagueId[],
+          labelEn: 'Asia Commercial Tour (Tokyo & Yokohama)',
+          labelTh: 'ทัวร์เอเชีย (โตเกียว & โยโกฮาม่า)',
         }
       : region === 'USA'
         ? {
             revenue: 5_000_000,
-            labelEn: 'North America Commercial Tour (New York & Los Angeles)',
-            labelTh: 'ทัวร์อเมริกาเหนือ (นิวยอร์ก & ลอสแอนเจลิส)',
+            sharpnessBoost: 5,
+            fitnessBoost: 2,
+            moraleBoost: 3,
+            familiarityBoost: 3,
+            targetLeagues: ['USA_MLS', 'BRA_SA'] as LeagueId[],
+            labelEn: 'Americas Summer Showcase (Miami & Los Angeles)',
+            labelTh: 'ทัวร์อเมริกา (ไมอามี & ลอสแอนเจลิส)',
           }
-        : {
-            revenue: 5_500_000,
-            labelEn: 'Middle East Commercial Showcase (Dubai & Riyadh)',
-            labelTh: 'ทัวร์ตะวันออกกลาง (ดูไบ & ริยาด)',
-          };
+        : region === 'ALPINE'
+          ? {
+              revenue: 1_800_000,
+              sharpnessBoost: 7,
+              fitnessBoost: 8,
+              moraleBoost: 4,
+              familiarityBoost: 6,
+              targetLeagues: ['AUT_BL', 'SUI_SL'] as LeagueId[],
+              labelEn: 'Alpine High-Altitude Camp (Salzburg & Zurich)',
+              labelTh: 'แคมป์เก็บตัวเทือกเขาแอลป์ (ซัลซ์บวร์ก & ซูริค)',
+            }
+          : {
+              revenue: 5_500_000,
+              sharpnessBoost: 5,
+              fitnessBoost: 2,
+              moraleBoost: 3,
+              familiarityBoost: 3,
+              targetLeagues: ['KSA_SPL'] as LeagueId[],
+              labelEn: 'Middle East Commercial Showcase (Riyadh & Jeddah)',
+              labelTh: 'ทัวร์ตะวันออกกลาง (ริยาด & เจดดาห์)',
+            };
 
   const newBalance = club.finances.balance + tourSpec.revenue;
   club.preSeasonTourCompletedSeason = state.currentSeason;
+  club.preSeasonTourRegion = region;
+  const newFam = Math.min(100, club.primaryTactic.familiarity + tourSpec.familiarityBoost);
+  club.primaryTactic = {
+    ...club.primaryTactic,
+    familiarity: newFam,
+  };
+  club.formationFamiliarity = {
+    ...(club.formationFamiliarity || {}),
+    [club.primaryTactic.formation]: newFam,
+  };
   club.finances = {
     ...club.finances,
     balance: newBalance,
@@ -5704,11 +5824,40 @@ export function organizePreSeasonTour(
     if (p.clubId === club.id && !p.injuryStatus.isInjured) {
       updatedPlayers[pid] = {
         ...p,
-        matchSharpness: Math.min(100, p.matchSharpness + 4),
-        morale: Math.min(100, p.morale + 2),
+        fitness: Math.min(100, p.fitness + tourSpec.fitnessBoost),
+        matchSharpness: Math.min(100, p.matchSharpness + tourSpec.sharpnessBoost),
+        morale: Math.min(100, p.morale + tourSpec.moraleBoost),
       };
     }
   }
+
+  // Schedule 3 authentic Pre-Season Tour Friendly fixtures against clubs from the target region
+  const startYear = parseInt(state.currentSeason.slice(0, 4), 10) || 2025;
+  const tourDates = [`${startYear}-07-20`, `${startYear}-07-26`, `${startYear}-08-01`];
+  const regionalClubs = Object.values(state.clubs)
+    .filter((c) => c.id !== club.id && tourSpec.targetLeagues.includes(c.leagueId))
+    .sort((a, b) => b.reputation - a.reputation);
+  const selectedTourOpponents =
+    regionalClubs.length >= 3
+      ? regionalClubs.slice(0, 3)
+      : Object.values(state.clubs)
+          .filter((c) => c.id !== club.id)
+          .slice(0, 3);
+
+  const newTourFixtures: Fixture[] = selectedTourOpponents.map((opp, idx) => ({
+    id: `fix_preseason_tour_${region.toLowerCase()}_${startYear}_${idx + 1}_${club.id}`,
+    competitionId: 'PRE_SEASON_FRIENDLY',
+    seasonId: state.currentSeason,
+    matchday: idx + 1,
+    kickoffDate: tourDates[idx] || `${startYear}-07-26`,
+    homeClubId: idx % 2 === 0 ? opp.id : club.id,
+    awayClubId: idx % 2 === 0 ? club.id : opp.id,
+    status: 'Scheduled',
+  }));
+
+  const updatedFixtures = [...state.fixtures, ...newTourFixtures].sort((a, b) =>
+    a.kickoffDate.localeCompare(b.kickoffDate)
+  );
 
   const tx: FinanceTransaction = {
     id: `tx_tour_${region}_${state.gameDate}`,
@@ -5717,8 +5866,8 @@ export function organizePreSeasonTour(
     category: 'Sponsorship',
     amount: tourSpec.revenue,
     description: trText(
-      `Commercial Tour Revenue: ${tourSpec.labelEn} (+€${(tourSpec.revenue / 1_000_000).toFixed(1)}M)`,
-      `รายได้จัดทัวร์ комเมอร์เชียล: ${tourSpec.labelTh} (+€${(tourSpec.revenue / 1_000_000).toFixed(1)}M)`
+      `Pre-Season Tour Revenue: ${tourSpec.labelEn} (+€${(tourSpec.revenue / 1_000_000).toFixed(1)}M)`,
+      `รายได้จัดทัวร์ปรีซีซั่น: ${tourSpec.labelTh} (+€${(tourSpec.revenue / 1_000_000).toFixed(1)}M)`
     ),
     balanceAfter: newBalance,
   };
@@ -5728,6 +5877,7 @@ export function organizePreSeasonTour(
       ...state,
       clubs: { ...state.clubs, [club.id]: club },
       players: updatedPlayers,
+      fixtures: updatedFixtures,
       transactions: [tx, ...state.transactions],
       inbox: [
         {
@@ -5735,12 +5885,12 @@ export function organizePreSeasonTour(
           gameDate: state.gameDate,
           category: 'Board',
           title: trText(
-            `${tourSpec.labelEn} Completed: +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M Commercial Income!`,
-            `สำเร็จทัวร์ปรีซีซั่น ${tourSpec.labelTh}: รับรายได้เข้าสโมสร +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M!`
+            `${tourSpec.labelEn} Confirmed: 3 Tour Friendlies Scheduled & +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M Revenue!`,
+            `ยืนยันโปรแกรม ${tourSpec.labelTh}: จัดแมตช์อุ่นเครื่อง 3 นัด & รับรายได้ +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M!`
           ),
           body: trText(
-            `${club.name} concluded a highly lucrative ${tourSpec.labelEn}, generating €${(tourSpec.revenue / 1_000_000).toFixed(1)}M in global merchandise and sponsorship revenue while boosting squad Match Sharpness (+4%).`,
-            `สโมสร ${club.name} ปิดฉากการเดินทางทัวร์ ${tourSpec.labelTh} อย่างสวยงาม กวาดรายได้สปอนเซอร์และสินค้าที่ระลึก +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M พร้อมเพิ่มความเฉียบคม (Match Sharpness) ให้ขุมกำลัง +4%`
+            `${club.name} organized the ${tourSpec.labelEn} against ${selectedTourOpponents.map((o) => o.shortName).join(', ')}, generating €${(tourSpec.revenue / 1_000_000).toFixed(1)}M in sponsorship revenue and boosting squad Match Sharpness (+${tourSpec.sharpnessBoost}%).`,
+            `สโมสร ${club.name} ยืนยันการเดินทางทัวร์ ${tourSpec.labelTh} ดวลกับ ${selectedTourOpponents.map((o) => o.shortName).join(', ')} กวาดรายได้สปอนเซอร์ +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M พร้อมเพิ่มความเฉียบคม (Match Sharpness) +${tourSpec.sharpnessBoost}%`
           ),
           isRead: false,
           relatedClubId: club.id,
@@ -5750,8 +5900,74 @@ export function organizePreSeasonTour(
     },
     success: true,
     message: trText(
-      `Completed ${tourSpec.labelEn}! Earned +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M and +4% Match Sharpness.`,
-      `จัดทัวร์ ${tourSpec.labelTh} สำเร็จ! รับรายได้ +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M และเพิ่มความเฉียบคมนักเตะ +4%`
+      `Organized ${tourSpec.labelEn}! 3 Tour Friendlies added, +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M revenue & +${tourSpec.sharpnessBoost}% Match Sharpness.`,
+      `จัดทัวร์ ${tourSpec.labelTh} สำเร็จ! เพิ่มเกมอุ่นเครื่อง 3 นัด, รับรายได้ +€${(tourSpec.revenue / 1_000_000).toFixed(1)}M และความเฉียบคม +${tourSpec.sharpnessBoost}%`
+    ),
+  };
+}
+
+export function setPreSeasonCampFocus(
+  state: WorldState,
+  focus: PreSeasonCampFocus
+): { nextState: WorldState; message: string } {
+  const club = { ...state.clubs[state.controlledClubId] };
+  club.preSeasonCampFocus = focus;
+
+  const updatedPlayers = { ...state.players };
+  if (focus === 'FITNESS_BOOTCAMP') {
+    for (const [pid, p] of Object.entries(updatedPlayers)) {
+      if (p.clubId === club.id && !p.injuryStatus.isInjured) {
+        updatedPlayers[pid] = {
+          ...p,
+          fitness: Math.min(100, p.fitness + 5),
+          matchSharpness: Math.min(100, p.matchSharpness + 4),
+        };
+      }
+    }
+  } else if (focus === 'TACTICAL_DRILLS') {
+    const newFam = Math.min(100, club.primaryTactic.familiarity + 6);
+    club.primaryTactic = {
+      ...club.primaryTactic,
+      familiarity: newFam,
+    };
+    club.formationFamiliarity = {
+      ...(club.formationFamiliarity || {}),
+      [club.primaryTactic.formation]: newFam,
+    };
+  } else if (focus === 'TEAM_COHESION') {
+    for (const [pid, p] of Object.entries(updatedPlayers)) {
+      if (p.clubId === club.id) {
+        updatedPlayers[pid] = {
+          ...p,
+          morale: Math.min(100, p.morale + 5),
+          satisfaction: Math.min(100, p.satisfaction + 4),
+        };
+      }
+    }
+  }
+
+  const labelEn =
+    focus === 'FITNESS_BOOTCAMP'
+      ? 'Physical Fitness & Match Sharpness Bootcamp (+5% Condition, +4% Sharpness)'
+      : focus === 'TACTICAL_DRILLS'
+        ? 'Tactical System & Pressing Drills (+6% Tactical Familiarity)'
+        : 'Team Bonding & Dressing Room Cohesion (+5% Morale)';
+  const labelTh =
+    focus === 'FITNESS_BOOTCAMP'
+      ? 'เน้นเรียกความฟิตและแมตช์ชาร์ปเนส (+5% ความฟิต, +4% ความเฉียบคม)'
+      : focus === 'TACTICAL_DRILLS'
+        ? 'เน้นซ้อมระบบแทคติกและเพรสซิ่ง (+6% ความเข้าใจแผน)'
+        : 'เน้นละลายพฤติกรรมและสร้างทีมเวิร์ค (+5% ขวัญกำลังใจ)';
+
+  return {
+    nextState: {
+      ...state,
+      clubs: { ...state.clubs, [club.id]: club },
+      players: updatedPlayers,
+    },
+    message: trText(
+      `Pre-Season Training Camp Focus updated: ${labelEn}`,
+      `เปลี่ยนแผนการซ้อมแคมป์ปรีซีซั่นเป็น: ${labelTh}`
     ),
   };
 }
@@ -6682,13 +6898,30 @@ export function simulateClubWorldCupNextStage(
     (f) => f.competitionId === 'GLB_CWC' && f.seasonId === seasonId
   );
 
-  // Initialize 8-club Quarter-Final bracket if none exist yet
+  // Initialize 8-club Quarter-Final bracket with global continental representatives (UEFA + BRA_SA + KSA_SPL + USA_MLS + JPN_J1)
   if (cwcFixtures.length === 0) {
-    const topClubs = Object.values(state.clubs)
-      .filter((c) => c.id !== state.controlledClubId)
+    const pickTopFromLeague = (lid: LeagueId) =>
+      Object.values(state.clubs)
+        .filter((c) => c.leagueId === lid && c.id !== state.controlledClubId)
+        .sort((a, b) => b.reputation - a.reputation)[0];
+    const continentalReps = [
+      pickTopFromLeague('BRA_SA'),
+      pickTopFromLeague('KSA_SPL'),
+      pickTopFromLeague('USA_MLS'),
+      pickTopFromLeague('JPN_J1'),
+    ].filter((c): c is Club => Boolean(c));
+    const repIds = new Set([state.controlledClubId, ...continentalReps.map((c) => c.id)]);
+    const topUefaClubs = Object.values(state.clubs)
+      .filter((c) => !repIds.has(c.id))
       .sort((a, b) => b.reputation - a.reputation)
-      .slice(0, 7);
-    const participants = [state.clubs[state.controlledClubId], ...topClubs].filter(Boolean);
+      .slice(0, 7 - continentalReps.length);
+    const participants = [
+      state.clubs[state.controlledClubId],
+      ...continentalReps,
+      ...topUefaClubs,
+    ]
+      .filter(Boolean)
+      .slice(0, 8);
     for (let i = 0; i < 4; i++) {
       const home = participants[i * 2];
       const away = participants[i * 2 + 1];
@@ -8912,9 +9145,9 @@ export function arrangeFriendlyMatch(
 
   const friendlyFixture: Fixture = {
     id: `frd_${state.gameDate}_${myClub.id}_${oppClub.id}_${state.transactions.length}`,
-    competitionId: myClub.leagueId,
+    competitionId: 'PRE_SEASON_FRIENDLY',
     seasonId: state.currentSeason,
-    matchday: 0,
+    matchday: 1,
     kickoffDate: state.gameDate,
     homeClubId: myClub.id,
     awayClubId: oppClub.id,
@@ -8928,10 +9161,11 @@ export function arrangeFriendlyMatch(
     state.players,
     state.randomSeed + state.transactions.length * 313
   );
+  friendlyFixture.result = simRes;
 
   const gateReceipts =
     tier === 'GIANT' ? 2_800_000 : tier === 'EUROPEAN' ? 1_650_000 : 850_000;
-  const sharpnessBoost = 6;
+  const sharpnessBoost = 8;
 
   const updatedPlayers: Record<string, Player> = { ...state.players };
   for (const p of Object.values(state.players)) {
@@ -8945,8 +9179,17 @@ export function arrangeFriendlyMatch(
   }
 
   const newBalance = myClub.finances.balance + gateReceipts;
+  const newFam = Math.min(100, myClub.primaryTactic.familiarity + 4);
   const updatedMyClub: Club = {
     ...myClub,
+    primaryTactic: {
+      ...myClub.primaryTactic,
+      familiarity: newFam,
+    },
+    formationFamiliarity: {
+      ...(myClub.formationFamiliarity || {}),
+      [myClub.primaryTactic.formation]: newFam,
+    },
     finances: {
       ...myClub.finances,
       balance: newBalance,
@@ -8968,11 +9211,15 @@ export function arrangeFriendlyMatch(
   };
 
   const scoreline = `${myClub.shortName} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.shortName}`;
+  const updatedFixtures = [...state.fixtures, friendlyFixture].sort((a, b) =>
+    a.kickoffDate.localeCompare(b.kickoffDate)
+  );
 
   return {
     nextState: {
       ...state,
       players: updatedPlayers,
+      fixtures: updatedFixtures,
       clubs: {
         ...state.clubs,
         [myClub.id]: updatedMyClub,
@@ -8984,12 +9231,12 @@ export function arrangeFriendlyMatch(
           gameDate: state.gameDate,
           category: 'Match Report',
           title: trText(
-            `Friendly Result: ${myClub.name} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.name} (+6% Squad Sharpness)`,
-            `ผลแมตช์กระชับมิตร: ${myClub.name} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.name} (ความเฉียบคมทั้งทีม +6%)`
+            `Pre-Season Friendly: ${myClub.name} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.name} (+${sharpnessBoost}% Sharpness)`,
+            `ผลแมตช์อุ่นเครื่องปรีซีซั่น: ${myClub.name} ${simRes.homeGoals} - ${simRes.awayGoals} ${oppClub.name} (ความเฉียบคมทั้งทีม +${sharpnessBoost}%)`
           ),
           body: trText(
-            `${myClub.name} hosted ${oppClub.name} in a friendly match (${simRes.homeGoals}-${simRes.awayGoals}), generating €${(gateReceipts / 1_000_000).toFixed(2)}M in gate receipts and boosting squad Match Sharpness by +${sharpnessBoost}%.`,
-            `${myClub.name} เปิดบ้านอุ่นเครื่องพบกับ ${oppClub.name} (${simRes.homeGoals}-${simRes.awayGoals}) สร้างรายได้เข้าสโมสร €${(gateReceipts / 1_000_000).toFixed(2)}M พร้อมเพิ่มความเฉียบคม (Match Sharpness) ให้นักเตะทั้งทีม +${sharpnessBoost}%`
+            `${myClub.name} hosted ${oppClub.name} in a Pre-Season Friendly (${simRes.homeGoals}-${simRes.awayGoals}), generating €${(gateReceipts / 1_000_000).toFixed(2)}M in gate receipts and boosting squad Match Sharpness by +${sharpnessBoost}% and Tactical Familiarity by +4%.`,
+            `${myClub.name} เปิดบ้านอุ่นเครื่องปรีซีซั่นพบกับ ${oppClub.name} (${simRes.homeGoals}-${simRes.awayGoals}) สร้างรายได้เข้าสโมสร €${(gateReceipts / 1_000_000).toFixed(2)}M พร้อมเพิ่มความเฉียบคม (Match Sharpness) +${sharpnessBoost}% และความเข้าใจแผน +4%`
           ),
           isRead: false,
           relatedClubId: oppClub.id,

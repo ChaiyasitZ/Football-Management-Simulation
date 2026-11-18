@@ -31,9 +31,10 @@ function hashClubString(str: string): number {
 
 export const ClubBadge: React.FC<{
   club?: Pick<Club, 'name' | 'shortName' | 'primaryColor' | 'secondaryColor' | 'logoUrl'> | null;
-  size?: 'xs' | 'sm' | 'md' | 'lg';
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+  showRing?: boolean;
   className?: string;
-}> = React.memo(({ club, size = 'md', className = '' }) => {
+}> = React.memo(({ club, size = 'md', showRing = false, className = '' }) => {
   const [imgError, setImgError] = useState(false);
 
   const resolvedLogoUrl =
@@ -51,6 +52,7 @@ export const ClubBadge: React.FC<{
     sm: 'w-6 h-6 text-[10px] rounded',
     md: 'w-8 h-8 text-xs rounded',
     lg: 'w-11 h-11 text-base rounded-lg',
+    xl: 'w-16 h-16 text-lg rounded-xl',
   };
 
   const pixelSizeMap = {
@@ -58,7 +60,10 @@ export const ClubBadge: React.FC<{
     sm: 24,
     md: 32,
     lg: 44,
+    xl: 64,
   };
+
+  const ringClass = showRing ? 'ring-2 ring-slate-700/80 p-0.5 bg-slate-900/70' : '';
 
   if (resolvedLogoUrl && !imgError) {
     const px = pixelSizeMap[size];
@@ -72,7 +77,7 @@ export const ClubBadge: React.FC<{
         decoding="async"
         referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
-        className={`${sizeMap[size]} object-contain shrink-0 select-none ${className}`}
+        className={`${sizeMap[size]} ${ringClass} object-contain shrink-0 select-none ${className}`}
       />
     );
   }
@@ -90,7 +95,7 @@ export const ClubBadge: React.FC<{
 
   return (
     <div
-      className={`${sizeMap[size]} inline-flex items-center justify-center shrink-0 select-none ${className}`}
+      className={`${sizeMap[size]} ${ringClass} inline-flex items-center justify-center shrink-0 select-none ${className}`}
       title={club.name}
       data-testid="club-badge-heraldic"
     >
@@ -168,11 +173,10 @@ export const ClubBadge: React.FC<{
 });
 
 export {
-  ClubKitJersey,
-  ClubKitShowcaseCard,
   CompetitionBadge,
   TrophyArtwork,
   resolveTrophyType,
 } from './TrophyAndKitVisuals';
+
 
 

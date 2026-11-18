@@ -24,7 +24,7 @@ import {
 import { useLanguage } from '../i18n/LanguageContext';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
-import { ClubKitJersey, CompetitionBadge } from './TrophyAndKitVisuals';
+import { CompetitionBadge } from './TrophyAndKitVisuals';
 import { AttrBadge } from '../ui/UIComponents';
 
 export interface PlayerProfilePageProps {
@@ -341,14 +341,11 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
           <div className="flex items-center gap-4">
             <PlayerAvatar player={player} club={playerClub} size="lg" />
             {playerClub && (
-              <div className="hidden sm:block shrink-0">
-                <ClubKitJersey
-                  club={playerClub}
-                  variant={player.positions.includes('GK') ? 'gk' : 'home'}
-                  size="sm"
-                  number={player.shirtNumber || (currentIdx >= 0 && currentIdx < 99 ? currentIdx + 1 : 10)}
-                  playerName={player.lastName}
-                />
+              <div className="hidden sm:flex flex-col items-center gap-1 shrink-0">
+                <ClubBadge club={playerClub} size="md" showRing />
+                <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-emerald-400 font-mono font-bold text-xs">
+                  #{player.shirtNumber || (currentIdx >= 0 && currentIdx < 99 ? currentIdx + 1 : 10)}
+                </span>
               </div>
             )}
             <div className="space-y-1">

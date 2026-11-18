@@ -12,6 +12,7 @@ export type CompetitionVisualId =
   | UefaCompetitionId
   | CupId
   | SuperCupId
+  | 'PRE_SEASON_FRIENDLY'
   | 'FIFA_CWC'
   | 'GLB_CWC'
   | 'EURO_NATIONS'
@@ -498,6 +499,168 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/77.png',
   },
+  PRE_SEASON_FRIENDLY: {
+    shortCode: 'FRIENDLY',
+    title: 'Pre-Season Club Friendly',
+    subtitle: 'International Pre-Season Showcase',
+    primary: '#064e3b',
+    secondary: '#10b981',
+    accent: '#fde047',
+    motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/105.png',
+  },
+  // 8 Stage 9 New Playable Leagues
+  ENG_L1: {
+    shortCode: 'EFL L1',
+    title: 'EFL League One',
+    subtitle: 'England · Tier 3',
+    primary: '#1e293b',
+    secondary: '#0284c7',
+    accent: '#38bdf8',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/108.png',
+  },
+  AUT_BL: {
+    shortCode: 'ADMIRAL BL',
+    title: 'Austrian Bundesliga',
+    subtitle: 'Austria · Tier 1',
+    primary: '#7f1d1d',
+    secondary: '#dc2626',
+    accent: '#ffffff',
+    motif: 'bundesliga',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/38.png',
+  },
+  SUI_SL: {
+    shortCode: 'SUPER LEAGUE',
+    title: 'Swiss Super League',
+    subtitle: 'Switzerland · Tier 1',
+    primary: '#7f1d1d',
+    secondary: '#ef4444',
+    accent: '#ffffff',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/69.png',
+  },
+  GRE_SL: {
+    shortCode: 'STOIXIMAN SL',
+    title: 'Stoiximan Super League',
+    subtitle: 'Greece · Tier 1',
+    primary: '#1e3a8a',
+    secondary: '#2563eb',
+    accent: '#38bdf8',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/135.png',
+  },
+  KSA_SPL: {
+    shortCode: 'ROSHN SPL',
+    title: 'Roshn Saudi Pro League',
+    subtitle: 'Saudi Arabia · Tier 1',
+    primary: '#064e3b',
+    secondary: '#10b981',
+    accent: '#facc15',
+    motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/536.png',
+  },
+  USA_MLS: {
+    shortCode: 'MLS',
+    title: 'Major League Soccer',
+    subtitle: 'United States · Tier 1',
+    primary: '#172554',
+    secondary: '#dc2626',
+    accent: '#ffffff',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/130.png',
+  },
+  BRA_SA: {
+    shortCode: 'BRASILEIRÃO',
+    title: 'Brasileirão Betano Série A',
+    subtitle: 'Brazil · Tier 1',
+    primary: '#052e16',
+    secondary: '#16a34a',
+    accent: '#facc15',
+    motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/268.png',
+  },
+  JPN_J1: {
+    shortCode: 'J1 LEAGUE',
+    title: 'Meiji Yasuda J1 League',
+    subtitle: 'Japan · Tier 1',
+    primary: '#450a0a',
+    secondary: '#dc2626',
+    accent: '#ffffff',
+    motif: 'heraldic',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/223.png',
+  },
+  // 7 Stage 9 New Domestic Cups
+  AUT_CUP: {
+    shortCode: 'ÖFB-CUP',
+    title: 'UNIQA ÖFB-Cup',
+    subtitle: 'Austrian National Knockout Cup',
+    primary: '#7f1d1d',
+    secondary: '#dc2626',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/278.png',
+  },
+  SUI_CUP: {
+    shortCode: 'SUI CUP',
+    title: 'Schweizer Cup',
+    subtitle: 'Swiss National Knockout Cup',
+    primary: '#7f1d1d',
+    secondary: '#ef4444',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/575.png',
+  },
+  GRE_CUP: {
+    shortCode: 'GRE CUP',
+    title: 'Greek Football Cup',
+    subtitle: 'Greek National Knockout Cup',
+    primary: '#1e3a8a',
+    secondary: '#0284c7',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/145.png',
+  },
+  KSA_CUP: {
+    shortCode: 'KING CUP',
+    title: 'King\'s Cup (Custodian of the Two Holy Mosques Cup)',
+    subtitle: 'Saudi Royal Knockout Cup',
+    primary: '#064e3b',
+    secondary: '#ca8a04',
+    accent: '#fde047',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/9475.png',
+  },
+  USA_CUP: {
+    shortCode: 'OPEN CUP',
+    title: 'Lamar Hunt U.S. Open Cup',
+    subtitle: 'American National Knockout Cup',
+    primary: '#172554',
+    secondary: '#dc2626',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/9441.png',
+  },
+  BRA_CUP: {
+    shortCode: 'COPA DO BRASIL',
+    title: 'Copa Betano do Brasil',
+    subtitle: 'Brazilian National Knockout Cup',
+    primary: '#052e16',
+    secondary: '#16a34a',
+    accent: '#facc15',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/203.png',
+  },
+  JPN_CUP: {
+    shortCode: 'EMPEROR CUP',
+    title: 'Emperor\'s Cup JFA',
+    subtitle: 'Japanese National Knockout Cup',
+    primary: '#450a0a',
+    secondary: '#dc2626',
+    accent: '#fde047',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/225.png',
+  },
 };
 
 /**
@@ -517,6 +680,38 @@ export function resolveFotMobCompetitionLogoUrls(competitionIdOrName: string): {
   if (!COMPETITION_STYLE_MAP[matchedKey]) {
     if (COMPETITION_STYLE_MAP[upper]) {
       matchedKey = upper;
+    } else if (upper.includes('FRIENDLY') || upper.includes('PRE_SEASON_FRIENDLY')) {
+      matchedKey = 'PRE_SEASON_FRIENDLY';
+    } else if (upper.includes('LEAGUE ONE') || upper.includes('ENG_L1')) {
+      matchedKey = 'ENG_L1';
+    } else if (upper.includes('AUSTRIAN') || upper.includes('AUT_BL')) {
+      matchedKey = 'AUT_BL';
+    } else if (upper.includes('SWISS SUPER') || upper.includes('SUI_SL')) {
+      matchedKey = 'SUI_SL';
+    } else if (upper.includes('STOIXIMAN') || upper.includes('GRE_SL')) {
+      matchedKey = 'GRE_SL';
+    } else if (upper.includes('ROSHN') || upper.includes('SAUDI PRO') || upper.includes('KSA_SPL')) {
+      matchedKey = 'KSA_SPL';
+    } else if (upper.includes('MAJOR LEAGUE SOCCER') || upper.includes('USA_MLS')) {
+      matchedKey = 'USA_MLS';
+    } else if (upper.includes('BRASILEIRÃO') || upper.includes('BRA_SA')) {
+      matchedKey = 'BRA_SA';
+    } else if (upper.includes('J1 LEAGUE') || upper.includes('JPN_J1')) {
+      matchedKey = 'JPN_J1';
+    } else if (upper.includes('ÖFB-CUP') || upper.includes('AUT_CUP')) {
+      matchedKey = 'AUT_CUP';
+    } else if (upper.includes('SCHWEIZER CUP') || upper.includes('SUI_CUP')) {
+      matchedKey = 'SUI_CUP';
+    } else if (upper.includes('GREEK') && upper.includes('CUP')) {
+      matchedKey = 'GRE_CUP';
+    } else if (upper.includes('KING\'S CUP') || upper.includes('KSA_CUP')) {
+      matchedKey = 'KSA_CUP';
+    } else if (upper.includes('OPEN CUP') || upper.includes('USA_CUP')) {
+      matchedKey = 'USA_CUP';
+    } else if (upper.includes('COPA DO BRASIL') || upper.includes('BRA_CUP')) {
+      matchedKey = 'BRA_CUP';
+    } else if (upper.includes('EMPEROR') || upper.includes('JPN_CUP')) {
+      matchedKey = 'JPN_CUP';
     } else if (upper.includes('CARABAO') || upper.includes('EFL CUP') || upper.includes('ENG_LC')) {
       matchedKey = 'ENG_LC';
     } else if (upper.includes('ALLIANZ') || upper.includes('TAÇA DA LIGA') || upper.includes('POR_LC')) {
@@ -1436,477 +1631,3 @@ export const TrophyArtwork: React.FC<{
   );
 };
 
-/* ============================================================================
-   3. AUTHENTIC CLUB KITS (HOME, AWAY & GK JERSEYS FOR REAL CLUBS)
-============================================================================ */
-
-export type KitPattern =
-  | 'solid'
-  | 'stripes'
-  | 'hoops'
-  | 'sleeves'
-  | 'center_band'
-  | 'sash'
-  | 'halves'
-  | 'pinstripes';
-
-export interface KitDesignSpec {
-  pattern: KitPattern;
-  bodyColor: string;
-  secondaryColor: string;
-  sleeveColor?: string;
-  trimColor: string;
-  awayBody: string;
-  awaySecondary: string;
-  awayPattern?: KitPattern;
-  gkColor?: string;
-}
-
-/**
- * Curated authentic 2025/26 kit patterns & colors for real European clubs
- */
-const AUTHENTIC_CLUB_KITS: Record<string, KitDesignSpec> = {
-  // Premier League
-  ARS: { pattern: 'sleeves', bodyColor: '#EF0107', secondaryColor: '#FFFFFF', sleeveColor: '#FFFFFF', trimColor: '#063672', awayBody: '#111827', awaySecondary: '#EF0107', awayPattern: 'pinstripes' },
-  MCI: { pattern: 'solid', bodyColor: '#6CABDD', secondaryColor: '#FFFFFF', trimColor: '#1C2C5B', awayBody: '#1E293B', awaySecondary: '#FDE047', awayPattern: 'stripes' },
-  LIV: { pattern: 'solid', bodyColor: '#C8102E', secondaryColor: '#F6EB61', trimColor: '#FFFFFF', awayBody: '#1E293B', awaySecondary: '#2DD4BF', awayPattern: 'solid' },
-  CHE: { pattern: 'solid', bodyColor: '#034694', secondaryColor: '#FFFFFF', trimColor: '#DBA111', awayBody: '#F8FAFC', awaySecondary: '#034694', awayPattern: 'solid' },
-  MUN: { pattern: 'solid', bodyColor: '#DA291C', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#1E3A8A', awaySecondary: '#FFFFFF', awayPattern: 'pinstripes' },
-  NEW: { pattern: 'stripes', bodyColor: '#111827', secondaryColor: '#FFFFFF', trimColor: '#38BDF8', awayBody: '#881337', awaySecondary: '#1E3A8A', awayPattern: 'hoops' },
-  TOT: { pattern: 'sleeves', bodyColor: '#FFFFFF', secondaryColor: '#132257', sleeveColor: '#132257', trimColor: '#132257', awayBody: '#38BDF8', awaySecondary: '#132257', awayPattern: 'stripes' },
-  AVL: { pattern: 'sleeves', bodyColor: '#670E36', secondaryColor: '#95BFE5', sleeveColor: '#95BFE5', trimColor: '#95BFE5', awayBody: '#FFFFFF', awaySecondary: '#670E36', awayPattern: 'pinstripes' },
-  BHA: { pattern: 'stripes', bodyColor: '#0057B8', secondaryColor: '#FFFFFF', trimColor: '#FFCD00', awayBody: '#FACC15', awaySecondary: '#111827', awayPattern: 'pinstripes' },
-  NFO: { pattern: 'solid', bodyColor: '#DD0000', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#1E3A8A', awaySecondary: '#38BDF8', awayPattern: 'sash' },
-  WHU: { pattern: 'sleeves', bodyColor: '#7A263A', secondaryColor: '#1BB1E7', sleeveColor: '#1BB1E7', trimColor: '#1BB1E7', awayBody: '#111827', awaySecondary: '#7A263A', awayPattern: 'solid' },
-  BOU: { pattern: 'stripes', bodyColor: '#B50E12', secondaryColor: '#111827', trimColor: '#FACC15', awayBody: '#F8FAFC', awaySecondary: '#7E22CE', awayPattern: 'hoops' },
-  CRY: { pattern: 'stripes', bodyColor: '#1B458F', secondaryColor: '#C4122E', trimColor: '#FFFFFF', awayBody: '#FACC15', awaySecondary: '#1B458F', awayPattern: 'sash' },
-  FUL: { pattern: 'sleeves', bodyColor: '#FFFFFF', secondaryColor: '#111827', sleeveColor: '#FFFFFF', trimColor: '#CC0000', awayBody: '#DC2626', awaySecondary: '#111827', awayPattern: 'stripes' },
-  BRE: { pattern: 'stripes', bodyColor: '#E30613', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#FBCFE8', awaySecondary: '#111827', awayPattern: 'solid' },
-  EVE: { pattern: 'solid', bodyColor: '#003399', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#1E293B', awaySecondary: '#FDE047', awayPattern: 'solid' },
-  WOL: { pattern: 'solid', bodyColor: '#FDB913', secondaryColor: '#231F20', trimColor: '#231F20', awayBody: '#111827', awaySecondary: '#FDB913', awayPattern: 'sash' },
-  LEE: { pattern: 'solid', bodyColor: '#FFFFFF', secondaryColor: '#1D428A', trimColor: '#FFCD00', awayBody: '#FFCD00', awaySecondary: '#1D428A', awayPattern: 'solid' },
-  BUR: { pattern: 'sleeves', bodyColor: '#6C1D45', secondaryColor: '#99D6EA', sleeveColor: '#99D6EA', trimColor: '#99D6EA', awayBody: '#FACC15', awaySecondary: '#6C1D45', awayPattern: 'pinstripes' },
-  SUN: { pattern: 'stripes', bodyColor: '#EB172B', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#FFFFFF', awaySecondary: '#1E3A8A', awayPattern: 'center_band' },
-
-  // LaLiga
-  RMA: { pattern: 'solid', bodyColor: '#FFFFFF', secondaryColor: '#111827', trimColor: '#FEBE10', awayBody: '#F97316', awaySecondary: '#1E3A8A', awayPattern: 'solid' },
-  BAR: { pattern: 'halves', bodyColor: '#A50044', secondaryColor: '#004D98', trimColor: '#EDBB00', awayBody: '#111827', awaySecondary: '#A50044', awayPattern: 'center_band' },
-  ATM: { pattern: 'stripes', bodyColor: '#CB3524', secondaryColor: '#FFFFFF', trimColor: '#272E61', awayBody: '#1E3A8A', awaySecondary: '#CB3524', awayPattern: 'solid' },
-  ATH: { pattern: 'stripes', bodyColor: '#EE2523', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#1D4ED8', awaySecondary: '#FFFFFF', awayPattern: 'solid' },
-  VIL: { pattern: 'solid', bodyColor: '#FBE122', secondaryColor: '#005187', trimColor: '#005187', awayBody: '#7F1D1D', awaySecondary: '#FBE122', awayPattern: 'solid' },
-  RSO: { pattern: 'stripes', bodyColor: '#0067B1', secondaryColor: '#FFFFFF', trimColor: '#0067B1', awayBody: '#111827', awaySecondary: '#FACC15', awayPattern: 'solid' },
-  BET: { pattern: 'stripes', bodyColor: '#0BB363', secondaryColor: '#FFFFFF', trimColor: '#0BB363', awayBody: '#FACC15', awaySecondary: '#111827', awayPattern: 'hoops' },
-  SEV: { pattern: 'solid', bodyColor: '#FFFFFF', secondaryColor: '#D4021D', trimColor: '#D4021D', awayBody: '#D4021D', awaySecondary: '#FFFFFF', awayPattern: 'pinstripes' },
-  VAL: { pattern: 'sleeves', bodyColor: '#FFFFFF', secondaryColor: '#111827', sleeveColor: '#111827', trimColor: '#F97316', awayBody: '#111827', awaySecondary: '#FACC15', awayPattern: 'solid' },
-  GIR: { pattern: 'stripes', bodyColor: '#DA291C', secondaryColor: '#FFFFFF', trimColor: '#DA291C', awayBody: '#1E293B', awaySecondary: '#F472B6', awayPattern: 'solid' },
-  CEL: { pattern: 'solid', bodyColor: '#8AC3EE', secondaryColor: '#FFFFFF', trimColor: '#E5254E', awayBody: '#1E3A8A', awaySecondary: '#FFFFFF', awayPattern: 'center_band' },
-  OSA: { pattern: 'solid', bodyColor: '#991B1B', secondaryColor: '#1E3A8A', trimColor: '#1E3A8A', awayBody: '#16A34A', awaySecondary: '#FFFFFF', awayPattern: 'solid' },
-  RAY: { pattern: 'sash', bodyColor: '#FFFFFF', secondaryColor: '#E52521', trimColor: '#E52521', awayBody: '#E52521', awaySecondary: '#FFFFFF', awayPattern: 'sash' },
-  ESP: { pattern: 'stripes', bodyColor: '#007FC8', secondaryColor: '#FFFFFF', trimColor: '#007FC8', awayBody: '#991B1B', awaySecondary: '#FFFFFF', awayPattern: 'solid' },
-  ALA: { pattern: 'stripes', bodyColor: '#0055A4', secondaryColor: '#FFFFFF', trimColor: '#0055A4', awayBody: '#FFFFFF', awaySecondary: '#0055A4', awayPattern: 'pinstripes' },
-  LEV: { pattern: 'stripes', bodyColor: '#003F8A', secondaryColor: '#B50036', trimColor: '#FACC15', awayBody: '#FFFFFF', awaySecondary: '#003F8A', awayPattern: 'solid' },
-  ELC: { pattern: 'hoops', bodyColor: '#FFFFFF', secondaryColor: '#008B45', trimColor: '#008B45', awayBody: '#008B45', awaySecondary: '#FFFFFF', awayPattern: 'solid' },
-  OVI: { pattern: 'solid', bodyColor: '#004B9B', secondaryColor: '#FFFFFF', trimColor: '#FACC15', awayBody: '#FFFFFF', awaySecondary: '#004B9B', awayPattern: 'sash' },
-
-  // Bundesliga
-  FCB: { pattern: 'solid', bodyColor: '#DC052D', secondaryColor: '#881337', trimColor: '#FFFFFF', awayBody: '#1E293B', awaySecondary: '#2DD4BF', awayPattern: 'pinstripes' },
-  B04: { pattern: 'center_band', bodyColor: '#E32221', secondaryColor: '#111827', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#E32221', awayPattern: 'solid' },
-  BVB: { pattern: 'pinstripes', bodyColor: '#FDE100', secondaryColor: '#111827', sleeveColor: '#111827', trimColor: '#111827', awayBody: '#111827', awaySecondary: '#FDE100', awayPattern: 'hoops' },
-  RBL: { pattern: 'sleeves', bodyColor: '#FFFFFF', secondaryColor: '#DD0741', sleeveColor: '#DD0741', trimColor: '#001F47', awayBody: '#DD0741', awaySecondary: '#001F47', awayPattern: 'stripes' },
-  VFB: { pattern: 'hoops', bodyColor: '#FFFFFF', secondaryColor: '#E32219', trimColor: '#E32219', awayBody: '#E32219', awaySecondary: '#111827', awayPattern: 'stripes' },
-  SGE: { pattern: 'stripes', bodyColor: '#111827', secondaryColor: '#E1000F', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#111827', awayPattern: 'solid' },
-  SCF: { pattern: 'stripes', bodyColor: '#E30613', secondaryColor: '#111827', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#E30613', awayPattern: 'sash' },
-  WOB: { pattern: 'solid', bodyColor: '#65B32E', secondaryColor: '#FFFFFF', trimColor: '#1E3A8A', awayBody: '#1E293B', awaySecondary: '#65B32E', awayPattern: 'pinstripes' },
-  BMG: { pattern: 'center_band', bodyColor: '#FFFFFF', secondaryColor: '#15803D', trimColor: '#111827', awayBody: '#15803D', awaySecondary: '#111827', awayPattern: 'stripes' },
-  SVW: { pattern: 'solid', bodyColor: '#1D9053', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#1D9053', awayPattern: 'hoops' },
-  HSV: { pattern: 'solid', bodyColor: '#FFFFFF', secondaryColor: '#005CA9', trimColor: '#E30613', awayBody: '#005CA9', awaySecondary: '#FFFFFF', awayPattern: 'solid' },
-  STP: { pattern: 'stripes', bodyColor: '#624839', secondaryColor: '#FFFFFF', trimColor: '#E30613', awayBody: '#FFFFFF', awaySecondary: '#624839', awayPattern: 'hoops' },
-
-  // Serie A
-  INT: { pattern: 'stripes', bodyColor: '#010E80', secondaryColor: '#111827', trimColor: '#FACC15', awayBody: '#FFFFFF', awaySecondary: '#010E80', awayPattern: 'pinstripes' },
-  NAP: { pattern: 'solid', bodyColor: '#12A0D7', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#1E3A8A', awayPattern: 'solid' },
-  JUV: { pattern: 'stripes', bodyColor: '#FFFFFF', secondaryColor: '#111827', trimColor: '#FACC15', awayBody: '#FEF08A', awaySecondary: '#1D4ED8', awayPattern: 'solid' },
-  MIL: { pattern: 'stripes', bodyColor: '#FB090B', secondaryColor: '#111827', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#FB090B', awayPattern: 'pinstripes' },
-  ATA: { pattern: 'stripes', bodyColor: '#1E71B8', secondaryColor: '#111827', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#1E71B8', awayPattern: 'hoops' },
-  ROM: { pattern: 'solid', bodyColor: '#8E1F2F', secondaryColor: '#F0BC42', trimColor: '#F0BC42', awayBody: '#F8FAFC', awaySecondary: '#EA580C', awayPattern: 'sash' },
-  LAZ: { pattern: 'solid', bodyColor: '#87D8F7', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#FEF08A', awaySecondary: '#1E3A8A', awayPattern: 'solid' },
-  FIO: { pattern: 'solid', bodyColor: '#482E92', secondaryColor: '#FFFFFF', trimColor: '#EF4444', awayBody: '#FFFFFF', awaySecondary: '#482E92', awayPattern: 'solid' },
-  BOL: { pattern: 'stripes', bodyColor: '#9F1F33', secondaryColor: '#1A2F48', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#9F1F33', awayPattern: 'sash' },
-  TOR: { pattern: 'solid', bodyColor: '#8A1E03', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#8A1E03', awayPattern: 'sash' },
-  COM: { pattern: 'pinstripes', bodyColor: '#00569C', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#00569C', awayPattern: 'solid' },
-  GEN: { pattern: 'halves', bodyColor: '#AD1919', secondaryColor: '#0E2440', trimColor: '#FACC15', awayBody: '#FFFFFF', awaySecondary: '#AD1919', awayPattern: 'hoops' },
-  UDI: { pattern: 'stripes', bodyColor: '#111827', secondaryColor: '#FFFFFF', trimColor: '#CA8A04', awayBody: '#FACC15', awaySecondary: '#111827', awayPattern: 'solid' },
-  SAS: { pattern: 'stripes', bodyColor: '#00A752', secondaryColor: '#111827', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#00A752', awayPattern: 'hoops' },
-  PAR: { pattern: 'center_band', bodyColor: '#FFFFFF', secondaryColor: '#111827', trimColor: '#FACC15', awayBody: '#FACC15', awaySecondary: '#1D4ED8', awayPattern: 'hoops' },
-  CAG: { pattern: 'halves', bodyColor: '#A50021', secondaryColor: '#002350', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#A50021', awayPattern: 'solid' },
-
-  // Ligue 1
-  PSG: { pattern: 'center_band', bodyColor: '#004170', secondaryColor: '#DA291C', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#DA291C', awayPattern: 'sash' },
-  OM: { pattern: 'solid', bodyColor: '#FFFFFF', secondaryColor: '#2FAEE0', trimColor: '#2FAEE0', awayBody: '#0F172A', awaySecondary: '#2FAEE0', awayPattern: 'pinstripes' },
-  ASM: { pattern: 'sash', bodyColor: '#E51B22', secondaryColor: '#FFFFFF', trimColor: '#CA8A04', awayBody: '#1E293B', awaySecondary: '#CA8A04', awayPattern: 'solid' },
-  LOSC: { pattern: 'solid', bodyColor: '#E01E13', secondaryColor: '#1D2043', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#1D2043', awayPattern: 'sash' },
-  OL: { pattern: 'center_band', bodyColor: '#FFFFFF', secondaryColor: '#DA020E', trimColor: '#14387F', awayBody: '#111827', awaySecondary: '#DA020E', awayPattern: 'pinstripes' },
-  NIC: { pattern: 'stripes', bodyColor: '#CC0000', secondaryColor: '#111827', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#CC0000', awayPattern: 'solid' },
-  RCL: { pattern: 'stripes', bodyColor: '#FACC15', secondaryColor: '#DC2626', trimColor: '#111827', awayBody: '#16A34A', awaySecondary: '#111827', awayPattern: 'stripes' },
-  REN: { pattern: 'solid', bodyColor: '#E41B17', secondaryColor: '#111827', trimColor: '#111827', awayBody: '#FFFFFF', awaySecondary: '#111827', awayPattern: 'pinstripes' },
-  FCN: { pattern: 'stripes', bodyColor: '#FDE100', secondaryColor: '#00904C', trimColor: '#00904C', awayBody: '#00904C', awaySecondary: '#FDE100', awayPattern: 'solid' },
-
-  // Portugal, Netherlands, Belgium, Turkey, Scotland
-  SLB: { pattern: 'solid', bodyColor: '#E83030', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#111827', awaySecondary: '#E83030', awayPattern: 'solid' },
-  SCP: { pattern: 'hoops', bodyColor: '#008057', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#111827', awaySecondary: '#008057', awayPattern: 'pinstripes' },
-  FCP: { pattern: 'stripes', bodyColor: '#00428C', secondaryColor: '#FFFFFF', trimColor: '#FACC15', awayBody: '#F97316', awaySecondary: '#00428C', awayPattern: 'solid' },
-  SCB: { pattern: 'sleeves', bodyColor: '#D60B29', secondaryColor: '#FFFFFF', sleeveColor: '#FFFFFF', trimColor: '#CA8A04', awayBody: '#1E293B', awaySecondary: '#D60B29', awayPattern: 'solid' },
-  PSV: { pattern: 'stripes', bodyColor: '#EE2523', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#111827', awaySecondary: '#38BDF8', awayPattern: 'pinstripes' },
-  FEY: { pattern: 'halves', bodyColor: '#E30613', secondaryColor: '#FFFFFF', trimColor: '#111827', awayBody: '#1E293B', awaySecondary: '#22C55E', awayPattern: 'solid' },
-  AJX: { pattern: 'center_band', bodyColor: '#FFFFFF', secondaryColor: '#D2122E', trimColor: '#D2122E', awayBody: '#1E3A8A', awaySecondary: '#FACC15', awayPattern: 'pinstripes' },
-  CLUB: { pattern: 'stripes', bodyColor: '#0066B3', secondaryColor: '#111827', trimColor: '#FACC15', awayBody: '#FFFFFF', awaySecondary: '#0066B3', awayPattern: 'solid' },
-  AND: { pattern: 'solid', bodyColor: '#5B2C82', secondaryColor: '#FFFFFF', trimColor: '#FFFFFF', awayBody: '#FFFFFF', awaySecondary: '#5B2C82', awayPattern: 'pinstripes' },
-  GAL: { pattern: 'halves', bodyColor: '#FDB912', secondaryColor: '#A90432', trimColor: '#111827', awayBody: '#FFFFFF', awaySecondary: '#A90432', awayPattern: 'pinstripes' },
-  FEN: { pattern: 'stripes', bodyColor: '#FFED00', secondaryColor: '#002D72', trimColor: '#FFFFFF', awayBody: '#002D72', awaySecondary: '#FFED00', awayPattern: 'solid' },
-  BJK: { pattern: 'solid', bodyColor: '#FFFFFF', secondaryColor: '#111827', trimColor: '#E30613', awayBody: '#111827', awaySecondary: '#FFFFFF', awayPattern: 'stripes' },
-  TRA: { pattern: 'stripes', bodyColor: '#80122A', secondaryColor: '#48A9DF', trimColor: '#FACC15', awayBody: '#FFFFFF', awaySecondary: '#80122A', awayPattern: 'solid' },
-  CELT: { pattern: 'hoops', bodyColor: '#018749', secondaryColor: '#FFFFFF', trimColor: '#FACC15', awayBody: '#FACC15', awaySecondary: '#018749', awayPattern: 'pinstripes' },
-  RAN: { pattern: 'solid', bodyColor: '#1B458F', secondaryColor: '#FFFFFF', trimColor: '#DA291C', awayBody: '#FFFFFF', awaySecondary: '#1B458F', awayPattern: 'sash' },
-  QPR: { pattern: 'hoops', bodyColor: '#1D5BA4', secondaryColor: '#FFFFFF', trimColor: '#DA291C', awayBody: '#DA291C', awaySecondary: '#111827', awayPattern: 'hoops' },
-};
-
-export function getClubKitSpec(club?: Partial<Club> | null): KitDesignSpec {
-  const short = (club?.shortName || '').toUpperCase();
-  if (AUTHENTIC_CLUB_KITS[short]) {
-    return AUTHENTIC_CLUB_KITS[short];
-  }
-  const primary = club?.primaryColor || '#10b981';
-  const secondary = club?.secondaryColor || '#ffffff';
-  // Deterministic pattern from club shortName
-  let hash = 0;
-  for (let i = 0; i < short.length; i++) {
-    hash = (hash * 31 + short.charCodeAt(i)) >>> 0;
-  }
-  const fallbackPatterns: KitPattern[] = ['solid', 'stripes', 'sleeves', 'pinstripes', 'center_band', 'hoops'];
-  const pat = primary.toLowerCase() === secondary.toLowerCase() ? 'solid' : fallbackPatterns[hash % fallbackPatterns.length];
-
-  return {
-    pattern: pat,
-    bodyColor: primary,
-    secondaryColor: secondary,
-    sleeveColor: pat === 'sleeves' ? secondary : primary,
-    trimColor: secondary,
-    awayBody: secondary === '#ffffff' || secondary === '#f8fafc' ? '#0f172a' : '#f8fafc',
-    awaySecondary: primary,
-    awayPattern: 'pinstripes',
-    gkColor: '#10b981',
-  };
-}
-
-export const ClubKitJersey: React.FC<{
-  club?: Partial<Club> | null;
-  variant?: 'home' | 'away' | 'gk';
-  number?: number | string;
-  playerName?: string;
-  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-  showLabel?: boolean;
-  label?: string;
-  className?: string;
-}> = ({
-  club,
-  variant = 'home',
-  number,
-  playerName,
-  size = 'md',
-  showLabel = false,
-  label,
-  className = '',
-}) => {
-  const spec = getClubKitSpec(club);
-
-  const pattern: KitPattern =
-    variant === 'gk'
-      ? 'solid'
-      : variant === 'away'
-        ? spec.awayPattern || 'solid'
-        : spec.pattern;
-
-  const bodyColor =
-    variant === 'gk'
-      ? spec.gkColor || '#10b981'
-      : variant === 'away'
-        ? spec.awayBody
-        : spec.bodyColor;
-
-  const secondaryColor =
-    variant === 'gk'
-      ? '#022c22'
-      : variant === 'away'
-        ? spec.awaySecondary
-        : spec.secondaryColor;
-
-  const sleeveColor =
-    variant === 'home' && spec.sleeveColor
-      ? spec.sleeveColor
-      : pattern === 'sleeves'
-        ? secondaryColor
-        : bodyColor;
-
-  const trimColor = variant === 'away' ? spec.awaySecondary : spec.trimColor;
-
-  const isLightBody =
-    bodyColor.toLowerCase() === '#ffffff' ||
-    bodyColor.toLowerCase() === '#f8fafc' ||
-    bodyColor.toLowerCase() === '#f1f5f9' ||
-    bodyColor.toLowerCase() === '#fde100' ||
-    bodyColor.toLowerCase() === '#facc15' ||
-    bodyColor.toLowerCase() === '#fef08a' ||
-    bodyColor.toLowerCase() === '#fbe122' ||
-    bodyColor.toLowerCase() === '#ffed00' ||
-    bodyColor.toLowerCase() === '#fdb913' ||
-    bodyColor.toLowerCase() === '#fdb912';
-
-  const textColor = isLightBody ? '#0f172a' : '#ffffff';
-
-  const dims =
-    size === 'xs'
-      ? 'w-7 h-7'
-      : size === 'sm'
-        ? 'w-10 h-10'
-        : size === 'lg'
-          ? 'w-20 h-20'
-          : size === 'xl'
-            ? 'w-28 h-28'
-            : 'w-14 h-14';
-
-  const clipId = `kit-clip-${(club?.shortName || 'clb').replace(/[^a-zA-Z0-9]/g, '')}-${variant}-${size}-${number || '0'}`;
-
-  return (
-    <div
-      className={`inline-flex flex-col items-center justify-center shrink-0 select-none ${className}`}
-      title={`${club?.name || 'Club'} (${variant.toUpperCase()} Kit)`}
-      data-testid={`club-kit-${variant}`}
-    >
-      <div className={dims}>
-        <svg viewBox="0 0 100 100" className="w-full h-full drop-shadow-md">
-        <defs>
-          <clipPath id={clipId}>
-            <path d="M26 14 L38 10 C42 17, 58 17, 62 10 L74 14 L93 33 L82 47 L71 39 L71 88 C71 90, 69 91, 67 91 L33 91 C31 91, 29 90, 29 88 L29 39 L18 47 L7 33 Z" />
-          </clipPath>
-        </defs>
-
-        {/* Clipped Shirt Body & Pattern */}
-        <g clipPath={`url(#${clipId})`}>
-          {/* Base Body */}
-          <rect x="0" y="0" width="100" height="100" fill={bodyColor} />
-
-          {/* Pattern Overlays */}
-          {pattern === 'stripes' && (
-            <g fill={secondaryColor}>
-              <rect x="31" y="10" width="8" height="85" />
-              <rect x="46" y="10" width="8" height="85" />
-              <rect x="61" y="10" width="8" height="85" />
-            </g>
-          )}
-
-          {pattern === 'pinstripes' && (
-            <g fill={secondaryColor} fillOpacity="0.85">
-              <rect x="33" y="10" width="2.2" height="85" />
-              <rect x="41" y="10" width="2.2" height="85" />
-              <rect x="50" y="10" width="2.2" height="85" />
-              <rect x="59" y="10" width="2.2" height="85" />
-              <rect x="67" y="10" width="2.2" height="85" />
-            </g>
-          )}
-
-          {pattern === 'hoops' && (
-            <g fill={secondaryColor}>
-              <rect x="0" y="23" width="100" height="10" />
-              <rect x="0" y="43" width="100" height="10" />
-              <rect x="0" y="63" width="100" height="10" />
-              <rect x="0" y="81" width="100" height="8" />
-            </g>
-          )}
-
-          {pattern === 'center_band' && (
-            <g>
-              <rect x="40" y="10" width="20" height="85" fill={secondaryColor} />
-              <rect x="38" y="10" width="2" height="85" fill={trimColor} />
-              <rect x="60" y="10" width="2" height="85" fill={trimColor} />
-            </g>
-          )}
-
-          {pattern === 'halves' && (
-            <rect x="50" y="0" width="50" height="100" fill={secondaryColor} />
-          )}
-
-          {pattern === 'sash' && (
-            <polygon points="22,12 36,12 78,88 64,88" fill={secondaryColor} />
-          )}
-
-          {/* Left & Right Sleeves */}
-          <polygon points="0,10 29,10 29,50 0,50" fill={sleeveColor} />
-          <polygon points="71,10 100,10 100,50 71,50" fill={sleeveColor} />
-
-          {/* Sleeve Cuffs */}
-          <polygon points="6,31 20,49 16,52 3,34" fill={trimColor} />
-          <polygon points="94,31 80,49 84,52 97,34" fill={trimColor} />
-
-          {/* Subtle 3D Fabric Shading */}
-          <rect x="29" y="10" width="6" height="82" fill="#000000" fillOpacity="0.09" />
-          <rect x="65" y="10" width="6" height="82" fill="#000000" fillOpacity="0.09" />
-        </g>
-
-        {/* Collar & Outline */}
-        <path
-          d="M38 10 C42 18, 58 18, 62 10"
-          fill="none"
-          stroke={trimColor}
-          strokeWidth="3.5"
-          strokeLinecap="round"
-        />
-        <path
-          d="M26 14 L38 10 C42 17, 58 17, 62 10 L74 14 L93 33 L82 47 L71 39 L71 88 C71 90, 69 91, 67 91 L33 91 C31 91, 29 90, 29 88 L29 39 L18 47 L7 33 Z"
-          fill="none"
-          stroke="#0f172a"
-          strokeOpacity="0.55"
-          strokeWidth="2"
-        />
-
-        {/* Chest Club Crest */}
-        <circle
-          cx="60"
-          cy="29"
-          r="4.2"
-          fill={spec.bodyColor}
-          stroke={spec.trimColor}
-          strokeWidth="1.2"
-        />
-        {/* Kit Maker Tick */}
-        <path d="M37 29 L40 31 L44 27" fill="none" stroke={textColor} strokeWidth="1.6" strokeLinecap="round" />
-
-        {/* Optional Squad Number / Sponsor */}
-        {number !== undefined ? (
-          <>
-            {playerName && (
-              <rect x="33" y="40" width="34" height="9" rx="2" fill="#020617" fillOpacity="0.55" />
-            )}
-            {playerName && (
-              <text
-                x="50"
-                y="46.5"
-                textAnchor="middle"
-                fill="#ffffff"
-                fontSize="6.5"
-                fontFamily="monospace"
-                fontWeight="800"
-              >
-                {playerName.toUpperCase().slice(0, 9)}
-              </text>
-            )}
-            <circle cx="50" cy="64" r="13" fill="#020617" fillOpacity="0.48" />
-            <text
-              x="50"
-              y="70"
-              textAnchor="middle"
-              fill="#ffffff"
-              fontSize="17"
-              fontFamily="monospace"
-              fontWeight="900"
-            >
-              {number}
-            </text>
-          </>
-        ) : (
-          <g>
-            <rect
-              x="34"
-              y="46"
-              width="32"
-              height="11"
-              rx="2"
-              fill="#020617"
-              fillOpacity="0.55"
-            />
-            <text
-              x="50"
-              y="53.8"
-              textAnchor="middle"
-              fill="#ffffff"
-              fontSize="7.2"
-              fontFamily="monospace"
-              fontWeight="800"
-              letterSpacing="0.6"
-            >
-              {(club?.shortName || 'CLUB').slice(0, 5)}
-            </text>
-          </g>
-        )}
-      </svg>
-      </div>
-      {showLabel && (
-        <span className="mt-0.5 text-[9px] font-mono text-slate-400">
-          {label || variant.toUpperCase()}
-        </span>
-      )}
-    </div>
-  );
-};
-
-/**
- * Complete Home / Away / Goalkeeper Kit Showcase Card for Club Overview & World Clubs
- */
-export const ClubKitShowcaseCard: React.FC<{
-  club: Club;
-  tr: (en: string, th: string) => string;
-  compact?: boolean;
-}> = ({ club, tr, compact = false }) => {
-  const spec = getClubKitSpec(club);
-  return (
-    <div
-      className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3"
-      data-testid="club-kits-showcase-card"
-    >
-      <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-        <div>
-          <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-400 font-mono">
-            {tr('Official 2025/26 Match Kits', 'ชุดแข่งขันทางการประจำฤดูกาล 2025/26 (Official Kits)')}
-          </h4>
-          <p className="text-[11px] text-slate-400">
-            {club.name} · {tr(`Pattern: ${spec.pattern.replace('_', ' ')}`, `ลวดลายชุดเหย้า: ${spec.pattern.replace('_', ' ')}`)}
-          </p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span
-            className="w-3.5 h-3.5 rounded-full border border-white/30"
-            style={{ backgroundColor: spec.bodyColor }}
-            title="Primary Kit Color"
-          />
-          <span
-            className="w-3.5 h-3.5 rounded-full border border-white/30"
-            style={{ backgroundColor: spec.secondaryColor }}
-            title="Secondary Kit Color"
-          />
-          <span
-            className="w-3.5 h-3.5 rounded-full border border-white/30"
-            style={{ backgroundColor: spec.awayBody }}
-            title="Away Kit Color"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-2.5 text-center">
-        <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 flex flex-col items-center gap-1.5">
-          <ClubKitJersey club={club} variant="home" size={compact ? 'md' : 'lg'} />
-          <div className="text-[11px] font-bold text-white">{tr('Home Kit', 'ชุดเหย้า')}</div>
-          <div className="text-[10px] font-mono text-slate-400 uppercase">{spec.pattern.replace('_', ' ')}</div>
-        </div>
-        <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 flex flex-col items-center gap-1.5">
-          <ClubKitJersey club={club} variant="away" size={compact ? 'md' : 'lg'} />
-          <div className="text-[11px] font-bold text-slate-200">{tr('Away Kit', 'ชุดเยือน')}</div>
-          <div className="text-[10px] font-mono text-slate-400 uppercase">{(spec.awayPattern || 'solid').replace('_', ' ')}</div>
-        </div>
-        <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 flex flex-col items-center gap-1.5">
-          <ClubKitJersey club={club} variant="gk" number={1} size={compact ? 'md' : 'lg'} />
-          <div className="text-[11px] font-bold text-emerald-400">{tr('GK Kit', 'ชุดผู้รักษาประตู')}</div>
-          <div className="text-[10px] font-mono text-slate-400 uppercase">PRO GK #1</div>
-        </div>
-      </div>
-    </div>
-  );
-};

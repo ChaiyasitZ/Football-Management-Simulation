@@ -161,6 +161,88 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   BJK: [
     ['Semih', 'Kilicsoy', 'ST', 'TUR', 19, 146, 182, ['AML', 'AMR']],
   ],
+  MIA: [
+    ['Lionel', 'Messi', 'AMR', 'ARG', 38, 174, 180, ['AMC', 'ST']],
+    ['Luis', 'Suarez', 'ST', 'URU', 38, 162, 170, []],
+    ['Sergio', 'Busquets', 'DM', 'ESP', 37, 160, 170, ['MC']],
+    ['Jordi', 'Alba', 'DL', 'ESP', 36, 158, 168, ['WBL']],
+    ['Benjamin', 'Cremaschi', 'MC', 'USA', 20, 138, 176, ['AMC']],
+  ],
+  LAG: [
+    ['Riqui', 'Puig', 'AMC', 'ESP', 25, 158, 172, ['MC']],
+    ['Marco', 'Reus', 'AMC', 'GER', 36, 156, 166, ['AML']],
+    ['Gabriel', 'Pec', 'AMR', 'BRA', 24, 154, 170, ['AML']],
+  ],
+  LAFC: [
+    ['Denis', 'Bouanga', 'AML', 'GAB', 30, 158, 164, ['ST']],
+    ['Olivier', 'Giroud', 'ST', 'FRA', 38, 154, 164, []],
+    ['Hugo', 'Lloris', 'GK', 'FRA', 38, 154, 164, []],
+  ],
+  HIL: [
+    ['Aleksandar', 'Mitrovic', 'ST', 'SRB', 30, 166, 172, []],
+    ['Ruben', 'Neves', 'DM', 'POR', 28, 166, 174, ['MC']],
+    ['Sergej', 'Milinkovic-Savic', 'MC', 'SRB', 30, 166, 172, ['AMC']],
+    ['Joao', 'Cancelo', 'DR', 'POR', 31, 166, 172, ['DL']],
+    ['Yassine', 'Bounou', 'GK', 'MAR', 34, 164, 170, []],
+    ['Malcom', 'Oliveira', 'AMR', 'BRA', 28, 162, 170, ['AMC']],
+  ],
+  NAS: [
+    ['Cristiano', 'Ronaldo', 'ST', 'POR', 40, 170, 180, ['AML']],
+    ['Sadio', 'Mane', 'AML', 'SEN', 33, 162, 170, ['AMR']],
+    ['Aymeric', 'Laporte', 'DC', 'ESP', 31, 164, 170, []],
+    ['Marcelo', 'Brozovic', 'DM', 'CRO', 32, 162, 170, ['MC']],
+    ['Otavio', 'Monteiro', 'AMC', 'POR', 30, 162, 168, ['MC']],
+    ['Jhon', 'Duran', 'ST', 'COL', 21, 156, 182, []],
+  ],
+  ITT: [
+    ['Karim', 'Benzema', 'ST', 'FRA', 37, 168, 176, ['AMC']],
+    ['NGolo', 'Kante', 'DM', 'FRA', 34, 164, 172, ['MC']],
+    ['Moussa', 'Diaby', 'AMR', 'FRA', 26, 162, 172, ['AML']],
+    ['Fabio', 'Tavares', 'DM', 'BRA', 31, 160, 168, ['DC']],
+  ],
+  AHL: [
+    ['Riyad', 'Mahrez', 'AMR', 'ALG', 34, 162, 170, []],
+    ['Ivan', 'Toney', 'ST', 'ENG', 29, 162, 168, []],
+    ['Franck', 'Kessie', 'MC', 'CIV', 28, 160, 168, ['DM']],
+    ['Gabri', 'Veiga', 'AMC', 'ESP', 23, 154, 178, ['MC']],
+  ],
+  FLA: [
+    ['Gerson', 'Santos', 'MC', 'BRA', 28, 160, 166, ['AMC']],
+    ['Pedro', 'Guilherme', 'ST', 'BRA', 28, 162, 168, []],
+    ['Giorgian', 'De Arrascaeta', 'AMC', 'URU', 31, 162, 168, ['AML']],
+    ['Lorran', 'Lucas', 'AMC', 'BRA', 19, 140, 184, ['AMR']],
+  ],
+  PAL: [
+    ['Raphael', 'Veiga', 'AMC', 'BRA', 30, 160, 166, ['MC']],
+    ['Paulinho', 'Sampaio', 'AML', 'BRA', 25, 158, 168, ['ST']],
+    ['Vitor', 'Roque', 'ST', 'BRA', 20, 150, 182, ['AMR']],
+  ],
+  SAN: [
+    ['Neymar', 'Junior', 'AMC', 'BRA', 33, 168, 178, ['AML', 'ST']],
+  ],
+  COR: [
+    ['Memphis', 'Depay', 'ST', 'NED', 31, 160, 168, ['AML', 'AMC']],
+  ],
+  RBS: [
+    ['Oscar', 'Gloukh', 'AMC', 'ISR', 21, 154, 184, ['AML', 'MC']],
+    ['Karim', 'Konate', 'ST', 'CIV', 21, 150, 182, []],
+  ],
+  OLY: [
+    ['Ayoub', 'El Kaabi', 'ST', 'MAR', 32, 158, 164, []],
+    ['Christos', 'Mouzakitis', 'MC', 'GRE', 18, 138, 182, ['DM']],
+    ['Charalampos', 'Kostoulas', 'ST', 'GRE', 18, 138, 183, ['AMC']],
+  ],
+  VIS: [
+    ['Yuya', 'Osako', 'ST', 'JPN', 35, 150, 156, []],
+    ['Yoshinori', 'Muto', 'AMR', 'JPN', 32, 150, 156, ['ST']],
+  ],
+  WRX: [
+    ['Paul', 'Mullin', 'ST', 'ENG', 30, 136, 142, []],
+    ['Elliot', 'Lee', 'AMC', 'ENG', 30, 135, 140, ['MC']],
+  ],
+  BIR: [
+    ['Jay', 'Stansfield', 'ST', 'ENG', 22, 142, 168, ['AML']],
+  ],
 };
 
 const SQUAD_BLUEPRINT: { pos: PositionCode; secondary: PositionCode[]; isYouth?: boolean }[] = [
@@ -507,7 +589,7 @@ export function createInitialWorldState(
   customClubConfig?: CustomClubConfig | null
 ): WorldState {
   const rng = new SeededRNG(seed);
-  const gameDate = '2025-08-10';
+  const gameDate = '2025-07-15';
   const currentSeason = '2025/26';
 
   const clubs: Record<string, Club> = {};
@@ -530,6 +612,14 @@ export function createInitialWorldState(
     GER_2B: [],
     ITA_SB: [],
     FRA_L2: [],
+    ENG_L1: [],
+    AUT_BL: [],
+    SUI_SL: [],
+    GRE_SL: [],
+    KSA_SPL: [],
+    USA_MLS: [],
+    BRA_SA: [],
+    JPN_J1: [],
   };
   const transactions: FinanceTransaction[] = [];
 
@@ -603,10 +693,10 @@ export function createInitialWorldState(
           potentialAbility: pa,
           potentialRange: [Math.max(coherentCa, pa - 10), Math.min(200, pa + 8)],
           attributes: attrs,
-          fitness: rng.int(90, 100),
-          matchSharpness: rng.int(80, 96),
+          fitness: rng.int(84, 94),
+          matchSharpness: rng.int(58, 68),
           morale: rng.int(75, 94),
-          tacticalFamiliarity: rng.int(76, 92),
+          tacticalFamiliarity: rng.int(65, 74),
           squadStatus: pSeed.isYouth
             ? isWonderkid
               ? 'Breakthrough Prospect'
@@ -859,9 +949,9 @@ export function createInitialWorldState(
   const resolvedControlledClubId =
     selectedClubId && clubs[selectedClubId] ? selectedClubId : 'club_eng_pl_1';
 
-  // Generate Multi-Tier Primary National Cups (10) & Secondary League Cups (3: ENG_LC, POR_LC, SCO_LC)
+  // Generate Multi-Tier Primary National Cups (17) & Secondary League Cups (3: ENG_LC, POR_LC, SCO_LC)
   for (const config of Object.values(LEAGUES_CONFIG)) {
-    if (config.tier === 2) continue;
+    if (config.tier === 2 || config.tier === 3) continue;
     const countryClubs = Object.values(clubs).filter((c) => c.countryId === config.countryId);
     const primaryCupFixtures = generateInitialDomesticCupFixtures(
       config.cupId,
@@ -961,6 +1051,36 @@ export function createInitialWorldState(
 
   const controlledClubId = selectedClubId && clubs[selectedClubId] ? selectedClubId : 'club_eng_pl_1';
   const controlledClub = clubs[controlledClubId];
+  controlledClub.preSeasonCampFocus = 'TACTICAL_DRILLS';
+
+  // Schedule 2 baseline Pre-Season Friendlies (Jul 22 & Aug 02) for the controlled club
+  const friendlyOpponents = Object.values(clubs)
+    .filter((c) => c.id !== controlledClub.id && c.leagueId !== controlledClub.leagueId)
+    .sort((a, b) => Math.abs(a.reputation - controlledClub.reputation) - Math.abs(b.reputation - controlledClub.reputation));
+  const opp1 = friendlyOpponents[0] || Object.values(clubs).find((c) => c.id !== controlledClub.id)!;
+  const opp2 = friendlyOpponents[1] || opp1;
+  fixtures.push(
+    {
+      id: `fix_PRE_SEASON_FRIENDLY_202526_${controlledClub.id}_1`,
+      competitionId: 'PRE_SEASON_FRIENDLY',
+      seasonId: currentSeason,
+      matchday: 1,
+      kickoffDate: '2025-07-22',
+      homeClubId: controlledClub.id,
+      awayClubId: opp1.id,
+      status: 'Scheduled',
+    },
+    {
+      id: `fix_PRE_SEASON_FRIENDLY_202526_${controlledClub.id}_2`,
+      competitionId: 'PRE_SEASON_FRIENDLY',
+      seasonId: currentSeason,
+      matchday: 2,
+      kickoffDate: '2025-08-02',
+      homeClubId: opp2.id,
+      awayClubId: controlledClub.id,
+      status: 'Scheduled',
+    }
+  );
 
   // Checkpoint 17: Apply Create-a-Club custom overrides if enabled
   if (customClubConfig && customClubConfig.enabled) {
@@ -1396,6 +1516,19 @@ export function createInitialWorldState(
     'nuno mendes': 25,
     'gianluigi donnarumma': 1,
     'viktor gyokeres': 9,
+    'lionel messi': 10,
+    'luis suarez': 9,
+    'sergio busquets': 5,
+    'jordi alba': 18,
+    'cristiano ronaldo': 7,
+    'sadio mane': 10,
+    'karim benzema': 9,
+    'ngolo kante': 7,
+    'neymar junior': 10,
+    'aleksandar mitrovic': 9,
+    'ruben neves': 8,
+    'riyad mahrez': 7,
+    'ivan toney': 99,
   };
 
   for (const clubId of Object.keys(clubs)) {

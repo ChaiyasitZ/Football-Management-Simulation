@@ -29,7 +29,7 @@ import {
 import { CLUB_TEMPLATES, ClubSeedTemplate, LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
 import { ClubBadge } from './ClubBadge';
-import { ClubKitJersey, CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
+import { CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 import type { User } from '../firebase';
 
@@ -74,6 +74,13 @@ const COUNTRY_GROUPS = [
   { countryId: 'BEL', flag: '🇧🇪', name: 'Belgium' },
   { countryId: 'TUR', flag: '🇹🇷', name: 'Türkiye' },
   { countryId: 'SCO', flag: '🏴󠁧󠁢󠁳󠁣󠁴󠁿', name: 'Scotland' },
+  { countryId: 'AUT', flag: '🇦🇹', name: 'Austria' },
+  { countryId: 'SUI', flag: '🇨🇭', name: 'Switzerland' },
+  { countryId: 'GRE', flag: '🇬🇷', name: 'Greece' },
+  { countryId: 'KSA', flag: '🇸🇦', name: 'Saudi Arabia' },
+  { countryId: 'USA', flag: '🇺🇸', name: 'USA' },
+  { countryId: 'BRA', flag: '🇧🇷', name: 'Brazil' },
+  { countryId: 'JPN', flag: '🇯🇵', name: 'Japan' },
 ];
 
 const SCENARIO_CHALLENGES: {
@@ -570,8 +577,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           </span>
           <span className="hidden md:inline text-xs font-mono text-slate-400">
             {tr(
-              'SEASON 2025/26 · 15 EUROPEAN LEAGUES · 280 CLUBS · 100% CLOUD SAVE EDITION',
-              'ฤดูกาล 2025/26 · 15 ลีกยุโรป · 280 สโมสร · ระบบเซฟ Cloud Firestore 100%'
+              'SEASON 2025/26 · 23 WORLD & EUROPEAN LEAGUES · 394 CLUBS · 100% CLOUD SAVE EDITION',
+              'ฤดูกาล 2025/26 · 23 ลีกทั่วโลกและยุโรป · 394 สโมสร · ระบบเซฟ Cloud Firestore 100%'
             )}
           </span>
         </div>
@@ -659,8 +666,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </h1>
               <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
                 {tr(
-                  'Command 280 clubs across 15 European leagues with live 2D pitch physics, UEFA Swiss Phase, dynamic FFP & Board confidence, and 100% Cloud Firestore career sync.',
-                  'คุมทัพ 280 สโมสรจาก 15 ลีกดังยุโรป พร้อมเอนจินสนาม 2D สมจริง, ถ้วยยุโรป Swiss Model, กฎการเงิน FFP และระบบเซฟเกมบน Cloud Firestore 100%'
+                  'Command 394 clubs across 23 World & European leagues with live 2D pitch physics, UEFA Swiss Phase, realistic Pre-Season Tours, and 100% Cloud Firestore career sync.',
+                  'คุมทัพ 394 สโมสรจาก 23 ลีกดังทั่วโลกและยุโรป พร้อมเอนจินสนาม 2D สมจริง, ถ้วยยุโรป Swiss Model, แคมป์ปรีซีซั่น และระบบเซฟเกมบน Cloud Firestore 100%'
                 )}
               </p>
             </div>
@@ -733,8 +740,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     }`}
                   >
                     {tr(
-                      'START NEW CAREER (280 CLUBS)',
-                      'เริ่มต้นอาชีพผู้จัดการทีมใหม่ (เลือกจาก 280 สโมสร)'
+                      'START NEW CAREER (394 CLUBS · 23 LEAGUES)',
+                      'เริ่มต้นอาชีพผู้จัดการทีมใหม่ (เลือกจาก 394 สโมสร · 23 ลีก)'
                     )}
                   </div>
                   <div
@@ -743,8 +750,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                     }`}
                   >
                     {tr(
-                      'Choose any club across 10 countries, Scenario Challenges, or Create-a-Club',
-                      'เลือกสโมสรจาก 15 ลีกยุโรป, โหมดท้าทายพิเศษ หรือสร้างสโมสรของคุณเอง'
+                      'Choose any club across 17 countries, Scenario Challenges, or Create-a-Club',
+                      'เลือกสโมสรจาก 23 ลีกทั่วโลกและยุโรป, โหมดท้าทายพิเศษ หรือสร้างสโมสรของคุณเอง'
                     )}
                   </div>
                 </div>
@@ -876,8 +883,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </div>
               <div className="text-xs text-slate-400">
                 {tr(
-                  'Click any club to preview kits, warchest & tactics',
-                  'คลิกเลือกสโมสรเพื่อดูชุดแข่ง งบประมาณ และแผนการเล่น'
+                  'Click any club to preview crest, warchest & tactics',
+                  'คลิกเลือกสโมสรเพื่อดูตราสโมสร งบประมาณ และแผนการเล่น'
                 )}
               </div>
             </div>
@@ -963,19 +970,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             </div>
           </div>
 
-          {/* 2025/26 Official Kits Showcase (Home / Away / GK) + League Trophy */}
-          <div className="grid grid-cols-4 gap-2.5 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 items-center text-center">
+          {/* Club Identity & League Trophy Strip */}
+          <div className="grid grid-cols-3 gap-2.5 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 items-center text-center">
             <div className="flex flex-col items-center gap-1">
-              <ClubKitJersey club={activeSpotlightClub} variant="home" size="md" />
-              <span className="text-[10px] font-mono text-slate-400">HOME</span>
+              <ClubBadge club={activeSpotlightClub} size="md" showRing />
+              <span className="text-[10px] font-mono text-slate-400">CREST</span>
             </div>
             <div className="flex flex-col items-center gap-1">
-              <ClubKitJersey club={activeSpotlightClub} variant="away" size="md" />
-              <span className="text-[10px] font-mono text-slate-400">AWAY</span>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <ClubKitJersey club={activeSpotlightClub} variant="gk" size="md" />
-              <span className="text-[10px] font-mono text-slate-400">GK</span>
+              <CompetitionBadge competitionId={activeSpotlightClub.leagueId} size="md" />
+              <span className="text-[10px] font-mono text-slate-400">LEAGUE</span>
             </div>
             <div className="flex flex-col items-center gap-1 border-l border-slate-800 pl-2">
               <TrophyArtwork competitionId={activeSpotlightClub.leagueId} size="md" />
@@ -1059,8 +1062,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         </div>
         <div>
           {tr(
-            'Tip: Press [Ctrl+K] anytime in-game to search 6,000+ players & 280 clubs',
-            'เคล็ดลับ: กด [Ctrl+K] ในเกมได้ตลอดเวลาเพื่อค้นหานักเตะกว่า 6,000 คนและ 280 สโมสร'
+            'Tip: Press [Ctrl+K] anytime in-game to search 8,500+ players & 394 clubs',
+            'เคล็ดลับ: กด [Ctrl+K] ในเกมได้ตลอดเวลาเพื่อค้นหานักเตะกว่า 8,500 คนและ 394 สโมสร'
           )}
         </div>
       </footer>
@@ -1331,7 +1334,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                                 </div>
                               </div>
                             </div>
-                            <ClubKitJersey club={club} variant="home" size="sm" />
+                            <span
+                              className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono font-bold text-slate-300 shrink-0"
+                              style={{ borderLeft: `3px solid ${club.primaryColor}` }}
+                            >
+                              {club.shortName}
+                            </span>
                           </button>
                         );
                       })}

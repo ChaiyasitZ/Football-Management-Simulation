@@ -18,7 +18,7 @@ import {
 import { computeTacticalPhaseCoordinates } from '../engine/tacticsEngine';
 import { soundService } from '../engine/soundService';
 import { ClubBadge } from './ClubBadge';
-import { ClubKitJersey, CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
+import { CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
 import { useLanguage } from '../i18n/LanguageContext';
 
 export type MatchTileType =
@@ -109,6 +109,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       : null
   );
   const maxMatchMinute = simResult?.extraTimePlayed ? 120 : 90;
+  const maxSubs = targetFixture?.competitionId === 'PRE_SEASON_FRIENDLY' ? 11 : 5;
 
   const [currentMinute, setCurrentMinute] = useState<number>(
     targetFixture?.status === 'Completed' ? (targetFixture.result?.extraTimePlayed ? 120 : 90) : 0
@@ -339,7 +340,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           ev &&
           ev.eventType === 'Injury' &&
           ev.teamId === myClub.id &&
-          liveSubstitutions.length < 5
+          liveSubstitutions.length < maxSubs
         ) {
           setIsPlaying(false);
           setEmergencyInjuryPlayerId(ev.playerId || null);
@@ -365,6 +366,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     activeKeyHighlight,
     myClub.id,
     liveSubstitutions.length,
+    maxSubs,
   ]);
 
   // Auto-commit match result to WorldState when reaching full-time (90' or 120')
@@ -602,7 +604,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   };
 
   const handleMakeSubstitution = (playerOutId: string, playerInId: string) => {
-    if (liveSubstitutions.length >= 5 || currentMinute >= maxMatchMinute) return;
+    if (liveSubstitutions.length >= maxSubs || currentMinute >= maxMatchMinute) return;
     const pOut = world.players[playerOutId];
     const pIn = world.players[playerInId];
     if (!pOut || !pIn) return;
@@ -723,7 +725,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
     : null;
 
   const handleAssManAutoSub = () => {
-    if (liveSubstitutions.length >= 5 || currentMinute >= maxMatchMinute || myBench.length === 0) {
+    if (liveSubstitutions.length >= maxSubs || currentMinute >= maxMatchMinute || myBench.length === 0) {
       return;
     }
     const yellowPlayerIds = new Set(
@@ -756,7 +758,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   const shouldSub =
     currentMinute >= 55 &&
     liveConditionLow < 72 &&
-    liveSubstitutions.length < 5 &&
+    liveSubstitutions.length < maxSubs &&
     Boolean(mostFatiguedStarter && bestBenchReplacement);
 
   const recommendedMentality: Mentality =
@@ -869,7 +871,12 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               </div>
             </div>
           </div>
-          <ClubKitJersey club={club} variant={side} size="sm" />
+          <span
+            className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono font-bold uppercase text-slate-300"
+            style={{ borderColor: `${club.primaryColor}80` }}
+          >
+            {side === 'home' ? 'HOME' : 'AWAY'}
+          </span>
         </div>
 
         {/* Vertical Pitch SVG with 11 Players in Kit Jerseys */}
@@ -1150,7 +1157,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   </button>
 
                   {/* 2. 1-Click Quick Substitution */}
-                  {popBenchMatch && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute ? (
+                  {popBenchMatch && liveSubstitutions.length < maxSubs && currentMinute < maxMatchMinute ? (
                     <button
                       type="button"
                       data-testid="popover-sub-out-btn"
@@ -3493,7 +3500,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       })()}
 
       {/* FORCED INJURY EMERGENCY SUBSTITUTION MODAL */}
-      {emergencyInjuryPlayerId && liveSubstitutions.length < 5 && (
+      {emergencyInjuryPlayerId && liveSubstitutions.length < maxSubs && (
         <div
           data-testid="injury-emergency-sub-modal"
           className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
@@ -3551,7 +3558,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       )}
 
       {/* Quick Substitution Bench Picker Popover when a starter is clicked */}
-      {selectedSubOutId && liveSubstitutions.length < 5 && currentMinute < maxMatchMinute && (
+      {selectedSubOutId && liveSubstitutions.length < maxSubs && currentMinute < maxMatchMinute && (
         <div className="mx-3 mb-1 p-2.5 rounded-xl bg-slate-950 border border-emerald-500/60 shadow-2xl flex flex-wrap items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 text-xs">
             <span className="text-emerald-400 font-semibold">
@@ -3652,7 +3659,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
               })}
           </div>
           <span className="text-xs font-mono text-emerald-400 shrink-0">
-            {tr(`Subs: ${liveSubstitutions.length}/5`, `เปลี่ยนตัว: ${liveSubstitutions.length}/5`)}
+            {tr(`Subs: ${liveSubstitutions.length}/${maxSubs}`, `เปลี่ยนตัว: ${liveSubstitutions.length}/${maxSubs}`)}
           </span>
         </div>
 
@@ -3680,7 +3687,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   type="button"
                   data-testid={`starter-chip-${p.id}`}
                   onClick={() => {
-                    if (liveSubstitutions.length < 5 && currentMinute < maxMatchMinute) {
+                    if (liveSubstitutions.length < maxSubs && currentMinute < maxMatchMinute) {
                       setSelectedSubOutId(isSelectedForSub ? null : p.id);
                     } else {
                       onSelectPlayer(p.id);
@@ -3735,7 +3742,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             })}
           </div>
 
-          {liveSubstitutions.length < 5 && currentMinute < maxMatchMinute && myStarters.length > 0 && (
+          {liveSubstitutions.length < maxSubs && currentMinute < maxMatchMinute && myStarters.length > 0 && (
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"

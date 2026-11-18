@@ -15,7 +15,14 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { Club, MindGameTone, Player, WorldState } from '../types/game';
+import {
+  Club,
+  MindGameTone,
+  Player,
+  PreSeasonCampFocus,
+  PreSeasonTourRegion,
+  WorldState,
+} from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import {
   evaluateSquadMedicalRisk,
@@ -31,7 +38,6 @@ import {
 import { ClubBadge } from '../components/ClubBadge';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import {
-  ClubKitJersey,
   CompetitionBadge,
   TrophyArtwork,
 } from '../components/TrophyAndKitVisuals';
@@ -285,11 +291,12 @@ export const PlayerPeekDrawer: React.FC<{
             </div>
           </div>
           {club && (
-            <ClubKitJersey
-              club={club}
-              variant={player.positions.includes('GK') ? 'gk' : 'home'}
-              size="xs"
-            />
+            <div className="flex flex-col items-center gap-1 shrink-0">
+              <ClubBadge club={club} size="sm" />
+              <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono font-bold text-emerald-400">
+                #{player.shirtNumber || 10}
+              </span>
+            </div>
           )}
         </div>
 
@@ -392,6 +399,339 @@ export const PlayerPeekDrawer: React.FC<{
 };
 
 /* ============================================================================
+   5B. PRE-SEASON COMMAND CENTER & TOUR PLANNER (Jul 15 – Aug 14)
+============================================================================ */
+export const PreSeasonCommandCenterCard: React.FC<{
+  world: WorldState;
+  onOrganizePreSeasonTour?: (region: PreSeasonTourRegion) => void;
+  onSetPreSeasonCampFocus?: (focus: PreSeasonCampFocus) => void;
+  onArrangeFriendlyMatch?: (tier: 'LOCAL' | 'EUROPEAN' | 'GIANT') => void;
+  onGoToMatchCenter?: () => void;
+}> = ({
+  world,
+  onOrganizePreSeasonTour,
+  onSetPreSeasonCampFocus,
+  onArrangeFriendlyMatch,
+  onGoToMatchCenter,
+}) => {
+  const { tr } = useLanguage();
+  const club = world.clubs[world.controlledClubId];
+  const monthDay = world.gameDate.slice(5);
+  const isPreSeasonWindow = monthDay >= '07-01' && monthDay <= '08-14';
+  if (!isPreSeasonWindow || !club) return null;
+
+  const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
+  const avgFitness = Math.round(
+    clubPlayers.reduce((a, p) => a + p.fitness, 0) / Math.max(1, clubPlayers.length)
+  );
+  const avgSharpness = Math.round(
+    clubPlayers.reduce((a, p) => a + p.matchSharpness, 0) / Math.max(1, clubPlayers.length)
+  );
+  const avgMorale = Math.round(
+    clubPlayers.reduce((a, p) => a + p.morale, 0) / Math.max(1, clubPlayers.length)
+  );
+  const tacticalFam = club.primaryTactic.familiarity;
+  const activeFocus: PreSeasonCampFocus = club.preSeasonCampFocus || 'FITNESS_BOOTCAMP';
+  const tourDoneThisSeason = club.preSeasonTourCompletedSeason === world.currentSeason;
+
+  const preSeasonFriendlies = world.fixtures
+    .filter(
+      (f) =>
+        f.competitionId === 'PRE_SEASON_FRIENDLY' &&
+        f.seasonId === world.currentSeason &&
+        (f.homeClubId === club.id || f.awayClubId === club.id)
+    )
+    .sort((a, b) => a.kickoffDate.localeCompare(b.kickoffDate));
+
+  return (
+    <div
+      data-testid="preseason-command-center"
+      className="bg-slate-900 border border-amber-500/40 rounded-xl p-5 space-y-4 shadow-lg"
+    >
+      {/* Header Row */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-3">
+          <CompetitionBadge competitionId="PRE_SEASON_FRIENDLY" size="sm" />
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-display font-bold text-amber-300">
+                {tr(
+                  '☀️ Pre-Season Command Center & Global Tour Planner',
+                  '☀️ ศูนย์บัญชาการปรีซีซั่น & วางแผนแคมป์ทัวร์ระดับโลก'
+                )}
+              </h2>
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-[10px] font-mono font-bold text-amber-300">
+                {tr('UP TO 11 SUBS IN FRIENDLIES', 'เปลี่ยนตัวสำรองได้สูงสุด 11 คนในเกมอุ่นเครื่อง')}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400">
+              {tr(
+                'Build Match Sharpness (Target 85%+), drill Tactical Familiarity, and organize lucrative Global Pre-Season Tours before Matchday 1 (Aug 15).',
+                'เร่งความเฉียบคม Match Sharpness (เป้าหมาย 85%+), ซ้อมความเข้าใจแผน และจัดทัวร์อุ่นเครื่องระดับโลกก่อนเปิดฤดูกาล (15 ส.ค.)'
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {onArrangeFriendlyMatch && (
+            <button
+              type="button"
+              data-testid="preseason-arrange-friendly-btn"
+              onClick={() => onArrangeFriendlyMatch('EUROPEAN')}
+              className="px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer"
+            >
+              {tr('+ Play Instant Friendly (+8% Sharpness)', '+ เตะอุ่นเครื่องทันที (+8% ความเฉียบคม)')}
+            </button>
+          )}
+          {onGoToMatchCenter && (
+            <button
+              type="button"
+              onClick={onGoToMatchCenter}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer"
+            >
+              {tr('Match Center', 'สนามแข่งขัน')}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 3 Readiness Gauges */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 font-mono tabular-nums">
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-sans text-slate-400">
+              {tr('1. Squad Match Sharpness', '1. ความเฉียบคมแมตช์ (Sharpness)')}
+            </span>
+            <span className="font-bold text-emerald-400">{avgSharpness}% / 100%</span>
+          </div>
+          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-emerald-500 rounded-full transition-all"
+              style={{ width: `${Math.min(100, avgSharpness)}%` }}
+            />
+          </div>
+          <div className="text-[10px] font-sans text-slate-400">
+            {tr('+10% per Pre-Season Friendly played', 'เพิ่มขึ้น +10% ต่อนัดเมื่อลงสนามอุ่นเครื่อง')}
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-sans text-slate-400">
+              {tr(
+                `2. Tactical Familiarity (${club.primaryTactic.formation})`,
+                `2. ความเข้าใจแผน (${club.primaryTactic.formation})`
+              )}
+            </span>
+            <span className="font-bold text-sky-400">{tacticalFam}% / 100%</span>
+          </div>
+          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-sky-500 rounded-full transition-all"
+              style={{ width: `${Math.min(100, tacticalFam)}%` }}
+            />
+          </div>
+          <div className="text-[10px] font-sans text-slate-400">
+            {tr('+5% per Friendly & +6% via Tactical Drills', 'เพิ่ม +5% ต่อเกมอุ่นเครื่อง และ +6% จากแคมป์แทคติก')}
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-sans text-slate-400">
+              {tr('3. Condition & Morale', '3. ความฟิต & ขวัญกำลังใจ')}
+            </span>
+            <span className="font-bold text-amber-300">
+              {avgFitness}% · {avgMorale}%
+            </span>
+          </div>
+          <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-400 rounded-full transition-all"
+              style={{ width: `${Math.min(100, avgFitness)}%` }}
+            />
+          </div>
+          <div className="text-[10px] font-sans text-slate-400">
+            {tr('No yellow/red card suspensions carry into league', 'ใบเหลือง/แดงในเกมอุ่นเครื่องไม่มีผลแบนในลีก')}
+          </div>
+        </div>
+      </div>
+
+      {/* Camp Focus Switcher & 4-Region Global Pre-Season Tour Planner */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Left 5 Cols: Training Camp Focus */}
+        <div className="lg:col-span-5 p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-white">
+              {tr('🏕️ Pre-Season Training Camp Focus', '🏕️ โฟกัสการซ้อมแคมป์ปรีซีซั่น')}
+            </span>
+            <span className="text-[11px] font-mono text-emerald-400">{activeFocus}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-1.5 text-xs">
+            {(
+              [
+                {
+                  id: 'FITNESS_BOOTCAMP' as PreSeasonCampFocus,
+                  testId: 'camp-focus-fitness-btn',
+                  title: tr('🏃 Fitness & Sharpness Bootcamp', '🏃 เน้นเรียกความฟิต & ความเฉียบคม'),
+                  desc: tr('+5% Condition & +4% Match Sharpness', '+5% ความฟิต & +4% Match Sharpness'),
+                },
+                {
+                  id: 'TACTICAL_DRILLS' as PreSeasonCampFocus,
+                  testId: 'camp-focus-tactics-btn',
+                  title: tr('📋 Tactical System & Pressing Drills', '📋 เน้นซ้อมระบบแทคติก & เพรสซิ่ง'),
+                  desc: tr('+6% Tactical Formation Familiarity', '+6% ความเข้าใจแผนการเล่นหลัก'),
+                },
+                {
+                  id: 'TEAM_COHESION' as PreSeasonCampFocus,
+                  testId: 'camp-focus-cohesion-btn',
+                  title: tr('🤝 Team Bonding & Cohesion', '🤝 เน้นสร้างทีมเวิร์ค & ขวัญกำลังใจ'),
+                  desc: tr('+5% Squad Morale & +4% Satisfaction', '+5% ขวัญกำลังใจ & ความพึงพอใจนักเตะ'),
+                },
+              ] as const
+            ).map((fc) => {
+              const isSelected = activeFocus === fc.id;
+              return (
+                <button
+                  key={fc.id}
+                  type="button"
+                  data-testid={fc.testId}
+                  onClick={() => onSetPreSeasonCampFocus?.(fc.id)}
+                  className={`p-2 rounded-lg border text-left flex items-center justify-between cursor-pointer transition-colors ${
+                    isSelected
+                      ? 'bg-emerald-500/20 border-emerald-400 text-white font-semibold'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-300'
+                  }`}
+                >
+                  <span>{fc.title}</span>
+                  <span className="text-[10px] font-mono text-emerald-300">{fc.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right 7 Cols: Global Tour Destination Selector (4 Regions) */}
+        <div className="lg:col-span-7 p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-white">
+              {tr(
+                '✈️ Global Pre-Season Tour (Schedules 3 Regional Friendlies)',
+                '✈️ เลือกจัดทัวร์ปรีซีซั่น (เพิ่มโปรแกรมอุ่นเครื่อง 3 นัดกับสโมสรท้องถิ่น)'
+              )}
+            </span>
+            <span className="text-[11px] font-mono text-amber-300">
+              {tourDoneThisSeason
+                ? tr(
+                    `Booked: ${club.preSeasonTourRegion || 'Completed'}`,
+                    `จัดทัวร์แล้ว: ${club.preSeasonTourRegion || 'สำเร็จ'}`
+                  )
+                : tr('Select 1 Tour / Season', 'เลือกจัดทัวร์ได้ 1 ครั้ง/ฤดูกาล')}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <button
+              type="button"
+              data-testid="preseason-tour-asia-btn"
+              disabled={tourDoneThisSeason}
+              onClick={() => onOrganizePreSeasonTour?.('ASIA')}
+              className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-45 border border-emerald-500/30 text-left cursor-pointer"
+            >
+              <div className="font-bold text-white">🇯🇵 Asia Tour (Tokyo &amp; Yokohama)</div>
+              <div className="text-[11px] font-mono text-emerald-400">
+                +€4.50M · 3 J1 League Friendlies · +5% Sharp
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="preseason-tour-usa-btn"
+              disabled={tourDoneThisSeason}
+              onClick={() => onOrganizePreSeasonTour?.('USA')}
+              className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-45 border border-sky-500/30 text-left cursor-pointer"
+            >
+              <div className="font-bold text-white">🇺🇸🇧🇷 Americas Tour (Miami &amp; LA)</div>
+              <div className="text-[11px] font-mono text-sky-400">
+                +€5.00M · 3 MLS &amp; Brazil Friendlies · +5% Sharp
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="preseason-tour-me-btn"
+              disabled={tourDoneThisSeason}
+              onClick={() => onOrganizePreSeasonTour?.('MIDDLE_EAST')}
+              className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-45 border border-amber-500/30 text-left cursor-pointer"
+            >
+              <div className="font-bold text-white">🇸🇦 Middle East Showcase (Riyadh)</div>
+              <div className="text-[11px] font-mono text-amber-300">
+                +€5.50M · 3 Saudi Pro League Friendlies
+              </div>
+            </button>
+            <button
+              type="button"
+              data-testid="preseason-tour-alpine-btn"
+              disabled={tourDoneThisSeason}
+              onClick={() => onOrganizePreSeasonTour?.('ALPINE')}
+              className="p-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-45 border border-purple-500/40 text-left cursor-pointer"
+            >
+              <div className="font-bold text-white">🏔️🇨🇭🇦🇹 Alpine Training Camp</div>
+              <div className="text-[11px] font-mono text-purple-300">
+                +€1.80M · +8% Fitness, +7% Sharp &amp; +6% Tactics
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Scheduled & Completed Pre-Season Friendlies Strip */}
+      {preSeasonFriendlies.length > 0 && (
+        <div className="pt-2 border-t border-slate-800 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-300">
+              {tr(
+                `📅 Pre-Season Friendly Schedule & Results (${preSeasonFriendlies.length} Matches)`,
+                `📅 ตารางและผลแข่งขันอุ่นเครื่องปรีซีซั่น (${preSeasonFriendlies.length} นัด)`
+              )}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+            {preSeasonFriendlies.slice(0, 6).map((fix) => {
+              const isHome = fix.homeClubId === club.id;
+              const opp = world.clubs[isHome ? fix.awayClubId : fix.homeClubId];
+              return (
+                <div
+                  key={fix.id}
+                  className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-2"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ClubBadge club={opp} size="xs" />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white truncate">
+                        {isHome ? 'vs' : '@'} {opp?.shortName || opp?.name}
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400">{fix.kickoffDate}</div>
+                    </div>
+                  </div>
+                  {fix.status === 'Completed' && fix.result ? (
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold">
+                      {fix.result.homeGoals}-{fix.result.awayGoals}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-slate-900 text-amber-300 text-[10px] font-mono">
+                      FRIENDLY
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================================
    6. PORTAL VIEW (FM26 Action-Oriented Home Portal)
 ============================================================================ */
 export const PortalView: React.FC<{
@@ -400,7 +740,19 @@ export const PortalView: React.FC<{
   onSelectPlayer: (playerId: string) => void;
   onAdvanceDay: () => void;
   onSendMindGame?: (tone: MindGameTone) => void;
-}> = ({ world, onNavigateRoute, onSelectPlayer, onAdvanceDay, onSendMindGame }) => {
+  onOrganizePreSeasonTour?: (region: PreSeasonTourRegion) => void;
+  onSetPreSeasonCampFocus?: (focus: PreSeasonCampFocus) => void;
+  onArrangeFriendlyMatch?: (tier: 'LOCAL' | 'EUROPEAN' | 'GIANT') => void;
+}> = ({
+  world,
+  onNavigateRoute,
+  onSelectPlayer,
+  onAdvanceDay,
+  onSendMindGame,
+  onOrganizePreSeasonTour,
+  onSetPreSeasonCampFocus,
+  onArrangeFriendlyMatch,
+}) => {
   const { tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const leagueStandings = world.standings[club.leagueId] || [];
@@ -549,6 +901,15 @@ export const PortalView: React.FC<{
 
   return (
     <div className="space-y-5" data-testid="portal-view">
+      {/* Stage 9 Phase 4: Pre-Season Command Center & Tour Planner (Jul 15 - Aug 14) */}
+      <PreSeasonCommandCenterCard
+        world={world}
+        onOrganizePreSeasonTour={onOrganizePreSeasonTour}
+        onSetPreSeasonCampFocus={onSetPreSeasonCampFocus}
+        onArrangeFriendlyMatch={onArrangeFriendlyMatch}
+        onGoToMatchCenter={() => onNavigateRoute('#/match/center')}
+      />
+
       {/* Row 1: Action Queue + Next Match Tile */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left 6 Cols: Manager Action Queue */}
@@ -659,11 +1020,6 @@ export const PortalView: React.FC<{
                     club={nextFixture.homeClubId === club.id ? club : nextOpponent}
                     size="md"
                   />
-                  <ClubKitJersey
-                    club={nextFixture.homeClubId === club.id ? club : nextOpponent}
-                    variant="home"
-                    size="xs"
-                  />
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-white truncate">
                       {nextFixture.homeClubId === club.id ? club.name : nextOpponent.name}
@@ -700,11 +1056,6 @@ export const PortalView: React.FC<{
                       )}
                     />
                   </div>
-                  <ClubKitJersey
-                    club={nextFixture.awayClubId === club.id ? club : nextOpponent}
-                    variant="away"
-                    size="xs"
-                  />
                   <ClubBadge
                     club={nextFixture.awayClubId === club.id ? club : nextOpponent}
                     size="md"

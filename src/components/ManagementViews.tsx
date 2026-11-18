@@ -9,6 +9,7 @@ import {
   NewsItem,
   Player,
   PositionGroup,
+  PreSeasonCampFocus,
   PreSeasonTourRegion,
   SuperCupId,
   UefaCompetitionId,
@@ -56,11 +57,10 @@ import { getPositionGroup } from './SquadAndProfileModal';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
 import {
-  ClubKitJersey,
-  ClubKitShowcaseCard,
   CompetitionBadge,
   TrophyArtwork,
 } from './TrophyAndKitVisuals';
+import { PreSeasonCommandCenterCard } from '../ui/UIComponents';
 import type { User } from '../firebase';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 
@@ -90,7 +90,19 @@ export const DashboardView: React.FC<{
   onSelectPlayer: (playerId: string) => void;
   onAdvanceDay: () => void;
   onSendMindGame?: (tone: MindGameTone) => void;
-}> = ({ world, onNavigate, onSelectPlayer, onAdvanceDay, onSendMindGame }) => {
+  onOrganizePreSeasonTour?: (region: PreSeasonTourRegion) => void;
+  onSetPreSeasonCampFocus?: (focus: PreSeasonCampFocus) => void;
+  onArrangeFriendlyMatch?: (tier: 'LOCAL' | 'EUROPEAN' | 'GIANT') => void;
+}> = ({
+  world,
+  onNavigate,
+  onSelectPlayer,
+  onAdvanceDay,
+  onSendMindGame,
+  onOrganizePreSeasonTour,
+  onSetPreSeasonCampFocus,
+  onArrangeFriendlyMatch,
+}) => {
   const { tr, trDynamic } = useLanguage();
   const club = world.clubs[world.controlledClubId];
   const leagueStandings = world.standings[club.leagueId] || [];
@@ -129,6 +141,15 @@ export const DashboardView: React.FC<{
 
   return (
     <div className="space-y-4">
+      {/* Stage 9 Phase 4: Pre-Season Command Center & Tour Planner (Jul 15 - Aug 14) */}
+      <PreSeasonCommandCenterCard
+        world={world}
+        onOrganizePreSeasonTour={onOrganizePreSeasonTour}
+        onSetPreSeasonCampFocus={onSetPreSeasonCampFocus}
+        onArrangeFriendlyMatch={onArrangeFriendlyMatch}
+        onGoToMatchCenter={() => onNavigate('match')}
+      />
+
       {/* Top 4 KPI Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
@@ -3158,7 +3179,9 @@ export const CompetitionsAndScheduleView: React.FC<{
     (f) => f.competitionId === selectedUefaComp && f.matchday === selectedUefaMatchday
   );
 
-  const domesticCupsList = Object.values(LEAGUES_CONFIG).filter((l) => l.tier !== 2);
+  const domesticCupsList = Object.values(LEAGUES_CONFIG).filter(
+    (l) => l.tier !== 2 && l.tier !== 3
+  );
   const selectedCupFixtures = world.fixtures.filter((f) => f.competitionId === selectedCup);
 
   return (
@@ -3175,7 +3198,10 @@ export const CompetitionsAndScheduleView: React.FC<{
                 : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
             }`}
           >
-            {tr('🏟️ Domestic Leagues (15 European Leagues)', '🏟️ ฟุตบอลลีกภายในประเทศ (15 ลีกยุโรป)')}
+            {tr(
+              '🏟️ Domestic Leagues (23 World & European Leagues)',
+              '🏟️ ฟุตบอลลีกภายในประเทศ (23 ลีกทั่วโลกและยุโรป)'
+            )}
           </button>
           <button
             type="button"
@@ -3188,8 +3214,8 @@ export const CompetitionsAndScheduleView: React.FC<{
             }`}
           >
             {tr(
-              '🏅 Domestic Cups, League Cups & Super Cups (23 Trophies)',
-              '🏅 ฟุตบอลถ้วยในประเทศ, ลีกคัพ & ซูเปอร์คัพ (ครบ 23 ถ้วย)'
+              '🏅 Domestic Cups, League Cups & Super Cups (30 Trophies)',
+              '🏅 ฟุตบอลถ้วยในประเทศ, ลีกคัพ & ซูเปอร์คัพ (ครบ 30 ถ้วย)'
             )}
           </button>
           <button
@@ -5276,8 +5302,6 @@ export const ClubStaffYouthWorldView: React.FC<{
       <div className="space-y-4">
         {showClubOverviewOrFinances && (
           <>
-            {/* Authentic Club Kits Showcase (Home, Away & GK Jerseys) */}
-            <ClubKitShowcaseCard club={club} tr={tr} />
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
               {/* Finances & Board Requests */}
               <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
@@ -5511,15 +5535,15 @@ export const ClubStaffYouthWorldView: React.FC<{
                         : tr('Available (1/Season)', 'พร้อมจัดทัวร์ (1 ครั้ง/ฤดูกาล)')}
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                     <button
                       type="button"
                       disabled={tourDoneThisSeason}
                       onClick={() => onOrganizePreSeasonTour('ASIA')}
                       className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-emerald-500/30 text-left text-xs cursor-pointer"
                     >
-                      <div className="font-bold text-white">🇯🇵🇰🇷 Asia Tour</div>
-                      <div className="text-[11px] font-mono text-emerald-400">+€4.50M · Tokyo &amp; Seoul</div>
+                      <div className="font-bold text-white">🇯🇵 Asia Tour</div>
+                      <div className="text-[11px] font-mono text-emerald-400">+€4.50M · 3 J1 Friendlies</div>
                     </button>
                     <button
                       type="button"
@@ -5527,8 +5551,8 @@ export const ClubStaffYouthWorldView: React.FC<{
                       onClick={() => onOrganizePreSeasonTour('USA')}
                       className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-sky-500/30 text-left text-xs cursor-pointer"
                     >
-                      <div className="font-bold text-white">🇺🇸 USA Coast Tour</div>
-                      <div className="text-[11px] font-mono text-sky-400">+€5.00M · NY &amp; Los Angeles</div>
+                      <div className="font-bold text-white">🇺🇸🇧🇷 Americas Tour</div>
+                      <div className="text-[11px] font-mono text-sky-400">+€5.00M · 3 MLS/BRA Friendlies</div>
                     </button>
                     <button
                       type="button"
@@ -5536,8 +5560,17 @@ export const ClubStaffYouthWorldView: React.FC<{
                       onClick={() => onOrganizePreSeasonTour('MIDDLE_EAST')}
                       className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-amber-500/30 text-left text-xs cursor-pointer"
                     >
-                      <div className="font-bold text-white">🇦🇪🇸🇦 Middle East Tour</div>
-                      <div className="text-[11px] font-mono text-amber-300">+€5.50M · Dubai &amp; Riyadh</div>
+                      <div className="font-bold text-white">🇸🇦 Middle East Tour</div>
+                      <div className="text-[11px] font-mono text-amber-300">+€5.50M · 3 SPL Friendlies</div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={tourDoneThisSeason}
+                      onClick={() => onOrganizePreSeasonTour('ALPINE')}
+                      className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 disabled:opacity-40 border border-purple-500/30 text-left text-xs cursor-pointer"
+                    >
+                      <div className="font-bold text-white">🏔️🇨🇭🇦🇹 Alpine Camp</div>
+                      <div className="text-[11px] font-mono text-purple-300">+€1.80M · +8% Fitness &amp; +7% Sharp</div>
                     </button>
                   </div>
                 </div>
@@ -6909,11 +6942,7 @@ export const ClubStaffYouthWorldView: React.FC<{
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
-                  <ClubKitJersey club={inspectedClub} variant="home" size="xs" />
-                  <ClubKitJersey club={inspectedClub} variant="away" size="xs" />
-                  <ClubKitJersey club={inspectedClub} variant="gk" size="xs" />
-                </div>
+                <CompetitionBadge competitionId={inspectedClub.leagueId} size="sm" />
                 <div className="text-right font-mono tabular-nums text-xs">
                   <div className="text-emerald-400">
                     {tr('Transfer Budget:', 'งบซื้อขาย')} €{(inspectedClub.finances.transferBudget / 1_000_000).toFixed(1)}M
