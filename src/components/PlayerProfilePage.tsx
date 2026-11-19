@@ -17,14 +17,17 @@ import { getAgeAtDate } from '../engine/worldSimulationService';
 import {
   computePlayerPolygon8Axes,
   derivePlayerTraitsFromAttributes,
-  isPlayerHomegrownForClub,
+  getLeagueRegistrationRules,
+  getPlayerHomegrownStatus,
+  isPlayerNonEuForLeague,
+  isPlayerU21Exempt,
   PLAYER_TRAIT_CATALOG,
   ROLES_BY_POSITION,
 } from '../engine/tacticsEngine';
 import { useLanguage } from '../i18n/LanguageContext';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
-import { CompetitionBadge } from './TrophyAndKitVisuals';
+import { CompetitionBadge, NationalityFlag } from './TrophyAndKitVisuals';
 import { AttrBadge } from '../ui/UIComponents';
 
 export interface PlayerProfilePageProps {
@@ -92,7 +95,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   onOfferPlayerToClubs,
   onPlayerChat,
 }) => {
-  const { tr, trDynamic } = useLanguage();
+  const { lang, tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<ProfileTabId>('overview');
   const [comparePlayerId, setComparePlayerId] = useState<string>('');
   const [stepperOpen, setStepperOpen] = useState<boolean>(false);
@@ -104,7 +107,11 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   const myClub = world.clubs[world.controlledClubId];
   const isMyPlayer = player.clubId === world.controlledClubId;
   const age = getAgeAtDate(player.dateOfBirth, world.gameDate);
-  const isHg = isPlayerHomegrownForClub(player, player.clubId ? world.clubs[player.clubId]?.countryId || 'ENG' : 'ENG');
+  const clubCountry = playerClub?.countryId || 'ENG';
+  const hgStatus = getPlayerHomegrownStatus(player, clubCountry);
+  const isU21Exempt = isPlayerU21Exempt(player, world.gameDate, playerClub?.leagueId, clubCountry);
+  const isNonEu = isPlayerNonEuForLeague(player, playerClub?.leagueId);
+  const clubRegRules = getLeagueRegistrationRules(playerClub?.leagueId, clubCountry);
 
   // Prev / Next cycling within the player's current club roster
   const clubRoster = Object.values(world.players)
@@ -361,9 +368,33 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                 <span className="px-2.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs">
                   {player.positions.join(' / ')}
                 </span>
-                {isHg && (
-                  <span className="px-2 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 font-mono text-xs">
-                    HG
+                {hgStatus === 'HGC' && (
+                  <span
+                    title={tr('Club-Trained Homegrown (HG-C)', 'เด็กปั้นสโมสร (HG-C)')}
+                    className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-mono font-semibold text-xs"
+                  >
+                    HG-C
+                  </span>
+                )}
+                {hgStatus === 'HGN' && (
+                  <span
+                    title={tr('Nation-Trained Homegrown (HG-N)', 'นักเตะโควตาท้องถิ่น (HG-N)')}
+                    className="px-2 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 font-mono font-semibold text-xs"
+                  >
+                    HG-N
+                  </span>
+                )}
+                {isU21Exempt && (
+                  <span
+                    title={tr(`U${clubRegRules.u21ExemptMaxAge} Exempt from senior squad limit`, `ได้รับยกเว้น U${clubRegRules.u21ExemptMaxAge}`)}
+                    className="px-2 py-0.5 rounded bg-teal-500/20 border border-teal-500/40 text-teal-300 font-mono font-semibold text-xs"
+                  >
+                    U{clubRegRules.u21ExemptMaxAge} EXEMPT
+                  </span>
+                )}
+                {isNonEu && (
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono font-semibold text-xs">
+                    NON-EU
                   </span>
                 )}
                 {(player.isWonderkid || (age <= 21 && player.potentialAbility >= 170)) && (
@@ -386,7 +417,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                   {tr('Age', 'อายุ')} {age} ({player.dateOfBirth})
                 </span>
                 <span>·</span>
-                <span className="font-mono">{player.nationality}</span>
+                <NationalityFlag code={player.nationalityCode} size="sm" showCountryName lang={lang} />
                 <span>·</span>
                 <span>
                   {tr('Foot:', 'เท้าถนัด:')} <strong className="text-white">{player.preferredFoot}</strong>

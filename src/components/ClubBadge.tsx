@@ -175,8 +175,10 @@ export const ClubBadge: React.FC<{
 export {
   CompetitionBadge,
   TrophyArtwork,
+  NationalityFlag,
   resolveTrophyType,
   resolveCompetitionTrophyPhotoUrls,
+  resolveNationalityFlagInfo,
 } from './TrophyAndKitVisuals';
 
 

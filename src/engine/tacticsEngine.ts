@@ -2,16 +2,21 @@ import {
   CornerRoutineType,
   FormationId,
   FreeKickRoutineType,
+  HomegrownStatus,
+  LeagueId,
+  LeagueRegistrationRules,
   Player,
   PlayerRole,
   PlayerTrait,
   PositionCode,
   SetPieceSetup,
+  TacticalPresetId,
   TacticalSlot,
   TacticalSystem,
   TeamInstructions,
 } from '../types/game';
 import { trText } from '../i18n/LanguageContext';
+import { LEAGUES_CONFIG } from './leaguesConfig';
 
 export interface FormationBlueprint {
   id: FormationId;
@@ -383,6 +388,145 @@ export function createDefaultTeamInstructions(): TeamInstructions {
     offsideTrap: false,
     tackling: 'Standard',
   };
+}
+
+/**
+ * Builds authentic 2025/26 TeamInstructions from a club's TacticalPresetId
+ */
+export function buildAuthenticTeamInstructions(preset?: TacticalPresetId): TeamInstructions {
+  const base = createDefaultTeamInstructions();
+  switch (preset) {
+    case 'CONTROL_POSSESSION':
+      return {
+        ...base,
+        mentality: 'Positive',
+        passingDirectness: 'Shorter',
+        tempo: 'Standard',
+        attackingWidth: 'Wide',
+        buildUp: 'Play Out of Defence',
+        pressingIntensity: 'High',
+        defensiveLine: 'High',
+        lineOfEngagement: 'High',
+        transition: 'Counter-Press',
+        whenPossessionLost: 'Counter-Press',
+        whenPossessionWon: 'Hold Shape',
+        offsideTrap: true,
+      };
+    case 'GEGENPRESS_HIGH_LINE':
+      return {
+        ...base,
+        mentality: 'Attacking',
+        passingDirectness: 'Mixed',
+        tempo: 'Higher',
+        attackingWidth: 'Wide',
+        buildUp: 'Play Out of Defence',
+        pressingIntensity: 'Very High',
+        defensiveLine: 'Very High',
+        lineOfEngagement: 'High',
+        transition: 'Counter-Press',
+        whenPossessionLost: 'Counter-Press',
+        whenPossessionWon: 'Counter',
+        offsideTrap: true,
+      };
+    case 'WING_BACK_OVERLOAD':
+      return {
+        ...base,
+        mentality: 'Positive',
+        passingDirectness: 'Mixed',
+        tempo: 'Higher',
+        attackingWidth: 'Wide',
+        buildUp: 'Play Out of Defence',
+        pressingIntensity: 'High',
+        defensiveLine: 'High',
+        lineOfEngagement: 'Mid',
+        transition: 'Counter-Press',
+        whenPossessionLost: 'Counter-Press',
+        whenPossessionWon: 'Counter',
+        offsideTrap: true,
+      };
+    case 'VERTICAL_TIKI_TAKA':
+      return {
+        ...base,
+        mentality: 'Positive',
+        passingDirectness: 'Shorter',
+        tempo: 'Higher',
+        attackingWidth: 'Standard',
+        buildUp: 'Play Out of Defence',
+        pressingIntensity: 'High',
+        defensiveLine: 'High',
+        lineOfEngagement: 'High',
+        transition: 'Counter-Press',
+        whenPossessionLost: 'Counter-Press',
+        whenPossessionWon: 'Counter',
+        offsideTrap: true,
+      };
+    case 'FLUID_COUNTER_ATTACK':
+      return {
+        ...base,
+        mentality: 'Balanced',
+        passingDirectness: 'More Direct',
+        tempo: 'Higher',
+        attackingWidth: 'Standard',
+        buildUp: 'Mixed',
+        pressingIntensity: 'Standard',
+        defensiveLine: 'Standard',
+        lineOfEngagement: 'Mid',
+        transition: 'Counter',
+        whenPossessionLost: 'Regroup',
+        whenPossessionWon: 'Counter',
+        offsideTrap: false,
+      };
+    case 'HIGH_INTENSITY_DIRECT':
+      return {
+        ...base,
+        mentality: 'Positive',
+        passingDirectness: 'More Direct',
+        tempo: 'Much Higher',
+        attackingWidth: 'Wide',
+        buildUp: 'Mixed',
+        pressingIntensity: 'Very High',
+        defensiveLine: 'High',
+        lineOfEngagement: 'High',
+        transition: 'Counter-Press',
+        whenPossessionLost: 'Counter-Press',
+        whenPossessionWon: 'Counter',
+        offsideTrap: true,
+      };
+    case 'COMPACT_MID_BLOCK':
+      return {
+        ...base,
+        mentality: 'Balanced',
+        passingDirectness: 'Mixed',
+        tempo: 'Standard',
+        attackingWidth: 'Standard',
+        buildUp: 'Mixed',
+        pressingIntensity: 'Standard',
+        defensiveLine: 'Standard',
+        lineOfEngagement: 'Mid',
+        transition: 'Regroup',
+        whenPossessionLost: 'Regroup',
+        whenPossessionWon: 'Counter',
+        offsideTrap: false,
+      };
+    case 'LOW_BLOCK_DIRECT_COUNTER':
+      return {
+        ...base,
+        mentality: 'Cautious',
+        passingDirectness: 'More Direct',
+        tempo: 'Higher',
+        attackingWidth: 'Narrow',
+        buildUp: 'More Direct',
+        pressingIntensity: 'Low',
+        defensiveLine: 'Deep',
+        lineOfEngagement: 'Low',
+        transition: 'Regroup',
+        whenPossessionLost: 'Regroup',
+        whenPossessionWon: 'Counter',
+        offsideTrap: false,
+      };
+    default:
+      return base;
+  }
 }
 
 /**
@@ -783,7 +927,7 @@ export function evaluatePlayerInjuryRisk(
 }
 
 const COUNTRY_ID_TO_NATIONALITY_CODES: Record<string, string[]> = {
-  ENG: ['ENG', 'WAL', 'SCO', 'NIR'],
+  ENG: ['ENG', 'WAL'],
   ESP: ['ESP'],
   GER: ['GER'],
   ITA: ['ITA'],
@@ -793,117 +937,399 @@ const COUNTRY_ID_TO_NATIONALITY_CODES: Record<string, string[]> = {
   BEL: ['BEL'],
   TUR: ['TUR'],
   SCO: ['SCO', 'ENG'],
+  AUT: ['AUT'],
+  SUI: ['SUI'],
+  GRE: ['GRE'],
+  KSA: ['KSA'],
+  USA: ['USA', 'CAN'],
+  BRA: ['BRA'],
+  JPN: ['JPN'],
 };
 
+export const EU_EEA_NATIONALITY_CODES = new Set<string>([
+  'ESP', 'FRA', 'GER', 'ITA', 'POR', 'NED', 'BEL', 'AUT', 'GRE', 'CRO', 'CZE', 'DEN',
+  'FIN', 'HUN', 'IRL', 'LUX', 'MLT', 'POL', 'ROU', 'SVK', 'SVN', 'SWE', 'BUL', 'CYP',
+  'EST', 'LVA', 'LTU', 'NOR', 'ISL', 'SUI', 'LIE',
+]);
+
+// Cotonou / ACP nations exempt from Ligue 1's 4 Non-EU cap
+export const COTONOU_ACP_NATIONALITY_CODES = new Set<string>([
+  'ALG', 'MAR', 'TUN', 'EGY', 'SEN', 'CIV', 'CMR', 'NGA', 'GHA', 'MLI', 'BFA', 'GUI',
+  'GAB', 'COD', 'CGO', 'TOG', 'BEN', 'ANG', 'ZAM', 'ZIM', 'RSA', 'CPV', 'GAM', 'GNB',
+  'EQG', 'MTN', 'MOZ', 'COM', 'MAD', 'CTA', 'SLE', 'LBR', 'KEN', 'UGA', 'TAN', 'NAM',
+  'JAM', 'TRI', 'HAI', 'SUR', 'GUY', 'CUW', 'DOM',
+]);
+
+// Real-world dual-EU / 2-year Ibero-American residency passport holders in La Liga
+const DUAL_EU_LALIGA_EXEMPT_NAMES = new Set<string>([
+  'vinicius junior', 'vinícius júnior', 'rodrygo', 'federico valverde', 'eder militao',
+  'éder militão', 'ronald araujo', 'ronald araújo', 'raphinha', 'nahuel molina',
+  'rodrigo de paul', 'angel correa', 'ángel correa', 'jose maria gimenez', 'josé maría giménez',
+  'julian alvarez', 'julián álvarez', 'giovanni lo celso', 'giovani lo celso',
+  'fede valverde', 'iñaki williams', 'inaki williams', 'nicolas pepe', 'nicolas tagliafico',
+  'lautaro martinez', 'paulo dybala', 'lucas beltran', 'emiliano martinez',
+  'jude bellingham', // Irish passport
+  'trent alexander-arnold',
+]);
+
+function normalizePlayerNameKey(firstName: string, lastName: string): string {
+  return `${firstName} ${lastName}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function getPlayerAgeAtDate(dateOfBirth: string, gameDate = '2025-07-15'): number {
+  const birthYear = parseInt(dateOfBirth.slice(0, 4), 10) || 2000;
+  const birthMonth = parseInt(dateOfBirth.slice(5, 7), 10) || 1;
+  const birthDay = parseInt(dateOfBirth.slice(8, 10), 10) || 1;
+  const refYear = parseInt(gameDate.slice(0, 4), 10) || 2025;
+  const refMonth = parseInt(gameDate.slice(5, 7), 10) || 7;
+  const refDay = parseInt(gameDate.slice(8, 10), 10) || 15;
+  let age = refYear - birthYear;
+  if (refMonth < birthMonth || (refMonth === birthMonth && refDay < birthDay)) {
+    age--;
+  }
+  return Math.max(14, age);
+}
+
+const DEFAULT_REGISTRATION_RULES: LeagueRegistrationRules = {
+  ruleNameEn: 'UEFA 25-Man Squad Rules (8 Homegrown)',
+  ruleNameTh: 'กฎลงทะเบียน 25 คน (Homegrown ≥ 8)',
+  maxSeniorSquad: 25,
+  minHomegrownTotal: 8,
+  minClubTrained: 0,
+  maxNonEu: null,
+  u21ExemptMaxAge: 21,
+};
+
+export function getLeagueRegistrationRules(
+  leagueId?: LeagueId,
+  clubCountryId?: string
+): LeagueRegistrationRules {
+  if (leagueId && LEAGUES_CONFIG[leagueId]?.registrationRules) {
+    return LEAGUES_CONFIG[leagueId].registrationRules!;
+  }
+  if (clubCountryId) {
+    const fallbackLeague = Object.values(LEAGUES_CONFIG).find(
+      (l) => l.countryId === clubCountryId && l.registrationRules
+    );
+    if (fallbackLeague?.registrationRules) {
+      return fallbackLeague.registrationRules;
+    }
+  }
+  return DEFAULT_REGISTRATION_RULES;
+}
+
 /**
- * Determines if a player counts as a Homegrown Player (HG) for Squad Registration
+ * Resolves a player's granular Homegrown tier:
+ * - 'HGC': Trained at Club (3 yrs between ages 15-21)
+ * - 'HGN': Trained in Nation (3 yrs between ages 15-21 at another club in the same FA)
+ * - 'NONE': Foreign / non-homegrown
+ */
+export function getPlayerHomegrownStatus(player: Player, clubCountryId: string): HomegrownStatus {
+  if (player.homegrownStatus) return player.homegrownStatus;
+  if (player.isYouthAcademy) return 'HGC';
+  if (player.isHomegrown === true) {
+    const allowedCodes = COUNTRY_ID_TO_NATIONALITY_CODES[clubCountryId] || [clubCountryId];
+    return allowedCodes.includes(player.nationalityCode) ? 'HGN' : 'HGN';
+  }
+  if (player.isHomegrown === false) return 'NONE';
+  const allowedCodes = COUNTRY_ID_TO_NATIONALITY_CODES[clubCountryId] || [clubCountryId];
+  return allowedCodes.includes(player.nationalityCode) ? 'HGN' : 'NONE';
+}
+
+/**
+ * Determines if a player counts as a Homegrown Player (HG-C or HG-N) for Squad Registration
  */
 export function isPlayerHomegrownForClub(player: Player, clubCountryId: string): boolean {
-  if (player.isHomegrown !== undefined) return player.isHomegrown;
-  if (player.isYouthAcademy) return true;
-  const allowedCodes = COUNTRY_ID_TO_NATIONALITY_CODES[clubCountryId] || [clubCountryId];
-  return allowedCodes.includes(player.nationalityCode);
+  return getPlayerHomegrownStatus(player, clubCountryId) !== 'NONE';
+}
+
+/**
+ * Checks whether a player is U21 / U22 Exempt from consuming a senior squad registration slot
+ */
+export function isPlayerU21Exempt(
+  player: Player,
+  gameDate = '2025-07-15',
+  leagueId?: LeagueId,
+  clubCountryId?: string
+): boolean {
+  const rules = getLeagueRegistrationRules(leagueId, clubCountryId);
+  const age = getPlayerAgeAtDate(player.dateOfBirth, gameDate);
+  return age <= rules.u21ExemptMaxAge;
+}
+
+/**
+ * Checks whether a player consumes a Non-EU foreigner slot under league rules (e.g. La Liga max 3, Ligue 1 max 4 w/ Cotonou exemption)
+ */
+export function isPlayerNonEuForLeague(player: Player, leagueId?: LeagueId): boolean {
+  if (!leagueId) return false;
+  const rules = LEAGUES_CONFIG[leagueId]?.registrationRules;
+  if (!rules || rules.maxNonEu == null) return false;
+
+  const code = player.nationalityCode.toUpperCase();
+  if (EU_EEA_NATIONALITY_CODES.has(code)) return false;
+
+  // Ligue 1 Cotonou / ACP exemption (African & Caribbean nationalities exempt)
+  if (rules.cotonouExempt && COTONOU_ACP_NATIONALITY_CODES.has(code)) {
+    return false;
+  }
+
+  // La Liga dual-EU / 2-year Ibero-American residency passport exemptions
+  if (leagueId === 'ESP_LL') {
+    const fullKey = normalizePlayerNameKey(player.firstName, player.lastName);
+    const lastKey = player.lastName
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+    if (DUAL_EU_LALIGA_EXEMPT_NAMES.has(fullKey) || DUAL_EU_LALIGA_EXEMPT_NAMES.has(lastKey)) {
+      return false;
+    }
+    // Club/Nation Homegrown players in Spain already possess Spanish residency
+    if (player.homegrownStatus === 'HGC' || player.homegrownStatus === 'HGN') {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export interface SquadRegistrationSummary {
+  ruleNameEn: string;
+  ruleNameTh: string;
   maxSquadSize: number;
   minHomegrownQuota: number;
-  registeredCount: number;
-  homegrownRegisteredCount: number;
+  minClubTrainedQuota: number;
+  maxNonEu: number | null;
+  u21ExemptMaxAge: number;
+  registeredCount: number; // Senior slots consumed (excludes U21/U22 exempt)
+  totalEligibleCount: number; // Senior registered + U21/U22 exempt
+  u21ExemptCount: number;
+  homegrownRegisteredCount: number; // HGC + HGN among eligible/registered players
+  hgcRegisteredCount: number;
+  hgnRegisteredCount: number;
+  nonEuRegisteredCount: number;
   totalHomegrownInClub: number;
+  totalHgcInClub: number;
   isCompliant: boolean;
   issues: { en: string; th: string }[];
 }
 
 /**
- * Evaluates UEFA / League 25-man Squad Registration & 8-Homegrown Player Quota compliance
+ * Evaluates authentic league Squad Registration rules:
+ * - Premier League: Max 25 Senior (>21), Min 8 HG, Unlimited U21
+ * - La Liga: Max 25 Senior, Min 4 HG, Max 3 Non-EU, Unlimited U21
+ * - Bundesliga: Max 30 Senior, Min 8 HG (incl. 4 HG-C), Unlimited U21
+ * - Serie A: Max 25 Senior (>22), Min 8 HG (4 HG-C + 4 HG-N), Unlimited U22
+ * - Ligue 1: Max 25 Senior, Min 6 HG, Max 4 Non-EU (Cotonou/African Exempt), Unlimited U21
  */
 export function evaluateSquadRegistration(
   clubPlayers: Player[],
-  clubCountryId: string
+  clubCountryId: string,
+  leagueId?: LeagueId,
+  gameDate = '2025-07-15'
 ): SquadRegistrationSummary {
-  const maxSquadSize = 25;
-  const minHomegrownQuota = 8;
+  const rules = getLeagueRegistrationRules(leagueId, clubCountryId);
+  const maxSquadSize = rules.maxSeniorSquad;
+  const minHomegrownQuota = rules.minHomegrownTotal;
+  const minClubTrainedQuota = rules.minClubTrained;
+  const maxNonEu = rules.maxNonEu ?? null;
 
-  const registered = clubPlayers.filter((p) => p.isRegistered !== false);
-  const registeredCount = registered.length;
-  const homegrownRegisteredCount = registered.filter((p) =>
-    isPlayerHomegrownForClub(p, clubCountryId)
+  const u21ExemptPlayers = clubPlayers.filter((p) =>
+    isPlayerU21Exempt(p, gameDate, leagueId, clubCountryId)
+  );
+  const u21ExemptIdSet = new Set(u21ExemptPlayers.map((p) => p.id));
+
+  const seniorRegistered = clubPlayers.filter(
+    (p) => !u21ExemptIdSet.has(p.id) && p.isRegistered !== false
+  );
+  const eligibleRegistered = clubPlayers.filter(
+    (p) => u21ExemptIdSet.has(p.id) || p.isRegistered !== false
+  );
+
+  const registeredCount = seniorRegistered.length;
+  const u21ExemptCount = u21ExemptPlayers.length;
+  const totalEligibleCount = eligibleRegistered.length;
+
+  const hgcRegisteredCount = eligibleRegistered.filter(
+    (p) => getPlayerHomegrownStatus(p, clubCountryId) === 'HGC'
+  ).length;
+  const hgnRegisteredCount = eligibleRegistered.filter(
+    (p) => getPlayerHomegrownStatus(p, clubCountryId) === 'HGN'
+  ).length;
+  const homegrownRegisteredCount = hgcRegisteredCount + hgnRegisteredCount;
+
+  const totalHgcInClub = clubPlayers.filter(
+    (p) => getPlayerHomegrownStatus(p, clubCountryId) === 'HGC'
   ).length;
   const totalHomegrownInClub = clubPlayers.filter((p) =>
     isPlayerHomegrownForClub(p, clubCountryId)
+  ).length;
+
+  const nonEuRegisteredCount = seniorRegistered.filter((p) =>
+    isPlayerNonEuForLeague(p, leagueId)
   ).length;
 
   const issues: { en: string; th: string }[] = [];
 
   if (registeredCount > maxSquadSize) {
     issues.push({
-      en: `Registered squad size (${registeredCount}/25) exceeds the maximum 25-player limit by ${registeredCount - maxSquadSize}.`,
-      th: `จำนวนนักเตะที่ลงทะเบียน (${registeredCount}/25 คน) เกินโควตาสูงสุด 25 คนอยู่ ${registeredCount - maxSquadSize} คน`,
+      en: `Registered senior squad (${registeredCount}/${maxSquadSize}) exceeds limit by ${registeredCount - maxSquadSize}. U${rules.u21ExemptMaxAge} players are exempt.`,
+      th: `จำนวนนักเตะชุดใหญ่ที่ลงทะเบียน (${registeredCount}/${maxSquadSize} คน) เกินโควตาอยู่ ${registeredCount - maxSquadSize} คน (นักเตะ U${rules.u21ExemptMaxAge} ไม่กินโควตา)`,
     });
   }
 
-  // Non-homegrown cap is 17 (25 - 8)
-  const nonHomegrownRegistered = registeredCount - homegrownRegisteredCount;
+  const maxNonHgSenior = maxSquadSize - minHomegrownQuota;
+  const seniorNonHgCount = seniorRegistered.filter(
+    (p) => !isPlayerHomegrownForClub(p, clubCountryId)
+  ).length;
+
   if (homegrownRegisteredCount < minHomegrownQuota) {
     issues.push({
-      en: `Homegrown quota not met: ${homegrownRegisteredCount}/${minHomegrownQuota} Homegrown (HG) players registered. Promote U19 Academy prospects or register domestic talent.`,
-      th: `โควตานักเตะท้องถิ่น (Homegrown) ไม่ครบเกณฑ์: ลงทะเบียน ${homegrownRegisteredCount}/${minHomegrownQuota} คน กรุณาดันดาวรุ่งจาก Youth Academy หรือลงทะเบียนนักเตะ HG เพิ่ม`,
+      en: `Homegrown quota not met: ${homegrownRegisteredCount}/${minHomegrownQuota} Homegrown (HG) players registered.`,
+      th: `โควตานักเตะท้องถิ่น (Homegrown) ไม่ครบเกณฑ์: ลงทะเบียน ${homegrownRegisteredCount}/${minHomegrownQuota} คน`,
     });
-  } else if (nonHomegrownRegistered > maxSquadSize - minHomegrownQuota) {
+  } else if (seniorNonHgCount > maxNonHgSenior) {
     issues.push({
-      en: `Too many non-Homegrown players registered (${nonHomegrownRegistered}/17 max non-HG).`,
-      th: `ลงทะเบียนนักเตะต่างชาติ/นอกโควตา HG เกินกำหนด (${nonHomegrownRegistered}/17 คนสูงสุด)`,
+      en: `Too many non-Homegrown senior players registered (${seniorNonHgCount}/${maxNonHgSenior} max non-HG).`,
+      th: `ลงทะเบียนนักเตะต่างชาติชุดใหญ่เกินโควตา (${seniorNonHgCount}/${maxNonHgSenior} คนสูงสุด)`,
+    });
+  }
+
+  if (minClubTrainedQuota > 0 && hgcRegisteredCount < minClubTrainedQuota) {
+    issues.push({
+      en: `Club-Trained (HG-C) quota not met: ${hgcRegisteredCount}/${minClubTrainedQuota} academy-trained players required.`,
+      th: `โควตาเด็กปั้นสโมสร (HG-C) ไม่ครบเกณฑ์: ลงทะเบียน ${hgcRegisteredCount}/${minClubTrainedQuota} คน`,
+    });
+  }
+
+  if (maxNonEu !== null && nonEuRegisteredCount > maxNonEu) {
+    issues.push({
+      en: `Non-EU player cap exceeded: ${nonEuRegisteredCount}/${maxNonEu} Non-EU senior players registered.`,
+      th: `ลงทะเบียนนักเตะนอกสหภาพยุโรป (Non-EU) เกินกำหนด (${nonEuRegisteredCount}/${maxNonEu} คนสูงสุด)`,
     });
   }
 
   return {
+    ruleNameEn: rules.ruleNameEn,
+    ruleNameTh: rules.ruleNameTh,
     maxSquadSize,
     minHomegrownQuota,
+    minClubTrainedQuota,
+    maxNonEu,
+    u21ExemptMaxAge: rules.u21ExemptMaxAge,
     registeredCount,
+    totalEligibleCount,
+    u21ExemptCount,
     homegrownRegisteredCount,
+    hgcRegisteredCount,
+    hgnRegisteredCount,
+    nonEuRegisteredCount,
     totalHomegrownInClub,
+    totalHgcInClub,
     isCompliant: issues.length === 0,
     issues,
   };
 }
 
 /**
- * Automatically selects up to 25 players for Squad Registration while prioritizing at least 8 Homegrown players + Starters
+ * Automatically selects senior players for Squad Registration respecting authentic league rules:
+ * - U21/U22 Exempt players are always eligible (do not consume senior slots)
+ * - Prioritizes HG-C & HG-N quotas first, enforces Non-EU cap, then fills remaining senior slots by starter status & CA
  */
 export function autoRegisterSquadIds(
   clubPlayers: Player[],
   clubCountryId: string,
-  starterIds: Set<string>
+  starterIds: Set<string>,
+  leagueId?: LeagueId,
+  gameDate = '2025-07-15'
 ): Set<string> {
+  const rules = getLeagueRegistrationRules(leagueId, clubCountryId);
   const selected = new Set<string>();
-  const hgPlayers = clubPlayers
-    .filter((p) => isPlayerHomegrownForClub(p, clubCountryId))
-    .sort((a, b) => {
-      const aStart = starterIds.has(a.id) ? 1 : 0;
-      const bStart = starterIds.has(b.id) ? 1 : 0;
-      if (aStart !== bStart) return bStart - aStart;
-      return b.currentAbility - a.currentAbility;
-    });
+  const seniorSelected = new Set<string>();
 
-  // 1. Register up to 8 top Homegrown players first
-  for (const p of hgPlayers.slice(0, 8)) {
-    selected.add(p.id);
+  const sortPriority = (a: Player, b: Player) => {
+    const aStart = starterIds.has(a.id) ? 1 : 0;
+    const bStart = starterIds.has(b.id) ? 1 : 0;
+    if (aStart !== bStart) return bStart - aStart;
+    return b.currentAbility - a.currentAbility;
+  };
+
+  // 1. All U21 / U22 Exempt players are automatically eligible without using senior slots
+  const seniorPool: Player[] = [];
+  let hgcCount = 0;
+  let hgCount = 0;
+  for (const p of clubPlayers) {
+    if (isPlayerU21Exempt(p, gameDate, leagueId, clubCountryId)) {
+      selected.add(p.id);
+      const status = getPlayerHomegrownStatus(p, clubCountryId);
+      if (status === 'HGC') {
+        hgcCount++;
+        hgCount++;
+      } else if (status === 'HGN') {
+        hgCount++;
+      }
+    } else {
+      seniorPool.push(p);
+    }
   }
 
-  // 2. Register all remaining Starting XI players (up to 25)
-  const sortedRest = clubPlayers
-    .filter((p) => !selected.has(p.id))
-    .sort((a, b) => {
-      const aStart = starterIds.has(a.id) ? 1 : 0;
-      const bStart = starterIds.has(b.id) ? 1 : 0;
-      if (aStart !== bStart) return bStart - aStart;
-      return b.currentAbility - a.currentAbility;
-    });
+  let nonEuCount = 0;
+  const maxNonHgSenior = rules.maxSeniorSquad - rules.minHomegrownTotal;
+  let seniorNonHgCount = 0;
 
-  for (const p of sortedRest) {
-    if (selected.size >= 25) break;
+  const tryAddSenior = (p: Player): boolean => {
+    if (seniorSelected.has(p.id)) return true;
+    if (seniorSelected.size >= rules.maxSeniorSquad) return false;
+    const isNonEu = isPlayerNonEuForLeague(p, leagueId);
+    if (rules.maxNonEu != null && isNonEu && nonEuCount >= rules.maxNonEu) return false;
+    const status = getPlayerHomegrownStatus(p, clubCountryId);
+    if (status === 'NONE' && seniorNonHgCount >= maxNonHgSenior) return false;
+
+    seniorSelected.add(p.id);
     selected.add(p.id);
+    if (isNonEu) nonEuCount++;
+    if (status === 'HGC') {
+      hgcCount++;
+      hgCount++;
+    } else if (status === 'HGN') {
+      hgCount++;
+    } else {
+      seniorNonHgCount++;
+    }
+    return true;
+  };
+
+  // 2. Register senior HG-C players to meet club-trained quota
+  if (rules.minClubTrained > 0) {
+    const seniorHgc = seniorPool
+      .filter((p) => getPlayerHomegrownStatus(p, clubCountryId) === 'HGC')
+      .sort(sortPriority);
+    for (const p of seniorHgc) {
+      if (hgcCount >= rules.minClubTrained) break;
+      tryAddSenior(p);
+    }
+  }
+
+  // 3. Register senior HG players (HGC or HGN) to meet total Homegrown quota
+  const seniorHg = seniorPool
+    .filter((p) => getPlayerHomegrownStatus(p, clubCountryId) !== 'NONE')
+    .sort(sortPriority);
+  for (const p of seniorHg) {
+    if (hgCount >= rules.minHomegrownTotal) break;
+    tryAddSenior(p);
+  }
+
+  // 4. Register remaining senior players by Starting XI priority & CA (respecting Non-EU & Non-HG caps)
+  const remainingSenior = seniorPool
+    .filter((p) => !seniorSelected.has(p.id))
+    .sort(sortPriority);
+  for (const p of remainingSenior) {
+    if (seniorSelected.size >= rules.maxSeniorSquad) break;
+    tryAddSenior(p);
   }
 
   return selected;
@@ -1403,10 +1829,10 @@ export function computeTacticalPhaseCoordinates(
 
       const engageShiftY =
         instructions.lineOfEngagement === 'High'
-          ? -5
+          ? 2
           : instructions.lineOfEngagement === 'Low'
-            ? 12
-            : 5;
+            ? 14
+            : 7;
 
       if (slot.position === 'GK') {
         y = instructions.defensiveLine === 'Very High' ? Math.max(78, baseY - 5) : Math.min(90, baseY + 2);

@@ -1958,7 +1958,9 @@ function TouchlineShell() {
                       const regIds = autoRegisterSquadIds(
                         clubPlayers,
                         controlledClub.countryId,
-                        starterIds
+                        starterIds,
+                        controlledClub.leagueId,
+                        world.gameDate
                       );
                       const updatedPlayers = { ...world.players };
                       for (const cp of clubPlayers) {
@@ -1970,8 +1972,8 @@ function TouchlineShell() {
                       setWorld({ ...world, players: updatedPlayers });
                       showToast(
                         tr(
-                          'Auto-registered 25 players meeting the 8+ Homegrown quota!',
-                          'คัดเลือกและลงทะเบียนนักเตะ 25 คนตามกฎโควตา Homegrown 8+ คนเรียบร้อยแล้ว!'
+                          'Auto-registered squad according to official league Homegrown, U21 & Non-EU rules!',
+                          'คัดเลือกและลงทะเบียนนักเตะอัตโนมัติตามกฎ Homegrown, U21 และ Non-EU ของลีกเรียบร้อยแล้ว!'
                         )
                       );
                     }}

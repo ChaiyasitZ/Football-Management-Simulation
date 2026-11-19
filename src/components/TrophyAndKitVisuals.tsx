@@ -1887,3 +1887,300 @@ export const TrophyArtwork: React.FC<{
   );
 };
 
+// =============================================================================
+// STAGE 12: UNIVERSAL NATIONALITY FLAG SYSTEM (115+ FIFA / IOC CODES -> FLAGCDN)
+// =============================================================================
+
+export interface NationalityFlagMeta {
+  iso: string;
+  en: string;
+  th: string;
+}
+
+export const FIFA_TO_FLAGCDN_ISO: Record<string, NationalityFlagMeta> = {
+  // UK Home Nations (Distinct authentic flags!)
+  ENG: { iso: 'gb-eng', en: 'England', th: 'อังกฤษ' },
+  SCO: { iso: 'gb-sct', en: 'Scotland', th: 'สกอตแลนด์' },
+  WAL: { iso: 'gb-wls', en: 'Wales', th: 'เวลส์' },
+  NIR: { iso: 'gb-nir', en: 'Northern Ireland', th: 'ไอร์แลนด์เหนือ' },
+  GBR: { iso: 'gb', en: 'United Kingdom', th: 'สหราชอาณาจักร' },
+
+  // Western, Southern, Northern & Eastern Europe
+  ESP: { iso: 'es', en: 'Spain', th: 'สเปน' },
+  GER: { iso: 'de', en: 'Germany', th: 'เยอรมนี' },
+  ITA: { iso: 'it', en: 'Italy', th: 'อิตาลี' },
+  FRA: { iso: 'fr', en: 'France', th: 'ฝรั่งเศส' },
+  POR: { iso: 'pt', en: 'Portugal', th: 'โปรตุเกส' },
+  NED: { iso: 'nl', en: 'Netherlands', th: 'เนเธอร์แลนด์' },
+  BEL: { iso: 'be', en: 'Belgium', th: 'เบลเยียม' },
+  TUR: { iso: 'tr', en: 'Turkey', th: 'ตุรกี' },
+  AUT: { iso: 'at', en: 'Austria', th: 'ออสเตรีย' },
+  SUI: { iso: 'ch', en: 'Switzerland', th: 'สวิตเซอร์แลนด์' },
+  GRE: { iso: 'gr', en: 'Greece', th: 'กรีซ' },
+  CRO: { iso: 'hr', en: 'Croatia', th: 'โครเอเชีย' },
+  SRB: { iso: 'rs', en: 'Serbia', th: 'เซอร์เบีย' },
+  NOR: { iso: 'no', en: 'Norway', th: 'นอร์เวย์' },
+  SWE: { iso: 'se', en: 'Sweden', th: 'สวีเดน' },
+  DEN: { iso: 'dk', en: 'Denmark', th: 'เดนมาร์ก' },
+  FIN: { iso: 'fi', en: 'Finland', th: 'ฟินแลนด์' },
+  ISL: { iso: 'is', en: 'Iceland', th: 'ไอซ์แลนด์' },
+  IRL: { iso: 'ie', en: 'Republic of Ireland', th: 'ไอร์แลนด์' },
+  POL: { iso: 'pl', en: 'Poland', th: 'โปแลนด์' },
+  UKR: { iso: 'ua', en: 'Ukraine', th: 'ยูเครน' },
+  CZE: { iso: 'cz', en: 'Czech Republic', th: 'เช็ก' },
+  SVK: { iso: 'sk', en: 'Slovakia', th: 'สโลวาเกีย' },
+  HUN: { iso: 'hu', en: 'Hungary', th: 'ฮังการี' },
+  ROU: { iso: 'ro', en: 'Romania', th: 'โรมาเนีย' },
+  SVN: { iso: 'si', en: 'Slovenia', th: 'สโลวีเนีย' },
+  SLO: { iso: 'si', en: 'Slovenia', th: 'สโลวีเนีย' },
+  BIH: { iso: 'ba', en: 'Bosnia & Herzegovina', th: 'บอสเนียฯ' },
+  MNE: { iso: 'me', en: 'Montenegro', th: 'มอนเตเนโกร' },
+  ALB: { iso: 'al', en: 'Albania', th: 'แอลเบเนีย' },
+  MKD: { iso: 'mk', en: 'North Macedonia', th: 'นอร์ทมาซิโดเนีย' },
+  GEO: { iso: 'ge', en: 'Georgia', th: 'จอร์เจีย' },
+  ARM: { iso: 'am', en: 'Armenia', th: 'อาร์เมเนีย' },
+  ISR: { iso: 'il', en: 'Israel', th: 'อิสราเอล' },
+  KOS: { iso: 'xk', en: 'Kosovo', th: 'โคโซโว' },
+  BUL: { iso: 'bg', en: 'Bulgaria', th: 'บัลแกเรีย' },
+  LUX: { iso: 'lu', en: 'Luxembourg', th: 'ลักเซมเบิร์ก' },
+  CYP: { iso: 'cy', en: 'Cyprus', th: 'ไซปรัส' },
+  MLT: { iso: 'mt', en: 'Malta', th: 'มอลตา' },
+  EST: { iso: 'ee', en: 'Estonia', th: 'เอสโตเนีย' },
+  LVA: { iso: 'lv', en: 'Latvia', th: 'ลัตเวีย' },
+  LTU: { iso: 'lt', en: 'Lithuania', th: 'ลิทัวเนีย' },
+  BLR: { iso: 'by', en: 'Belarus', th: 'เบลารุส' },
+  MDA: { iso: 'md', en: 'Moldova', th: 'มอลโดวา' },
+  AZE: { iso: 'az', en: 'Azerbaijan', th: 'อาเซอร์ไบจาน' },
+  KAZ: { iso: 'kz', en: 'Kazakhstan', th: 'คาซัคสถาน' },
+  RUS: { iso: 'ru', en: 'Russia', th: 'รัสเซีย' },
+  FRO: { iso: 'fo', en: 'Faroe Islands', th: 'หมู่เกาะแฟโร' },
+  EUR: { iso: 'eu', en: 'Europe', th: 'ยุโรป' },
+
+  // South & North America
+  BRA: { iso: 'br', en: 'Brazil', th: 'บราซิล' },
+  ARG: { iso: 'ar', en: 'Argentina', th: 'อาร์เจนตินา' },
+  URU: { iso: 'uy', en: 'Uruguay', th: 'อุรุกวัย' },
+  COL: { iso: 'co', en: 'Colombia', th: 'โคลอมเบีย' },
+  ECU: { iso: 'ec', en: 'Ecuador', th: 'เอกวาดอร์' },
+  CHI: { iso: 'cl', en: 'Chile', th: 'ชิลี' },
+  PAR: { iso: 'py', en: 'Paraguay', th: 'ปารากวัย' },
+  PER: { iso: 'pe', en: 'Peru', th: 'เปรู' },
+  VEN: { iso: 've', en: 'Venezuela', th: 'เวเนซุเอลา' },
+  BOL: { iso: 'bo', en: 'Bolivia', th: 'โบลิเวีย' },
+  USA: { iso: 'us', en: 'United States', th: 'สหรัฐอเมริกา' },
+  CAN: { iso: 'ca', en: 'Canada', th: 'แคนาดา' },
+  MEX: { iso: 'mx', en: 'Mexico', th: 'เม็กซิโก' },
+  CRC: { iso: 'cr', en: 'Costa Rica', th: 'คอสตาริกา' },
+  JAM: { iso: 'jm', en: 'Jamaica', th: 'จาเมกา' },
+  PAN: { iso: 'pa', en: 'Panama', th: 'ปานามา' },
+  HON: { iso: 'hn', en: 'Honduras', th: 'ฮอนดูรัส' },
+  TRI: { iso: 'tt', en: 'Trinidad & Tobago', th: 'ตรินิแดดและโตเบโก' },
+  SUR: { iso: 'sr', en: 'Suriname', th: 'ซูรินาม' },
+  CUR: { iso: 'cw', en: 'Curaçao', th: 'คูราเซา' },
+  HAI: { iso: 'ht', en: 'Haiti', th: 'เฮติ' },
+  DOM: { iso: 'do', en: 'Dominican Republic', th: 'โดมินิกัน' },
+
+  // Africa
+  MAR: { iso: 'ma', en: 'Morocco', th: 'โมร็อกโก' },
+  SEN: { iso: 'sn', en: 'Senegal', th: 'เซเนกัล' },
+  EGY: { iso: 'eg', en: 'Egypt', th: 'อียิปต์' },
+  NGA: { iso: 'ng', en: 'Nigeria', th: 'ไนจีเรีย' },
+  GHA: { iso: 'gh', en: 'Ghana', th: 'กานา' },
+  CIV: { iso: 'ci', en: 'Ivory Coast', th: 'โกตดิวัวร์' },
+  CMR: { iso: 'cm', en: 'Cameroon', th: 'แคเมอรูน' },
+  ALG: { iso: 'dz', en: 'Algeria', th: 'แอลจีเรีย' },
+  TUN: { iso: 'tn', en: 'Tunisia', th: 'ตูนิเซีย' },
+  MLI: { iso: 'ml', en: 'Mali', th: 'มาลี' },
+  GUI: { iso: 'gn', en: 'Guinea', th: 'กินี' },
+  GAB: { iso: 'ga', en: 'Gabon', th: 'กาบอง' },
+  BFA: { iso: 'bf', en: 'Burkina Faso', th: 'บูร์กินาฟาโซ' },
+  COD: { iso: 'cd', en: 'DR Congo', th: 'ดีอาร์ คองโก' },
+  CGO: { iso: 'cg', en: 'Congo', th: 'คองโก' },
+  ANG: { iso: 'ao', en: 'Angola', th: 'แองโกลา' },
+  MOZ: { iso: 'mz', en: 'Mozambique', th: 'โมซัมบิก' },
+  ZAM: { iso: 'zm', en: 'Zambia', th: 'แซมเบีย' },
+  ZIM: { iso: 'zw', en: 'Zimbabwe', th: 'ซิมบับเว' },
+  RSA: { iso: 'za', en: 'South Africa', th: 'แอฟริกาใต้' },
+  CPV: { iso: 'cv', en: 'Cape Verde', th: 'เคปเวิร์ด' },
+  GAM: { iso: 'gm', en: 'Gambia', th: 'แกมเบีย' },
+  GNB: { iso: 'gw', en: 'Guinea-Bissau', th: 'กินี-บิสเซา' },
+  EQG: { iso: 'gq', en: 'Equatorial Guinea', th: 'อิเควทอเรียลกินี' },
+  BEN: { iso: 'bj', en: 'Benin', th: 'เบนิน' },
+  TOG: { iso: 'tg', en: 'Togo', th: 'โตโก' },
+  COM: { iso: 'km', en: 'Comoros', th: 'คอโมโรส' },
+  KEN: { iso: 'ke', en: 'Kenya', th: 'เคนยา' },
+  TAN: { iso: 'tz', en: 'Tanzania', th: 'แทนซาเนีย' },
+  UGA: { iso: 'ug', en: 'Uganda', th: 'ยูกันดา' },
+  LBY: { iso: 'ly', en: 'Libya', th: 'ลิเบีย' },
+  MAD: { iso: 'mg', en: 'Madagascar', th: 'มาดากัสการ์' },
+
+  // Asia & Oceania
+  JPN: { iso: 'jp', en: 'Japan', th: 'ญี่ปุ่น' },
+  KOR: { iso: 'kr', en: 'South Korea', th: 'เกาหลีใต้' },
+  KSA: { iso: 'sa', en: 'Saudi Arabia', th: 'ซาอุดีอาระเบีย' },
+  IRN: { iso: 'ir', en: 'Iran', th: 'อิหร่าน' },
+  IRQ: { iso: 'iq', en: 'Iraq', th: 'อิรัก' },
+  QAT: { iso: 'qa', en: 'Qatar', th: 'กาตาร์' },
+  UAE: { iso: 'ae', en: 'United Arab Emirates', th: 'สหรัฐอาหรับเอมิเรตส์' },
+  UZB: { iso: 'uz', en: 'Uzbekistan', th: 'อุซเบกิสถาน' },
+  AUS: { iso: 'au', en: 'Australia', th: 'ออสเตรเลีย' },
+  NZL: { iso: 'nz', en: 'New Zealand', th: 'นิวซีแลนด์' },
+  THA: { iso: 'th', en: 'Thailand', th: 'ไทย' },
+  CHN: { iso: 'cn', en: 'China', th: 'จีน' },
+  IDN: { iso: 'id', en: 'Indonesia', th: 'อินโดนีเซีย' },
+  VIE: { iso: 'vn', en: 'Vietnam', th: 'เวียดนาม' },
+  MAS: { iso: 'my', en: 'Malaysia', th: 'มาเลเซีย' },
+  JOR: { iso: 'jo', en: 'Jordan', th: 'จอร์แดน' },
+  SYR: { iso: 'sy', en: 'Syria', th: 'ซีเรีย' },
+  OMA: { iso: 'om', en: 'Oman', th: 'โอมาน' },
+  BHR: { iso: 'bh', en: 'Bahrain', th: 'บาห์เรน' },
+  PHI: { iso: 'ph', en: 'Philippines', th: 'ฟิลิปปินส์' },
+  IND: { iso: 'in', en: 'India', th: 'อินเดีย' },
+};
+
+const COUNTRY_NAME_TO_FIFA_CODE: Record<string, string> = {};
+for (const [fifaCode, meta] of Object.entries(FIFA_TO_FLAGCDN_ISO)) {
+  COUNTRY_NAME_TO_FIFA_CODE[meta.en.toLowerCase()] = fifaCode;
+  COUNTRY_NAME_TO_FIFA_CODE[meta.th.toLowerCase()] = fifaCode;
+}
+// Extra common country name aliases
+COUNTRY_NAME_TO_FIFA_CODE['england'] = 'ENG';
+COUNTRY_NAME_TO_FIFA_CODE['spain'] = 'ESP';
+COUNTRY_NAME_TO_FIFA_CODE['germany'] = 'GER';
+COUNTRY_NAME_TO_FIFA_CODE['italy'] = 'ITA';
+COUNTRY_NAME_TO_FIFA_CODE['france'] = 'FRA';
+COUNTRY_NAME_TO_FIFA_CODE['portugal'] = 'POR';
+COUNTRY_NAME_TO_FIFA_CODE['netherlands'] = 'NED';
+COUNTRY_NAME_TO_FIFA_CODE['holland'] = 'NED';
+COUNTRY_NAME_TO_FIFA_CODE['brazil'] = 'BRA';
+COUNTRY_NAME_TO_FIFA_CODE['argentina'] = 'ARG';
+COUNTRY_NAME_TO_FIFA_CODE['thailand'] = 'THA';
+COUNTRY_NAME_TO_FIFA_CODE['japan'] = 'JPN';
+COUNTRY_NAME_TO_FIFA_CODE['south korea'] = 'KOR';
+COUNTRY_NAME_TO_FIFA_CODE['korea republic'] = 'KOR';
+COUNTRY_NAME_TO_FIFA_CODE['usa'] = 'USA';
+COUNTRY_NAME_TO_FIFA_CODE['united states'] = 'USA';
+COUNTRY_NAME_TO_FIFA_CODE['ireland'] = 'IRL';
+COUNTRY_NAME_TO_FIFA_CODE['ivory coast'] = 'CIV';
+COUNTRY_NAME_TO_FIFA_CODE["cote d'ivoire"] = 'CIV';
+COUNTRY_NAME_TO_FIFA_CODE['czechia'] = 'CZE';
+COUNTRY_NAME_TO_FIFA_CODE['türkiye'] = 'TUR';
+COUNTRY_NAME_TO_FIFA_CODE['turkiye'] = 'TUR';
+COUNTRY_NAME_TO_FIFA_CODE['bosnia'] = 'BIH';
+COUNTRY_NAME_TO_FIFA_CODE['dr congo'] = 'COD';
+
+export function resolveNationalityFlagInfo(codeOrName?: string | null): {
+  code: string;
+  iso: string | null;
+  pngUrl: string | null;
+  svgUrl: string | null;
+  countryNameEn: string;
+  countryNameTh: string;
+} {
+  const raw = (codeOrName || '').trim();
+  if (!raw) {
+    return { code: 'INT', iso: null, pngUrl: null, svgUrl: null, countryNameEn: 'International', countryNameTh: 'นานาชาติ' };
+  }
+  const upper = raw.toUpperCase();
+  const mappedKey = FIFA_TO_FLAGCDN_ISO[upper]
+    ? upper
+    : COUNTRY_NAME_TO_FIFA_CODE[raw.toLowerCase()];
+
+  if (mappedKey && FIFA_TO_FLAGCDN_ISO[mappedKey]) {
+    const meta = FIFA_TO_FLAGCDN_ISO[mappedKey];
+    return {
+      code: mappedKey,
+      iso: meta.iso,
+      pngUrl: `https://flagcdn.com/w40/${meta.iso}.png`,
+      svgUrl: `https://flagcdn.com/${meta.iso}.svg`,
+      countryNameEn: meta.en,
+      countryNameTh: meta.th,
+    };
+  }
+  return {
+    code: upper.slice(0, 3),
+    iso: null,
+    pngUrl: null,
+    svgUrl: null,
+    countryNameEn: raw,
+    countryNameTh: raw,
+  };
+}
+
+export const NationalityFlag: React.FC<{
+  code: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+  showCode?: boolean;
+  showCountryName?: boolean;
+  lang?: 'en' | 'th';
+  className?: string;
+}> = React.memo(
+  ({
+    code,
+    size = 'sm',
+    showCode = false,
+    showCountryName = false,
+    lang = 'en',
+    className = '',
+  }) => {
+    const info = resolveNationalityFlagInfo(code);
+    const [stage, setStage] = useState<'png' | 'svg' | 'fallback'>(
+      info.pngUrl ? 'png' : 'fallback'
+    );
+
+    useEffect(() => {
+      setStage(info.pngUrl ? 'png' : 'fallback');
+    }, [info.pngUrl]);
+
+    const dims = {
+      xs: { w: 16, h: 12, cls: 'w-4 h-3 rounded-[2px]' },
+      sm: { w: 20, h: 15, cls: 'w-5 h-[15px] rounded-[2px]' },
+      md: { w: 24, h: 18, cls: 'w-6 h-[18px] rounded-[3px]' },
+      lg: { w: 32, h: 24, cls: 'w-8 h-6 rounded' },
+    }[size];
+
+    const activeSrc =
+      stage === 'png' ? info.pngUrl : stage === 'svg' ? info.svgUrl : null;
+    const displayName = lang === 'th' ? info.countryNameTh : info.countryNameEn;
+
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 shrink-0 align-middle ${className}`}
+        title={`${info.countryNameEn} (${info.code})`}
+        data-testid={`nat-flag-${info.code}`}
+      >
+        {activeSrc ? (
+          <img
+            src={activeSrc}
+            alt={info.countryNameEn}
+            width={dims.w}
+            height={dims.h}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={() => setStage((prev) => (prev === 'png' ? 'svg' : 'fallback'))}
+            className={`${dims.cls} object-cover shrink-0 border border-white/15 shadow-sm select-none`}
+          />
+        ) : (
+          <span
+            className={`${dims.cls} inline-flex items-center justify-center bg-slate-800 border border-slate-600 text-[8px] font-mono font-bold text-slate-200 select-none`}
+          >
+            {info.code.slice(0, 3)}
+          </span>
+        )}
+        {showCode && (
+          <span className="font-mono text-[10px] text-slate-300 font-semibold leading-none">
+            {info.code}
+          </span>
+        )}
+        {showCountryName && (
+          <span className="text-xs text-slate-200 leading-none truncate">
+            {displayName}
+          </span>
+        )}
+      </span>
+    );
+  }
+);
+
+

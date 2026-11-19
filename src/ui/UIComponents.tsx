@@ -39,6 +39,7 @@ import { ClubBadge } from '../components/ClubBadge';
 import { PlayerAvatar } from '../components/PlayerAvatar';
 import {
   CompetitionBadge,
+  NationalityFlag,
   TrophyArtwork,
 } from '../components/TrophyAndKitVisuals';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -282,8 +283,9 @@ export const PlayerPeekDrawer: React.FC<{
               <div className="text-base font-display font-bold text-white truncate">
                 {player.firstName} {player.lastName}
               </div>
-              <div className="text-slate-400 font-mono">
-                {player.positions.join('/')} · {tr('Age', 'อายุ')} {age} · {player.nationality}
+              <div className="text-slate-400 font-mono flex items-center gap-1.5 flex-wrap">
+                <span>{player.positions.join('/')} · {tr('Age', 'อายุ')} {age} ·</span>
+                <NationalityFlag code={player.nationalityCode} size="xs" showCode />
               </div>
               <div className="text-emerald-400 font-semibold truncate">
                 {club?.name || 'Free Agent'}
@@ -789,7 +791,7 @@ export const PortalView: React.FC<{
 
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
   const injuredPlayers = clubPlayers.filter((p) => p.injuryStatus.isInjured);
-  const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId);
+  const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId, club.leagueId, world.gameDate);
   const medicalRiskList = evaluateSquadMedicalRisk(world, club.id).filter(
     (r) => r.riskLevel === 'CRITICAL' || r.riskLevel === 'HIGH'
   );

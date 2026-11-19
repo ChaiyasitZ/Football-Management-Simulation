@@ -28,9 +28,10 @@ import {
   WorldState,
 } from '../types/game';
 import { CLUB_TEMPLATES, ClubSeedTemplate, LEAGUES_CONFIG } from '../engine/leaguesConfig';
+import { buildAuthenticTeamInstructions } from '../engine/tacticsEngine';
 import { SaveSlotMeta } from '../engine/worldSimulationService';
 import { ClubBadge } from './ClubBadge';
-import { CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
+import { CompetitionBadge, NationalityFlag, TrophyArtwork } from './TrophyAndKitVisuals';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
 import type { User } from '../firebase';
 
@@ -124,16 +125,18 @@ function buildPreviewClubFromTemplate(
   const clubId = `club_${leagueId.toLowerCase()}_${idx + 1}`;
   const leagueCfg = LEAGUES_CONFIG[leagueId];
   const repFactor = Math.pow(Math.max(50, tpl.reputation) / 100, 3);
-  const transferBudget = Math.max(
-    1_200_000,
-    Math.round((repFactor * 115_000_000) / 500_000) * 500_000
-  );
-  const wageBudgetPerWeek = Math.max(
-    65_000,
-    Math.round((repFactor * 3_800_000) / 10_000) * 10_000
-  );
+  const transferBudget =
+    tpl.transferBudgetEur !== undefined
+      ? tpl.transferBudgetEur
+      : Math.max(1_200_000, Math.round((repFactor * 115_000_000) / 500_000) * 500_000);
+  const wageBudgetPerWeek =
+    tpl.wageBudgetEur !== undefined
+      ? tpl.wageBudgetEur
+      : Math.max(65_000, Math.round((repFactor * 3_800_000) / 10_000) * 10_000);
   const formation: FormationId =
-    idx % 3 === 0 ? '4-3-3' : idx % 3 === 1 ? '4-2-3-1' : '3-4-3';
+    tpl.preferredFormation || (idx % 3 === 0 ? '4-3-3' : idx % 3 === 1 ? '4-2-3-1' : '3-4-3');
+  const secondaryFormation: FormationId = tpl.secondaryFormation || '4-2-3-1';
+  const authenticInstructions = buildAuthenticTeamInstructions(tpl.tacticalPreset);
 
   return {
     id: clubId,
@@ -154,7 +157,7 @@ function buildPreviewClubFromTemplate(
     youthRecruitment: 15,
     sugarDaddyType: tpl.reputation >= 90 ? 'FRONT_END' : 'NONE',
     finances: {
-      balance: transferBudget * 1.4,
+      balance: Math.round(transferBudget * 1.4),
       transferBudget,
       wageBudgetPerWeek,
       wageUsedPerWeek: Math.round(wageBudgetPerWeek * 0.82),
@@ -184,44 +187,16 @@ function buildPreviewClubFromTemplate(
       id: `tac_${clubId}_1`,
       name: `Primary ${formation}`,
       formation,
-      instructions: {
-        mentality: 'Positive',
-        passingDirectness: 'Mixed',
-        tempo: 'Higher',
-        attackingWidth: 'Wide',
-        buildUp: 'Play Out of Defence',
-        pressingIntensity: 'High',
-        defensiveLine: 'High',
-        lineOfEngagement: 'High',
-        transition: 'Counter-Press',
-        defensiveApproach: 'Zonal Marking',
-        timeWasting: 'Never',
-        offsideTrap: true,
-        tackling: 'Standard',
-      },
+      instructions: authenticInstructions,
       lineup: [],
       benchPlayerIds: [],
       familiarity: 85,
     },
     secondaryTactic: {
       id: `tac_${clubId}_2`,
-      name: `Secondary 4-2-3-1`,
-      formation: '4-2-3-1',
-      instructions: {
-        mentality: 'Balanced',
-        passingDirectness: 'Mixed',
-        tempo: 'Standard',
-        attackingWidth: 'Standard',
-        buildUp: 'Play Out of Defence',
-        pressingIntensity: 'Standard',
-        defensiveLine: 'Standard',
-        lineOfEngagement: 'Mid',
-        transition: 'Counter',
-        defensiveApproach: 'Zonal Marking',
-        timeWasting: 'Never',
-        offsideTrap: false,
-        tackling: 'Standard',
-      },
+      name: `Secondary ${secondaryFormation}`,
+      formation: secondaryFormation,
+      instructions: authenticInstructions,
       lineup: [],
       benchPlayerIds: [],
       familiarity: 75,
@@ -1078,8 +1053,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             </div>
             <div className="shrink-0 flex flex-col items-end gap-1">
               <CompetitionBadge competitionId={activeSpotlightClub.leagueId} size="sm" />
-              <span className="text-[11px] font-mono text-slate-400">
-                {LEAGUES_CONFIG[activeSpotlightClub.leagueId]?.name}
+              <span className="text-[11px] font-mono text-slate-400 inline-flex items-center gap-1.5">
+                <NationalityFlag code={activeSpotlightClub.countryId} size="xs" />
+                <span>{LEAGUES_CONFIG[activeSpotlightClub.leagueId]?.name}</span>
               </span>
             </div>
           </div>
@@ -1263,8 +1239,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* League Selector */}
                     <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
-                      <label className="text-[11px] font-mono uppercase text-slate-400 block">
-                        {tr('1. European League (15 Divisions)', '1. เลือกลีกการแข่งขัน (15 ลีกยุโรป)')}
+                      <label className="text-[11px] font-mono uppercase text-slate-400 flex items-center gap-1.5">
+                        <NationalityFlag code={LEAGUES_CONFIG[selectedLeagueId]?.countryId || 'ENG'} size="xs" />
+                        <span>{tr('1. Global Leagues (23 Divisions)', '1. เลือกลีกการแข่งขัน (23 ลีกทั่วโลก)')}</span>
                       </label>
                       <select
                         data-testid="setup-league-select"
@@ -1491,8 +1468,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                       </div>
 
                       <div>
-                        <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
-                          {tr('Nationality', 'สัญชาติ')}
+                        <label className="text-[11px] font-mono uppercase text-slate-400 flex items-center gap-1.5 mb-1">
+                          <span>{tr('Nationality', 'สัญชาติ')}</span>
+                          <NationalityFlag code={nationality} size="xs" />
                         </label>
                         <input
                           type="text"

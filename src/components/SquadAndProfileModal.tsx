@@ -12,12 +12,16 @@ import {
   derivePlayerTraitsFromAttributes,
   evaluatePlayerInjuryRisk,
   evaluateSquadRegistration,
+  getPlayerHomegrownStatus,
   isPlayerHomegrownForClub,
+  isPlayerNonEuForLeague,
+  isPlayerU21Exempt,
   PLAYER_TRAIT_CATALOG,
   ROLES_BY_POSITION,
 } from '../engine/tacticsEngine';
 import { useLanguage } from '../i18n/LanguageContext';
 import { PlayerAvatar } from './PlayerAvatar';
+import { NationalityFlag } from './TrophyAndKitVisuals';
 
 interface SquadViewProps {
   world: WorldState;
@@ -67,7 +71,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
   }, [initialViewMode]);
 
   const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
-  const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId);
+  const regSummary = evaluateSquadRegistration(clubPlayers, club.countryId, club.leagueId, world.gameDate);
   const depthChart = computeSquadDepthChart(
     clubPlayers,
     parseInt(world.gameDate.slice(0, 4), 10) || 2026
@@ -133,14 +137,14 @@ export const SquadView: React.FC<SquadViewProps> = ({
     <div className="space-y-4">
       {/* Top 4 Squad Management & Registration KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Card 1: 25-Man Squad Registration */}
+        {/* Card 1: Authentic League Senior Squad Registration */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400">
-              {tr('Squad Registration (Max 25)', 'โควตาลงทะเบียน (สูงสุด 25 คน)')}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-400 truncate" title={tr(regSummary.ruleNameEn, regSummary.ruleNameTh)}>
+              {tr(regSummary.ruleNameEn, regSummary.ruleNameTh)}
             </span>
             <span
-              className={`text-[11px] font-mono font-bold ${
+              className={`text-[11px] font-mono font-bold shrink-0 whitespace-nowrap ${
                 regSummary.isCompliant ? 'text-emerald-400' : 'text-amber-400'
               }`}
             >
@@ -149,49 +153,59 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 : tr('! QUOTA ALERT', '! เกิน/ไม่ครบโควตา')}
             </span>
           </div>
-          <div className="flex items-baseline justify-between mt-1.5">
-            <div className="text-2xl font-display font-bold text-white font-mono tabular-nums">
+          <div className="flex items-baseline justify-between gap-2 mt-1.5">
+            <div className="text-2xl font-display font-bold text-white font-mono tabular-nums whitespace-nowrap">
               {regSummary.registeredCount} / {regSummary.maxSquadSize}
+              <span className="text-xs font-sans font-normal text-slate-400 ml-1">
+                {tr('Senior', 'ชุดใหญ่')}
+              </span>
             </div>
             {onAutoRegisterSquad && (
               <button
                 type="button"
                 onClick={onAutoRegisterSquad}
-                className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-[11px] rounded cursor-pointer"
+                className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-[10px] font-semibold rounded cursor-pointer whitespace-nowrap shrink-0"
               >
-                {tr('Auto-Register 25', 'คัด 25 คนอัตโนมัติ')}
+                {tr(`Auto ${regSummary.maxSquadSize}`, `คัด ${regSummary.maxSquadSize} คน`)}
               </button>
             )}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            {tr(
-              `Non-HG Registered: ${regSummary.registeredCount - regSummary.homegrownRegisteredCount} / 17 max`,
-              `โควตานอก HG: ${regSummary.registeredCount - regSummary.homegrownRegisteredCount} / 17 คนสูงสุด`
+          <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono">
+            <span className="text-teal-400 whitespace-nowrap">
+              {tr(`U${regSummary.u21ExemptMaxAge} Exempt: ${regSummary.u21ExemptCount}`, `U${regSummary.u21ExemptMaxAge} ยกเว้น: ${regSummary.u21ExemptCount}`)}
+            </span>
+            {regSummary.maxNonEu !== null && (
+              <span className={`whitespace-nowrap ${regSummary.nonEuRegisteredCount > regSummary.maxNonEu ? 'text-amber-400 font-bold' : 'text-slate-300'}`}>
+                · Non-EU: {regSummary.nonEuRegisteredCount}/{regSummary.maxNonEu}
+              </span>
             )}
           </div>
         </div>
 
-        {/* Card 2: Homegrown Quota (Min 8 Players) */}
+        {/* Card 2: Authentic Homegrown Quota (HG-C Club-Trained & HG-N Nation-Trained) */}
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-slate-400">
-              {tr('Homegrown Players (Min 8 HG)', 'นักเตะท้องถิ่น/ปั้นเอง (ขั้นต่ำ 8 คน)')}
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-slate-400 truncate">
+              {tr(`Homegrown (Min ${regSummary.minHomegrownQuota} HG)`, `โควตาท้องถิ่น (ขั้นต่ำ ${regSummary.minHomegrownQuota} HG)`)}
             </span>
-            <span className="text-[11px] font-mono text-sky-400">
-              {tr(`Club Total: ${regSummary.totalHomegrownInClub} HG`, `ในทีมมี ${regSummary.totalHomegrownInClub} HG`)}
+            <span className="text-[11px] font-mono text-sky-400 whitespace-nowrap shrink-0">
+              {tr(`Total: ${regSummary.totalHomegrownInClub} HG`, `ในทีม: ${regSummary.totalHomegrownInClub} HG`)}
             </span>
           </div>
-          <div className="text-2xl font-display font-bold text-sky-400 mt-1.5 font-mono tabular-nums">
+          <div className="text-2xl font-display font-bold text-sky-400 mt-1.5 font-mono tabular-nums whitespace-nowrap">
             {regSummary.homegrownRegisteredCount} / {regSummary.minHomegrownQuota}{' '}
             <span className="text-xs font-sans font-normal text-slate-400">
-              {tr('min required', 'คนขั้นต่ำ')}
+              {tr('eligible HG', 'HG ที่ลงทะเบียน')}
             </span>
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            {tr(
-              'Trained at club (U19 Academy) or in domestic nation',
-              'ปั้นจากศูนย์ฝึกเยาวชน (U19) หรือฝึกในประเทศ'
-            )}
+          <div className="text-[11px] text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 font-mono">
+            <span className="text-emerald-400 font-semibold whitespace-nowrap">
+              HG-C: {regSummary.hgcRegisteredCount}{regSummary.minClubTrainedQuota > 0 ? `/${regSummary.minClubTrainedQuota}` : ''}
+            </span>
+            <span>·</span>
+            <span className="text-sky-400 font-semibold whitespace-nowrap">
+              HG-N: {regSummary.hgnRegisteredCount}
+            </span>
           </div>
         </div>
 
@@ -946,7 +960,9 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 const isStarter = starterIds.has(p.id);
                 const isBench = benchIds.has(p.id);
                 const isReg = p.isRegistered !== false;
-                const isHg = isPlayerHomegrownForClub(p, club.countryId);
+                const hgStatus = getPlayerHomegrownStatus(p, club.countryId);
+                const isU21Exempt = isPlayerU21Exempt(p, world.gameDate, club.leagueId, club.countryId);
+                const isNonEu = isPlayerNonEuForLeague(p, club.leagueId);
                 const ca20 = (p.currentAbility / 10).toFixed(1);
                 const paHigh20 = Math.round(p.potentialRange[1] / 10);
                 const injRisk = evaluatePlayerInjuryRisk(p, pressingLoad);
@@ -978,20 +994,32 @@ export const SquadView: React.FC<SquadViewProps> = ({
                       </select>
                     </td>
 
-                    {/* Registration Toggle */}
+                    {/* Registration Toggle (U21/U22 Exempt do not consume senior slots) */}
                     <td className="py-2.5 px-3 font-mono text-[11px]" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => onToggleRegistration?.(p.id)}
-                        aria-label={`${isReg ? 'Unregister' : 'Register'} ${p.firstName} ${p.lastName}`}
-                        className={`px-2 py-1 rounded text-[11px] font-mono font-semibold cursor-pointer transition-colors ${
-                          isReg
-                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
-                            : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'
-                        }`}
-                      >
-                        {isReg ? 'REG' : 'OUT'}
-                      </button>
+                      {isU21Exempt ? (
+                        <span
+                          title={tr(
+                            `U${regSummary.u21ExemptMaxAge} Exempt — Eligible automatically without consuming a senior squad slot`,
+                            `นักเตะ U${regSummary.u21ExemptMaxAge} ได้รับยกเว้น — ลงเล่นได้ทันทีโดยไม่กินโควตาชุดใหญ่`
+                          )}
+                          className="inline-block px-2 py-1 rounded text-[11px] font-mono font-semibold bg-teal-500/15 text-teal-300 border border-teal-500/40"
+                        >
+                          U{regSummary.u21ExemptMaxAge}
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onToggleRegistration?.(p.id)}
+                          aria-label={`${isReg ? 'Unregister' : 'Register'} ${p.firstName} ${p.lastName}`}
+                          className={`px-2 py-1 rounded text-[11px] font-mono font-semibold cursor-pointer transition-colors ${
+                            isReg
+                              ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30'
+                              : 'bg-slate-950 text-slate-500 border border-slate-800 hover:text-slate-300'
+                          }`}
+                        >
+                          {isReg ? 'REG' : 'OUT'}
+                        </button>
+                      )}
                     </td>
 
                     {/* Squad Lineup Status + Reserve U23 Sharpness Toggle */}
@@ -1048,12 +1076,28 @@ export const SquadView: React.FC<SquadViewProps> = ({
                             <span>
                               {p.firstName} {p.lastName}
                             </span>
-                            {isHg && (
+                            {hgStatus === 'HGC' && (
                               <span
-                                title={tr('Homegrown Player (Counts toward 8 HG quota)', 'นักเตะโควตาท้องถิ่น/ปั้นเอง (Homegrown)')}
-                                className="text-[10px] font-mono text-sky-400 font-semibold"
+                                title={tr('Club-Trained Homegrown (HG-C): Trained 3+ years at this club', 'เด็กปั้นสโมสร (HG-C): ฝึกกับสโมสรนี้ 3 ปีขึ้นไป')}
+                                className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[10px] font-mono text-emerald-300 font-semibold"
                               >
-                                · HG
+                                HG-C
+                              </span>
+                            )}
+                            {hgStatus === 'HGN' && (
+                              <span
+                                title={tr('Nation-Trained Homegrown (HG-N): Trained 3+ years in this nation', 'นักเตะโควตาท้องถิ่น (HG-N): ฝึกในประเทศ 3 ปีขึ้นไป')}
+                                className="px-1.5 py-0.5 rounded bg-sky-500/15 border border-sky-500/30 text-[10px] font-mono text-sky-300 font-semibold"
+                              >
+                                HG-N
+                              </span>
+                            )}
+                            {isNonEu && (
+                              <span
+                                title={tr('Non-EU Player (Counts toward league foreign cap)', 'นักเตะนอก EU (นับโควตาต่างชาติของลีก)')}
+                                className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[10px] font-mono text-amber-300 font-semibold"
+                              >
+                                NON-EU
                               </span>
                             )}
                             {(p.isWonderkid || (age <= 21 && p.potentialAbility >= 170)) && (
@@ -1067,8 +1111,9 @@ export const SquadView: React.FC<SquadViewProps> = ({
                               </span>
                             )}
                           </div>
-                          <div className="text-[10px] text-slate-400 font-mono">
-                            {p.nationalityCode} · {p.preferredRole}
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5 whitespace-nowrap">
+                            <NationalityFlag code={p.nationalityCode} size="xs" showCode />
+                            <span className="truncate max-w-[140px]">· {p.preferredRole}</span>
                           </div>
                         </div>
                       </div>
@@ -1420,7 +1465,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   onActivateReleaseClause,
   onSendToAffiliateLoan,
 }) => {
-  const { tr, trDynamic } = useLanguage();
+  const { lang, tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<'attributes' | 'contract_transfer' | 'development'>('attributes');
   const [comparePlayerId, setComparePlayerId] = useState<string>('');
   const playerClub = world.clubs[player.clubId];
@@ -1497,8 +1542,10 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   {player.positions.join(' / ')} · {player.preferredRole}
                 </span>
               </div>
-              <div className="text-xs text-slate-400 mt-0.5 font-mono tabular-nums">
-                {playerClub?.name} · {tr('Nat:', 'สัญชาติ')} {player.nationalityCode} · {tr(`Age ${age}`, `อายุ ${age} ปี`)} ({player.dateOfBirth}) · {tr('Foot:', 'เท้าถนัด')} {player.preferredFoot} · {player.heightCm}cm / {player.weightKg}kg
+              <div className="text-xs text-slate-400 mt-0.5 font-mono tabular-nums flex flex-wrap items-center gap-1.5">
+                <span>{playerClub?.name} ·</span>
+                <NationalityFlag code={player.nationalityCode} size="xs" showCountryName lang={lang} />
+                <span>· {tr(`Age ${age}`, `อายุ ${age} ปี`)} ({player.dateOfBirth}) · {tr('Foot:', 'เท้าถนัด')} {player.preferredFoot} · {player.heightCm}cm / {player.weightKg}kg</span>
               </div>
             </div>
           </div>

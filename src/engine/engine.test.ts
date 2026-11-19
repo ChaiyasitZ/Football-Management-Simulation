@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LEAGUES_CONFIG } from './leaguesConfig';
+import { CLUB_TEMPLATES, LEAGUES_CONFIG } from './leaguesConfig';
 import { createInitialWorldState } from './worldGenerator';
 import {
   checkAndAdvanceDomesticCup,
@@ -13,8 +13,10 @@ import {
 } from './leagueEngine';
 import {
   COMPETITION_STYLE_MAP,
+  FIFA_TO_FLAGCDN_ISO,
   resolveCompetitionTrophyPhotoUrls,
   resolveFotMobCompetitionLogoUrls,
+  resolveNationalityFlagInfo,
 } from '../components/TrophyAndKitVisuals';
 import {
   detectTrophyWinFromMatch,
@@ -107,6 +109,8 @@ import {
 import { getPlayerFaceUrl } from './engPlayerFaces';
 import {
   analyzeTacticalRisks,
+  autoRegisterSquadIds,
+  buildAuthenticTeamInstructions,
   calculatePositionFit,
   computeAutoSetPieceTakers,
   computePlayerPolygon8Axes,
@@ -118,6 +122,9 @@ import {
   evaluatePlayerInjuryRisk,
   evaluateRoleSuitability,
   evaluateSquadRegistration,
+  getPlayerHomegrownStatus,
+  isPlayerNonEuForLeague,
+  isPlayerU21Exempt,
   togglePlayerInstructionWithExclusions,
 } from './tacticsEngine';
 
@@ -2823,6 +2830,232 @@ test('Stage 11 Complete Suite: Roster Integrity, 30x Faster 23-League Batch Sim,
   );
   assert.equal(nextSeasonAfc.length, 8, 'Season rollover must generate next season AFC_ACL R16 bracket');
 });
+
+test('Stage 12: Universal Nationality Flags, Authentic HG-C/HG-N/U21/Non-EU Rules, 96 Top-5 2025/26 Tactical Presets & Budgets', () => {
+  // =========================================================================
+  // PHASE 1: UNIVERSAL NATIONALITY FLAG SYSTEM (115+ FIFA CODES + HOME NATIONS)
+  // =========================================================================
+  assert.ok(
+    Object.keys(FIFA_TO_FLAGCDN_ISO).length >= 110,
+    `Expected >= 110 FIFA flag mappings, got ${Object.keys(FIFA_TO_FLAGCDN_ISO).length}`
+  );
+  assert.equal(resolveNationalityFlagInfo('ENG').iso, 'gb-eng');
+  assert.equal(resolveNationalityFlagInfo('SCO').iso, 'gb-sct');
+  assert.equal(resolveNationalityFlagInfo('WAL').iso, 'gb-wls');
+  assert.equal(resolveNationalityFlagInfo('NIR').iso, 'gb-nir');
+  assert.equal(resolveNationalityFlagInfo('BRA').pngUrl, 'https://flagcdn.com/w40/br.png');
+  assert.equal(resolveNationalityFlagInfo('THA').pngUrl, 'https://flagcdn.com/w40/th.png');
+  assert.equal(resolveNationalityFlagInfo('England').iso, 'gb-eng');
+  assert.equal(resolveNationalityFlagInfo('Spain').iso, 'es');
+
+  // =========================================================================
+  // PHASE 3 & 4: TOP 5 EUROPEAN LEAGUES (96 CLUBS) 2025/26 FORMATIONS, TACTICS & BUDGETS
+  // =========================================================================
+  const top5Leagues = ['ENG_PL', 'ESP_LL', 'GER_BL', 'ITA_SA', 'FRA_L1'] as const;
+  let top5Count = 0;
+  for (const lId of top5Leagues) {
+    assert.ok(LEAGUES_CONFIG[lId].registrationRules, `${lId} must define registrationRules`);
+    for (const tpl of CLUB_TEMPLATES[lId]) {
+      top5Count++;
+      assert.ok(tpl.preferredFormation, `${tpl.name} must define authentic preferredFormation`);
+      assert.ok(tpl.secondaryFormation, `${tpl.name} must define authentic secondaryFormation`);
+      assert.ok(tpl.tacticalPreset, `${tpl.name} must define authentic tacticalPreset`);
+      assert.ok(
+        typeof tpl.transferBudgetEur === 'number' && tpl.transferBudgetEur >= 5_000_000,
+        `${tpl.name} must define realistic transferBudgetEur`
+      );
+      assert.ok(
+        typeof tpl.wageBudgetEur === 'number' && tpl.wageBudgetEur >= 150_000,
+        `${tpl.name} must define realistic wageBudgetEur`
+      );
+    }
+  }
+  assert.equal(top5Count, 96, 'Top 5 European leagues must cover all 96 clubs');
+
+  // Verify 0 duplicate manager names across all 394 clubs
+  const allManagerNames: string[] = [];
+  for (const leagueTemplates of Object.values(CLUB_TEMPLATES)) {
+    for (const tpl of leagueTemplates) {
+      allManagerNames.push(tpl.managerName.trim().toLowerCase());
+    }
+  }
+  assert.equal(
+    new Set(allManagerNames).size,
+    allManagerNames.length,
+    'All 394 clubs must have unique manager names with zero duplicates'
+  );
+
+  // Verify all 8 authentic tactical presets produce distinct expected instructions
+  const controlPos = buildAuthenticTeamInstructions('CONTROL_POSSESSION');
+  assert.equal(controlPos.mentality, 'Positive');
+  assert.equal(controlPos.passingDirectness, 'Shorter');
+  assert.equal(controlPos.whenPossessionWon, 'Hold Shape');
+  const gegenpress = buildAuthenticTeamInstructions('GEGENPRESS_HIGH_LINE');
+  assert.equal(gegenpress.mentality, 'Attacking');
+  assert.equal(gegenpress.pressingIntensity, 'Very High');
+  assert.equal(gegenpress.defensiveLine, 'Very High');
+  const lowBlock = buildAuthenticTeamInstructions('LOW_BLOCK_DIRECT_COUNTER');
+  assert.equal(lowBlock.mentality, 'Cautious');
+  assert.equal(lowBlock.defensiveLine, 'Deep');
+
+  // Verify world generation applies authentic 2025/26 managers, formations, tactics & budgets
+  const world = createInitialWorldState(202512);
+  const allClubs = Object.values(world.clubs);
+  const findClub = (nameSubstr: string) =>
+    allClubs.find((c) => c.name.toLowerCase().includes(nameSubstr.toLowerCase()));
+
+  const manCity = findClub('Manchester City')!;
+  const barca = findClub('Barcelona')!;
+  const manUtd = findClub('Manchester United')!;
+  const inter = findClub('Inter Milan')!;
+  const realMadrid = findClub('Real Madrid')!;
+  const psg = findClub('Paris Saint-Germain')!;
+  const arsenal = findClub('Arsenal')!;
+  const bayern = findClub('Bayern')!;
+  const como = findClub('Como')!;
+
+  assert.equal(manCity.aiManager.name, 'Pep Guardiola');
+  assert.equal(manCity.primaryTactic.formation, '4-2-3-1');
+  assert.equal(manCity.primaryTactic.instructions.passingDirectness, 'Shorter');
+  assert.equal(manCity.finances.transferBudget, 135_000_000);
+
+  assert.equal(barca.aiManager.name, 'Hansi Flick');
+  assert.equal(barca.primaryTactic.formation, '4-2-3-1');
+  assert.equal(barca.primaryTactic.instructions.defensiveLine, 'Very High');
+  assert.equal(barca.finances.transferBudget, 48_000_000);
+
+  assert.equal(manUtd.aiManager.name, 'Ruben Amorim');
+  assert.equal(manUtd.primaryTactic.formation, '3-4-3');
+  assert.equal(manUtd.finances.transferBudget, 95_000_000);
+
+  assert.equal(inter.aiManager.name, 'Cristian Chivu');
+  assert.equal(inter.primaryTactic.formation, '3-5-2');
+  assert.equal(inter.finances.transferBudget, 72_000_000);
+
+  assert.equal(realMadrid.aiManager.name, 'Xabi Alonso');
+  assert.equal(realMadrid.primaryTactic.formation, '4-2-3-1');
+  assert.equal(realMadrid.finances.transferBudget, 140_000_000);
+
+  assert.equal(psg.aiManager.name, 'Luis Enrique');
+  assert.equal(psg.primaryTactic.formation, '4-3-3');
+  assert.equal(psg.finances.transferBudget, 130_000_000);
+
+  assert.equal(arsenal.aiManager.name, 'Mikel Arteta');
+  assert.equal(arsenal.primaryTactic.formation, '4-3-3');
+  assert.equal(arsenal.finances.transferBudget, 110_000_000);
+
+  assert.equal(como.aiManager.name, 'Cesc Fàbregas');
+  assert.equal(como.finances.transferBudget, 48_000_000);
+
+  // =========================================================================
+  // PHASE 2: AUTHENTIC HOMEGROWN (HG-C / HG-N), U21/U22 EXEMPT & NON-EU RULES
+  // =========================================================================
+  const clubPlayers = (clubId: string) => Object.values(world.players).filter((p) => p.clubId === clubId);
+  const findPlayerInClub = (clubId: string, lastNameSubstr: string) =>
+    clubPlayers(clubId).find((p) =>
+      `${p.firstName} ${p.lastName}`.toLowerCase().includes(lastNameSubstr.toLowerCase())
+    );
+
+  // Verify authentic Club-Trained (HG-C) graduates
+  const saka = findPlayerInClub(arsenal.id, 'Saka');
+  const foden = findPlayerInClub(manCity.id, 'Foden');
+  const yamal = findPlayerInClub(barca.id, 'Yamal');
+  const musiala = findPlayerInClub(bayern.id, 'Musiala');
+  const dimarco = findPlayerInClub(inter.id, 'Dimarco');
+  const zaireEmery = findPlayerInClub(psg.id, 'Zaire-Emery') || findPlayerInClub(psg.id, 'Zaïre-Emery');
+
+  assert.ok(saka && getPlayerHomegrownStatus(saka, 'ENG') === 'HGC', 'Bukayo Saka must be HG-C at Arsenal');
+  assert.ok(foden && getPlayerHomegrownStatus(foden, 'ENG') === 'HGC', 'Phil Foden must be HG-C at Man City');
+  assert.ok(yamal && getPlayerHomegrownStatus(yamal, 'ESP') === 'HGC', 'Lamine Yamal must be HG-C at Barcelona');
+  assert.ok(musiala && getPlayerHomegrownStatus(musiala, 'GER') === 'HGC', 'Jamal Musiala must be HG-C at Bayern');
+  assert.ok(dimarco && getPlayerHomegrownStatus(dimarco, 'ITA') === 'HGC', 'Federico Dimarco must be HG-C at Inter');
+  assert.ok(zaireEmery && getPlayerHomegrownStatus(zaireEmery, 'FRA') === 'HGC', 'Warren Zaire-Emery must be HG-C at PSG');
+
+  // Verify Foreign Nation-Trained (HG-N) stars (e.g., Saliba & Martinelli in England)
+  const saliba = findPlayerInClub(arsenal.id, 'Saliba');
+  const martinelli = findPlayerInClub(arsenal.id, 'Martinelli');
+  if (saliba) {
+    assert.equal(getPlayerHomegrownStatus(saliba, 'ENG'), 'HGN', 'William Saliba must be HG-N in England');
+  }
+  if (martinelli) {
+    assert.equal(getPlayerHomegrownStatus(martinelli, 'ENG'), 'HGN', 'Gabriel Martinelli must be HG-N in England');
+  }
+
+  // Verify foreign senior marquee stars are NOT wrongly flagged HG (old pIdx >= 14 bug removed)
+  const haaland = findPlayerInClub(manCity.id, 'Haaland');
+  const rodri = findPlayerInClub(manCity.id, 'Rodri');
+  if (haaland) {
+    assert.equal(getPlayerHomegrownStatus(haaland, 'ENG'), 'NONE', 'Erling Haaland must NOT be Homegrown in England');
+  }
+  if (rodri) {
+    assert.equal(getPlayerHomegrownStatus(rodri, 'ENG'), 'NONE', 'Rodri must NOT be Homegrown in England');
+  }
+
+  // Verify Serie A U22 exemption vs Premier League U21 exemption
+  const age22Player = {
+    ...saka!,
+    id: 'test_age_22',
+    dateOfBirth: '2003-04-01', // Age 22 on 2025-07-15
+  };
+  assert.equal(isPlayerU21Exempt(age22Player, '2025-07-15', 'ITA_SA', 'ITA'), true, 'Age 22 player must be exempt in Serie A (U22)');
+  assert.equal(isPlayerU21Exempt(age22Player, '2025-07-15', 'ENG_PL', 'ENG'), false, 'Age 22 player must NOT be U21 exempt in Premier League');
+
+  // Verify La Liga Non-EU & Ligue 1 Cotonou exemptions
+  const nonEuJapanPlayer = {
+    ...saka!,
+    id: 'test_jpn_noneu',
+    firstName: 'Takumi',
+    lastName: 'Test',
+    nationalityCode: 'JPN',
+    homegrownStatus: 'NONE' as const,
+  };
+  const senegalPlayer = {
+    ...saka!,
+    id: 'test_sen_cotonou',
+    firstName: 'Ismaila',
+    lastName: 'Test',
+    nationalityCode: 'SEN',
+    homegrownStatus: 'NONE' as const,
+  };
+  assert.equal(isPlayerNonEuForLeague(nonEuJapanPlayer, 'ESP_LL'), true, 'Japanese non-HG player counts as Non-EU in La Liga');
+  assert.equal(isPlayerNonEuForLeague(senegalPlayer, 'FRA_L1'), false, 'Senegalese player is Cotonou-exempt in Ligue 1');
+  assert.equal(isPlayerNonEuForLeague(nonEuJapanPlayer, 'FRA_L1'), true, 'Japanese player counts as Non-EU in Ligue 1');
+
+  // Verify all 96 Top-5 clubs start registration-compliant under their exact league rules
+  for (const lId of top5Leagues) {
+    const leagueClubs = allClubs.filter((c) => c.leagueId === lId);
+    for (const c of leagueClubs) {
+      const summary = evaluateSquadRegistration(clubPlayers(c.id), c.countryId, c.leagueId, world.gameDate);
+      assert.equal(
+        summary.isCompliant,
+        true,
+        `${c.name} (${lId}) must start registration-compliant, issues: ${summary.issues.map((i) => i.en).join('; ')}`
+      );
+      if (lId === 'GER_BL') {
+        assert.equal(summary.maxSquadSize, 30, 'Bundesliga senior limit must be 30');
+        assert.ok(summary.hgcRegisteredCount >= 4, `${c.name} in Bundesliga must have >= 4 HG-C`);
+      }
+      if (lId === 'ITA_SA') {
+        assert.equal(summary.u21ExemptMaxAge, 22, 'Serie A exempt age must be U22');
+        assert.ok(summary.hgcRegisteredCount >= 4, `${c.name} in Serie A must have >= 4 HG-C`);
+      }
+      if (lId === 'ESP_LL') {
+        assert.ok(summary.nonEuRegisteredCount <= 3, `${c.name} in La Liga must have <= 3 Non-EU`);
+      }
+      if (lId === 'FRA_L1') {
+        assert.ok(summary.nonEuRegisteredCount <= 4, `${c.name} in Ligue 1 must have <= 4 Non-EU`);
+      }
+    }
+  }
+
+  // Verify autoRegisterSquadIds respects league caps when re-run
+  const barcaPlayers = clubPlayers(barca.id);
+  const autoIds = autoRegisterSquadIds(barcaPlayers, barca.countryId, new Set(), barca.leagueId, world.gameDate);
+  const updatedBarcaPlayers = barcaPlayers.map((p) => ({ ...p, isRegistered: autoIds.has(p.id) }));
+  const reEvaluated = evaluateSquadRegistration(updatedBarcaPlayers, barca.countryId, barca.leagueId, world.gameDate);
+  assert.equal(reEvaluated.isCompliant, true, 'autoRegisterSquadIds must produce a compliant La Liga squad');
+});
+
 
 
 

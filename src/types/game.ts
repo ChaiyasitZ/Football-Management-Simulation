@@ -122,6 +122,18 @@ export type FormationId =
   | '5-3-2'
   | '5-4-1';
 
+export type TacticalPresetId =
+  | 'CONTROL_POSSESSION'
+  | 'GEGENPRESS_HIGH_LINE'
+  | 'WING_BACK_OVERLOAD'
+  | 'VERTICAL_TIKI_TAKA'
+  | 'FLUID_COUNTER_ATTACK'
+  | 'HIGH_INTENSITY_DIRECT'
+  | 'COMPACT_MID_BLOCK'
+  | 'LOW_BLOCK_DIRECT_COUNTER';
+
+export type HomegrownStatus = 'HGC' | 'HGN' | 'NONE';
+
 export type Mentality =
   | 'Very Defensive'
   | 'Defensive'
@@ -337,6 +349,7 @@ export interface Player {
   transferHistory: { date: string; fromClubId: string; toClubId: string; fee: number; type: 'Transfer' | 'Loan' | 'Free' }[];
   isYouthAcademy?: boolean;
   isHomegrown?: boolean;
+  homegrownStatus?: HomegrownStatus;
   isRegistered?: boolean;
   consecutiveBenched?: number;
   playInReserves?: boolean;
@@ -577,6 +590,18 @@ export interface LeagueConfig {
   superCupId?: SuperCupId;
   superCupName?: string;
   superCupLogoUrl?: string;
+  registrationRules?: LeagueRegistrationRules;
+}
+
+export interface LeagueRegistrationRules {
+  ruleNameEn: string;
+  ruleNameTh: string;
+  maxSeniorSquad: number;
+  minHomegrownTotal: number;
+  minClubTrained: number;
+  maxNonEu?: number | null;
+  u21ExemptMaxAge: number;
+  cotonouExempt?: boolean;
 }
 
 export type MatchEventType =

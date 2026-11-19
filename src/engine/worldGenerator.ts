@@ -5,6 +5,7 @@ import {
   FinanceTransaction,
   Fixture,
   FormationId,
+  HomegrownStatus,
   LeagueId,
   LeagueStanding,
   ManagerProfile,
@@ -36,7 +37,10 @@ import { SeededRNG } from './random';
 import {
   autoPickLineup,
   autoRegisterSquadIds,
+  buildAuthenticTeamInstructions,
   derivePlayerTraitsFromAttributes,
+  getLeagueRegistrationRules,
+  getPlayerHomegrownStatus,
   isPlayerHomegrownForClub,
   ROLES_BY_POSITION,
 } from './tacticsEngine';
@@ -48,6 +52,103 @@ import {
   selectUefaQualifiedClubs,
   UEFA_COMPETITIONS_CONFIG,
 } from './uefaEngine';
+
+// Stage 12: Authentic Club-Trained (HG-C) graduates & Foreign Nation-Trained (HG-N) players
+const CLUB_TRAINED_PLAYERS_BY_CLUB: Record<string, string[]> = {
+  ARS: ['bukayo saka', 'ethan nwaneri', 'myles lewis-skelly', 'max dowman', 'reiss nelson', 'eddie nketiah'],
+  MCI: ['phil foden', 'rico lewis', 'oscar bobb', 'james mcatee', 'nico o reilly', 'nico oreilly', 'divin mubama'],
+  LIV: ['curtis jones', 'conor bradley', 'jarell quansah', 'trent alexander-arnold', 'caoimhin kelleher', 'stefan bajcetic', 'harvey elliott', 'trey nyoni', 'rio ngumoha'],
+  CHE: ['reece james', 'levi colwill', 'trevoh chalobah', 'josh acheampong', 'tyrique george', 'conor gallagher'],
+  MUN: ['kobbie mainoo', 'marcus rashford', 'luke shaw', 'alejandro garnacho', 'toby collyer', 'scott mctominay', 'tom heaton'],
+  TOT: ['mikey moore', 'oliver skipp', 'brandon austin', 'alfie whiteman', 'dane scarlett'],
+  NEW: ['sean longstaff', 'lewis miley', 'elliot anderson', 'paul dummett'],
+  AVL: ['jacob ramsey', 'kaine kesler-hayden'],
+  RMA: ['dani carvajal', 'daniel carvajal', 'fran garcia', 'lucas vazquez', 'raul asencio', 'federico valverde', 'vinicius junior', 'rodrygo', 'nico paz'],
+  BAR: ['lamine yamal', 'pau cubarsi', 'gavi', 'alejandro balde', 'fermin lopez', 'marc casado', 'marc bernal', 'hector fort', 'inaki pena', 'ansu fati', 'eric garcia', 'dani olmo', 'guille fernandez'],
+  ATM: ['pablo barrios', 'koke', 'rodrigo riquelme', 'giuliano simeone'],
+  BAY: ['jamal musiala', 'aleksandar pavlovic', 'josip stanisic', 'thomas muller', 'paul wanner', 'adam aznou'],
+  FCB: ['jamal musiala', 'aleksandar pavlovic', 'josip stanisic', 'thomas muller', 'paul wanner', 'adam aznou'],
+  BVB: ['jamie gittens', 'jamie bynoe-gittens', 'giovanni reyna', 'youssoufa moukoko', 'kjell watjen', 'julien duranville'],
+  INT: ['federico dimarco', 'alessandro bastoni', 'valentin carboni', 'francesco pio esposito', 'sebastiano esposito'],
+  ROM: ['lorenzo pellegrini', 'niccolo pisilli', 'edoardo bove', 'nicola zalewski'],
+  JUV: ['kenan yildiz', 'nicolo fagioli', 'nicolo savona', 'samuel mbangula', 'fabio miretti'],
+  MIL: ['davide calabria', 'matteo gabbia', 'tommaso pobega', 'francesco camarda', 'mattia liberali'],
+  PSG: ['warren zaire-emery', 'senny mayulu', 'presnel kimpembe', 'ibrahim mbaye', 'yoram zague'],
+  MON: ['maghnes akliouche', 'eliesse ben seghir', 'soungoutou magassa'],
+  OL: ['rayan cherki', 'maxence caqueret', 'malick fofana'],
+};
+
+const FOREIGN_NATION_HOMEGROWN_PLAYERS: Record<string, string[]> = {
+  ENG: [
+    'william saliba', 'gabriel martinelli', 'david raya', 'nathan ake', 'alejandro garnacho',
+    'amad diallo', 'evan ferguson', 'andreas pereira', 'emiliano martinez', 'hector bellerin',
+    'romeo lavia', 'brennan johnson', 'ben davies', 'ethan ampadu', 'harry wilson', 'neco williams',
+    'caoimhin kelleher', 'conor bradley', 'andrew robertson', 'john mcginn', 'scott mctominay',
+    'billy gilmour', 'aaron hickey', 'lewis ferguson', 'kieran tierney', 'che adams',
+  ],
+  ESP: [
+    'vinicius junior', 'rodrygo', 'federico valverde', 'eder militao', 'ronald araujo',
+    'raphinha', 'eduardo camavinga', 'antoine griezmann', 'jan oblak', 'jose maria gimenez',
+    'angel correa', 'iñaki williams', 'inaki williams', 'takefusa kubo', 'kang-in lee',
+  ],
+  ITA: [
+    'kenan yildiz', 'nico paz', 'paul pogba', 'romelu lukaku', 'samir handanovic',
+    'valentin carboni', 'matias soule', 'dean huijsen', 'assane diao', 'koni de winter',
+  ],
+  GER: [
+    'jamal musiala', 'josip stanisic', 'alphonso davies', 'mathys tel', 'jamie gittens',
+    'jamie bynoe-gittens', 'giovanni reyna', 'xavi simons', 'jeremie frimpong', 'piero hincapie',
+  ],
+  FRA: [
+    'achraf hakimi', 'nuno mendes', 'eliesse ben seghir', 'fode ballo-toure',
+    'malick fofana', 'fali cande', 'jonathan david',
+  ],
+};
+
+function normalizePlayerNameForHg(firstName: string, lastName: string): string {
+  return `${firstName} ${lastName}`
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+    .trim();
+}
+
+function resolveInitialHomegrownStatus(
+  firstName: string,
+  lastName: string,
+  natCode: string,
+  isYouth: boolean | undefined,
+  clubShortName: string,
+  clubCountryId: string
+): HomegrownStatus {
+  if (isYouth) return 'HGC';
+  const fullName = normalizePlayerNameForHg(firstName, lastName);
+  const lastOnly = lastName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, ' ')
+    .toLowerCase()
+    .trim();
+
+  const clubTrainedList = CLUB_TRAINED_PLAYERS_BY_CLUB[clubShortName] || [];
+  if (clubTrainedList.includes(fullName) || (lastOnly.length >= 5 && clubTrainedList.includes(lastOnly))) {
+    return 'HGC';
+  }
+
+  const domesticCodes = clubCountryId === 'ENG' ? ['ENG', 'WAL'] : clubCountryId === 'USA' ? ['USA', 'CAN'] : [clubCountryId];
+  if (domesticCodes.includes(natCode)) {
+    return 'HGN';
+  }
+
+  const foreignHgList = FOREIGN_NATION_HOMEGROWN_PLAYERS[clubCountryId] || [];
+  if (foreignHgList.includes(fullName) || (lastOnly.length >= 5 && foreignHgList.includes(lastOnly))) {
+    return 'HGN';
+  }
+
+  return 'NONE';
+}
 
 const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   ARS: [
@@ -799,10 +900,20 @@ export function createInitialWorldState(
           developmentHistory: [{ date: gameDate, ca: coherentCa, keyAttributeChanges: [] }],
           transferHistory: [],
           isYouthAcademy: Boolean(pSeed.isYouth),
-          isHomegrown:
-            Boolean(pSeed.isYouth) ||
-            pSeed.natCode === config.countryId ||
-            pIdx >= 14,
+          ...(() => {
+            const hgStatus = resolveInitialHomegrownStatus(
+              pSeed.firstName,
+              pSeed.lastName,
+              pSeed.natCode,
+              pSeed.isYouth,
+              tpl.shortName,
+              config.countryId
+            );
+            return {
+              homegrownStatus: hgStatus,
+              isHomegrown: hgStatus !== 'NONE',
+            };
+          })(),
           isRegistered: true,
           consecutiveBenched: 0,
           playInReserves: Boolean(pSeed.isYouth),
@@ -818,41 +929,89 @@ export function createInitialWorldState(
         clubPlayers.push(player);
       });
 
-      // Ensure at least 8 Homegrown players exist on every club roster
-      let hgCount = clubPlayers.filter((cp) =>
-        isPlayerHomegrownForClub(cp, config.countryId)
-      ).length;
-      if (hgCount < 8) {
-        for (let i = clubPlayers.length - 1; i >= 0 && hgCount < 8; i--) {
-          if (!isPlayerHomegrownForClub(clubPlayers[i], config.countryId)) {
-            clubPlayers[i].isHomegrown = true;
-            players[clubPlayers[i].id].isHomegrown = true;
-            hgCount++;
-          }
+      // Ensure every club starts compliant with its league's HG-C & total HG quotas without tagging marquee foreign stars
+      const regRules = getLeagueRegistrationRules(leagueId, config.countryId);
+      let hgcCount = clubPlayers.filter((cp) => getPlayerHomegrownStatus(cp, config.countryId) === 'HGC').length;
+      if (regRules.minClubTrained > 0 && hgcCount < regRules.minClubTrained) {
+        // Prefer promoting youngest domestic/HGN players first to HGC
+        const candidates = [...clubPlayers]
+          .filter((cp) => getPlayerHomegrownStatus(cp, config.countryId) !== 'HGC')
+          .sort((a, b) => {
+            const aDom = getPlayerHomegrownStatus(a, config.countryId) === 'HGN' ? 0 : 1;
+            const bDom = getPlayerHomegrownStatus(b, config.countryId) === 'HGN' ? 0 : 1;
+            if (aDom !== bDom) return aDom - bDom;
+            return b.dateOfBirth.localeCompare(a.dateOfBirth); // youngest first
+          });
+        for (const cp of candidates) {
+          if (hgcCount >= regRules.minClubTrained) break;
+          cp.homegrownStatus = 'HGC';
+          cp.isHomegrown = true;
+          players[cp.id].homegrownStatus = 'HGC';
+          players[cp.id].isHomegrown = true;
+          hgcCount++;
         }
       }
 
-      const primaryFormation = rng.pick(FORMATIONS_POOL);
-      const secondaryFormation = rng.pick(FORMATIONS_POOL.filter((f) => f !== primaryFormation));
+      let hgCount = clubPlayers.filter((cp) =>
+        isPlayerHomegrownForClub(cp, config.countryId)
+      ).length;
+      const targetMinHg = Math.max(regRules.minHomegrownTotal, 8);
+      if (hgCount < targetMinHg) {
+        // Only fill remaining deficit using youngest / depth players, preserving authentic foreign stars as NONE
+        const nonHgCandidates = [...clubPlayers]
+          .filter((cp) => !isPlayerHomegrownForClub(cp, config.countryId))
+          .sort((a, b) => {
+            const aBirth = parseInt(a.dateOfBirth.slice(0, 4), 10) || 2000;
+            const bBirth = parseInt(b.dateOfBirth.slice(0, 4), 10) || 2000;
+            if (aBirth !== bBirth) return bBirth - aBirth; // youngest first
+            return a.currentAbility - b.currentAbility; // squad depth before marquee stars
+          });
+        for (const cp of nonHgCandidates) {
+          if (hgCount >= targetMinHg) break;
+          cp.homegrownStatus = 'HGN';
+          cp.isHomegrown = true;
+          players[cp.id].homegrownStatus = 'HGN';
+          players[cp.id].isHomegrown = true;
+          hgCount++;
+        }
+      }
+
+      // Stage 12 Phase 3: Authentic 2025/26 primary/secondary formations & tactical presets
+      const primaryFormation: FormationId = tpl.preferredFormation || rng.pick(FORMATIONS_POOL);
+      const secondaryFormation: FormationId =
+        tpl.secondaryFormation || rng.pick(FORMATIONS_POOL.filter((f) => f !== primaryFormation));
+      const authenticInstructions = tpl.tacticalPreset
+        ? buildAuthenticTeamInstructions(tpl.tacticalPreset)
+        : undefined;
       const primaryTactic = autoPickLineup(
         primaryFormation,
         clubPlayers,
-        undefined,
+        authenticInstructions,
         `${clubId}_tac_1`,
         `${primaryFormation} Primary`
       );
       const secondaryTactic = autoPickLineup(
         secondaryFormation,
         clubPlayers,
-        undefined,
+        authenticInstructions,
         `${clubId}_tac_2`,
         `${secondaryFormation} Reserve`
       );
 
+      // Stage 12 Phase 4: Authentic 2025/26 club transfer & wage budgets
       const repFactor = Math.pow(tpl.reputation / 70, 2.8);
-      const balance = Math.round(repFactor * 42_000_000);
-      const transferBudget = Math.round(repFactor * 28_000_000);
-      const wageBudgetPerWeek = Math.round(totalWageUsed * 1.18);
+      const transferBudget =
+        tpl.transferBudgetEur !== undefined
+          ? tpl.transferBudgetEur
+          : Math.round(repFactor * 28_000_000);
+      const balance =
+        tpl.transferBudgetEur !== undefined
+          ? Math.max(Math.round(tpl.transferBudgetEur * 1.35), Math.round(repFactor * 22_000_000))
+          : Math.round(repFactor * 42_000_000);
+      const wageBudgetPerWeek =
+        tpl.wageBudgetEur !== undefined
+          ? tpl.wageBudgetEur
+          : Math.round(totalWageUsed * 1.18);
 
       const starterIdSet = new Set(
         primaryTactic.lineup.map((s) => s.playerId).filter((id): id is string => Boolean(id))
@@ -860,7 +1019,9 @@ export function createInitialWorldState(
       const registeredIdSet = autoRegisterSquadIds(
         clubPlayers,
         config.countryId,
-        starterIdSet
+        starterIdSet,
+        leagueId,
+        gameDate
       );
       for (const cp of clubPlayers) {
         const reg = registeredIdSet.has(cp.id);
@@ -1289,6 +1450,7 @@ export function createInitialWorldState(
         developmentHistory: [{ date: gameDate, ca, keyAttributeChanges: [] }],
         transferHistory: [],
         isYouthAcademy: true,
+        homegrownStatus: 'HGC',
         isHomegrown: true,
         isRegistered: true,
         youthSquad: 'u21',

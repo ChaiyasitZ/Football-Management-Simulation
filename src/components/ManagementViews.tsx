@@ -59,6 +59,7 @@ import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
 import {
   CompetitionBadge,
+  NationalityFlag,
   TrophyArtwork,
 } from './TrophyAndKitVisuals';
 import { SilverwareInspectionModal } from './SilverwareModals';
@@ -443,8 +444,9 @@ export const DashboardView: React.FC<{
         {/* Right 3 Cols: Mini League Standings */}
         <div className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-slate-200">
-              {tr(`Standings (${LEAGUES_CONFIG[club.leagueId].countryFlag})`, `ตารางคะแนน (${LEAGUES_CONFIG[club.leagueId].countryFlag})`)}
+            <h3 className="text-sm font-semibold text-slate-200 inline-flex items-center gap-1.5">
+              <span>{tr('Standings', 'ตารางคะแนน')}</span>
+              <NationalityFlag code={LEAGUES_CONFIG[club.leagueId].countryId} size="xs" showCode />
             </h3>
             <button
               type="button"
@@ -1817,9 +1819,14 @@ export const ScoutingView: React.FC<{
                     <td className="py-2 px-3 font-medium text-white">
                       <div className="flex items-center gap-2">
                         <PlayerAvatar player={p} club={c} size="sm" />
-                        <span>
-                          {p.firstName} {p.lastName}
-                        </span>
+                        <div>
+                          <div>
+                            {p.firstName} {p.lastName}
+                          </div>
+                          <div className="mt-0.5">
+                            <NationalityFlag code={p.nationalityCode} size="xs" showCode />
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="py-2.5 px-3 text-slate-300">{c?.name}</td>
@@ -3911,9 +3918,8 @@ export const CompetitionsAndScheduleView: React.FC<{
                     }`}
                   >
                     <CompetitionBadge competitionId={cMeta.id} size="xs" />
-                    <span>
-                      {cMeta.countryFlag} {cMeta.name}
-                    </span>
+                    <NationalityFlag code={cMeta.countryId} size="xs" />
+                    <span>{cMeta.name}</span>
                   </button>
                 ))}
               </div>
@@ -4888,9 +4894,8 @@ export const CompetitionsAndScheduleView: React.FC<{
                     }`}
                   >
                     <CompetitionBadge competitionId={lId} size="xs" />
-                    <span>
-                      {lCfg.countryFlag} · {lCfg.name}
-                    </span>
+                    <NationalityFlag code={lCfg.countryId} size="xs" />
+                    <span>{lCfg.name}</span>
                   </button>
                 );
               })}
@@ -4931,8 +4936,9 @@ export const CompetitionsAndScheduleView: React.FC<{
               <div>
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-display font-bold text-white">{cfg.name}</h3>
-                  <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400">
-                    {cfg.countryFlag} {cfg.countryName} · Tier {cfg.tier || 1}
+                  <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-emerald-400 inline-flex items-center gap-1.5">
+                    <NationalityFlag code={cfg.countryId} size="xs" />
+                    <span>{cfg.countryName} · Tier {cfg.tier || 1}</span>
                   </span>
                 </div>
                 <p className="text-xs text-slate-400">
@@ -6629,8 +6635,9 @@ export const ClubStaffYouthWorldView: React.FC<{
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[10px] text-slate-400 font-mono">
-                                {p.nationalityCode} · {p.contractType === 'youth' ? tr('Youth Contract', 'สัญญาเยาวชน') : tr('Pro Contract', 'สัญญาอาชีพ')}
+                              <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                                <NationalityFlag code={p.nationalityCode} size="xs" showCode />
+                                <span>· {p.contractType === 'youth' ? tr('Youth Contract', 'สัญญาเยาวชน') : tr('Pro Contract', 'สัญญาอาชีพ')}</span>
                               </div>
                             </div>
                           </div>
@@ -6755,8 +6762,9 @@ export const ClubStaffYouthWorldView: React.FC<{
                                   ★ WK
                                 </span>
                               </div>
-                              <div className="text-[10px] text-slate-400 font-mono">
-                                {p.nationalityCode} · {p.preferredFoot} Foot
+                              <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5">
+                                <NationalityFlag code={p.nationalityCode} size="xs" showCode />
+                                <span>· {p.preferredFoot} Foot</span>
                               </div>
                             </div>
                           </div>
@@ -7508,8 +7516,9 @@ export const ClubStaffYouthWorldView: React.FC<{
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-800">
                 <span className="text-slate-400">{tr('Nationality / Age:', 'สัญชาติ / อายุ:')}</span>
-                <span className="text-slate-200">
-                  {mgr.nationality} · {mgr.age} {tr('yrs', 'ปี')}
+                <span className="text-slate-200 inline-flex items-center gap-1.5">
+                  <NationalityFlag code={mgr.nationality} size="xs" />
+                  <span>{mgr.nationality} · {mgr.age} {tr('yrs', 'ปี')}</span>
                 </span>
               </div>
               <div className="flex justify-between py-1.5 border-b border-slate-800">
