@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { LEAGUES_CONFIG } from './leaguesConfig';
 import { createInitialWorldState } from './worldGenerator';
 import {
+  checkAndAdvanceDomesticCup,
   CUP_COMPETITIONS_META,
   generateLeagueSchedule,
+  generatePromotionPlayoffFixtures,
   getCupRoundPrizeMoney,
   getLeaguePlayerLeaders,
   recomputeLeagueStandings,
@@ -36,10 +38,12 @@ import {
   assignYouthMentor,
   buildScoutReportForPlayer,
   buildSevenDayCalendarStrip,
+  checkAndTriggerPromotionPlayoffs,
   clearInMemorySaveCache,
   computeHallOfFameLeaderboard,
   computeLeaguePositionWormData,
   conductOneOnOnePlayerChat,
+  simulateAndApplyFixturesBatch,
   createCustomPlayerInWorld,
   dehydrateWorldStateToCareerMap,
   dispatchSouthAmericaWonderkidScout,
@@ -2118,7 +2122,7 @@ test('Stage 8 Complete Suite: Verified FotMob Cup Logos (2-Step Resolver), 3 Lea
   );
 
   // 5. Verify Trophy History & UEFA Qualification from Domestic Cups on Season Rollover
-  assert.equal(Object.keys(CUP_COMPETITIONS_META).length, 30, 'CUP_COMPETITIONS_META must cover all 30 cups');
+  assert.equal(Object.keys(CUP_COMPETITIONS_META).length, 39, 'CUP_COMPETITIONS_META must cover all 39 cups (17 Primary + 3 LC + 10 SC + 3 Continental + 6 Playoffs)');
   const rolled = processEndOfSeasonRollover(world).nextState;
   const s1Trophies = (rolled.trophyHistory || []).filter((t) => t.season === '2025/26');
   assert.ok(
@@ -2465,6 +2469,359 @@ test('23. Stage 10 Complete Suite: 58 Real Physical Trophy Photographs, FotMob S
   });
   assert.ok(penWinLift, 'Winning a Cup Final on penalties must trigger ChampionshipTrophyLiftModal data');
   assert.ok(penWinLift?.scorelineText?.includes('5-4 pens'));
+});
+
+test('Stage 11 Complete Suite: Roster Integrity, 30x Faster 23-League Batch Sim, Mathematical Title Clinch, Promotion Playoffs & Continental Champions Cups', () => {
+  const world = createInitialWorldState(202611);
+  const allClubs = Object.values(world.clubs);
+  const allPlayers = Object.values(world.players);
+
+  // =========================================================================
+  // PHASE 1: DATABASE & ROSTER INTEGRITY (394 CLUBS, ZERO DUPLICATES)
+  // =========================================================================
+  assert.equal(allClubs.length, 394, 'World must have exactly 394 clubs across 23 leagues');
+
+  const clubNames = new Set<string>();
+  const shortNames = new Set<string>();
+  const managerNames = new Set<string>();
+  for (const club of allClubs) {
+    assert.ok(!clubNames.has(club.name), `Duplicate club name detected: ${club.name}`);
+    clubNames.add(club.name);
+
+    assert.ok(!shortNames.has(club.shortName), `Duplicate shortName detected: ${club.shortName} (${club.name})`);
+    shortNames.add(club.shortName);
+
+    assert.ok(
+      !managerNames.has(club.aiManager.name),
+      `Duplicate AI manager name detected: ${club.aiManager.name} (${club.name})`
+    );
+    managerNames.add(club.aiManager.name);
+  }
+
+  // Verify ENG_L1 replacements (Luton, Cardiff, Plymouth) and zero overlap with ENG_CH
+  const engL1Clubs = allClubs.filter((c) => c.leagueId === 'ENG_L1');
+  assert.equal(engL1Clubs.length, 16);
+  const engL1Shorts = new Set(engL1Clubs.map((c) => c.shortName));
+  assert.ok(engL1Shorts.has('LUT'), 'ENG_L1 must contain Luton Town (LUT)');
+  assert.ok(engL1Shorts.has('CARF'), 'ENG_L1 must contain Cardiff City (CARF)');
+  assert.ok(engL1Shorts.has('PLY'), 'ENG_L1 must contain Plymouth Argyle (PLY)');
+
+  // Verify disambiguated clubs have isolated rosters & new-league star players exist
+  const palmeiras = allClubs.find((c) => c.shortName === 'PAL')!;
+  const palermo = allClubs.find((c) => c.shortName === 'PALM')!;
+  assert.ok(palmeiras && palermo);
+  const palmeirasNames = new Set(
+    allPlayers.filter((p) => p.clubId === palmeiras.id).map((p) => `${p.firstName} ${p.lastName}`)
+  );
+  const palermoNames = new Set(
+    allPlayers.filter((p) => p.clubId === palermo.id).map((p) => `${p.firstName} ${p.lastName}`)
+  );
+  for (const name of palmeirasNames) {
+    assert.ok(!palermoNames.has(name), `Player ${name} leaked between Palmeiras and Palermo`);
+  }
+
+  const allPlayerFullNames = new Set(allPlayers.map((p) => `${p.firstName} ${p.lastName}`));
+  for (const star of ['Xherdan Shaqiri', 'Thiago Silva', 'Lucas Moura', 'Giannis Konstantelias']) {
+    assert.ok(allPlayerFullNames.has(star), `New-league star player ${star} must be seeded in the world`);
+  }
+
+  // =========================================================================
+  // PHASE 2: HIGH-SPEED 23-LEAGUE BATCHED SIMULATION ENGINE
+  // =========================================================================
+  const md1Fixtures = world.fixtures.filter(
+    (f) => f.matchday === 1 && LEAGUES_CONFIG[f.competitionId as keyof typeof LEAGUES_CONFIG]
+  );
+  assert.ok(md1Fixtures.length >= 160, `Matchday 1 across 23 leagues must have >=160 fixtures (got ${md1Fixtures.length})`);
+
+  const t0 = performance.now();
+  const afterMd1 = simulateAndApplyFixturesBatch(world, md1Fixtures);
+  const elapsedMs = performance.now() - t0;
+  assert.ok(
+    elapsedMs < 1000,
+    `Batched simulation of ${md1Fixtures.length} fixtures must complete in <1s (took ${elapsedMs.toFixed(1)}ms)`
+  );
+
+  const md1Completed = afterMd1.fixtures.filter(
+    (f) =>
+      f.matchday === 1 &&
+      LEAGUES_CONFIG[f.competitionId as keyof typeof LEAGUES_CONFIG] &&
+      f.status === 'Completed'
+  );
+  assert.equal(md1Completed.length, md1Fixtures.length, 'Every batched Matchday 1 fixture must be Completed');
+  assert.equal(afterMd1.standings.ENG_PL[0].played, 1, 'Standings must be recomputed after batched simulation');
+
+  // =========================================================================
+  // PHASE 3A: MATHEMATICAL LEAGUE TITLE CLINCH DETECTION
+  // =========================================================================
+  const mockTeamStats = (goals: number) => ({
+    goals,
+    possession: 55,
+    totalShots: 14,
+    shotsOnTarget: 6,
+    blockedShots: 2,
+    xG: goals + 0.3,
+    passes: 480,
+    passAccuracy: 86,
+    tackles: 16,
+    interceptions: 11,
+    clearances: 12,
+    fouls: 8,
+    yellowCards: 1,
+    redCards: 0,
+    corners: 6,
+    offsides: 1,
+    saves: 3,
+    bigChances: 3,
+  });
+
+  const userClubId = world.controlledClubId;
+  const userLeagueId = world.clubs[userClubId].leagueId;
+  const userLeagueFix = world.fixtures.find(
+    (f) =>
+      f.competitionId === userLeagueId &&
+      (f.homeClubId === userClubId || f.awayClubId === userClubId)
+  )!;
+  const completedUserLeagueFix = {
+    ...userLeagueFix,
+    status: 'Completed' as const,
+    result: {
+      homeGoals: 3,
+      awayGoals: 0,
+      homeStats: mockTeamStats(3),
+      awayStats: mockTeamStats(0),
+      events: [],
+      playerRatings: {},
+      manOfTheMatchPlayerId: '',
+      attendance: 60000,
+    },
+  };
+
+  // Scenario 1: Mathematically clinched (#1 has 92 pts after 35 games, #2 has 80 pts after 35 games -> max 89 pts)
+  const baseTable = world.standings[userLeagueId];
+  const userRow = baseTable.find((r) => r.clubId === userClubId)!;
+  const rivalRow = baseTable.find((r) => r.clubId !== userClubId)!;
+  const restRows = baseTable.filter((r) => r.clubId !== userClubId && r.clubId !== rivalRow.clubId);
+
+  const clinchedWorld = {
+    ...world,
+    fixtures: world.fixtures.map((f) => (f.id === userLeagueFix.id ? completedUserLeagueFix : f)),
+    standings: {
+      ...world.standings,
+      [userLeagueId]: [
+        { ...userRow, played: 35, won: 30, drawn: 2, lost: 3, points: 92 },
+        { ...rivalRow, played: 35, won: 25, drawn: 5, lost: 5, points: 80 },
+        ...restRows,
+      ],
+    },
+  };
+
+  const clinchLift = detectTrophyWinFromMatch(
+    clinchedWorld,
+    userLeagueFix.id,
+    completedUserLeagueFix.result
+  );
+  assert.ok(clinchLift, 'Mathematically clinching league title must immediately trigger TrophyLiftData');
+  assert.equal(clinchLift?.competitionId, userLeagueId);
+  assert.equal(clinchLift?.clubId, userClubId);
+
+  // Scenario 2: Title race still mathematically open (#1 has 86 pts, #2 has 80 pts with 3 games = 9 pts left -> max 89)
+  const openRaceWorld = {
+    ...clinchedWorld,
+    standings: {
+      ...clinchedWorld.standings,
+      [userLeagueId]: [
+        { ...userRow, played: 35, won: 28, drawn: 2, lost: 5, points: 86 },
+        { ...rivalRow, played: 35, won: 25, drawn: 5, lost: 5, points: 80 },
+        ...restRows,
+      ],
+    },
+  };
+  assert.equal(
+    detectTrophyWinFromMatch(openRaceWorld, userLeagueFix.id, completedUserLeagueFix.result),
+    null,
+    'Open title race must NOT trigger Championship Trophy Lift prematurely'
+  );
+
+  // Scenario 3: Already recorded in trophyHistory -> dead-rubber match must NOT re-trigger modal
+  const alreadyRecordedWorld = {
+    ...clinchedWorld,
+    trophyHistory: [
+      {
+        id: `trp_${world.currentSeason.replace('/', '')}_${userLeagueId}`,
+        season: world.currentSeason,
+        competitionId: userLeagueId,
+        competitionName: LEAGUES_CONFIG[userLeagueId].name,
+        winnerClubId: userClubId,
+        winnerClubName: world.clubs[userClubId].name,
+      },
+      ...(clinchedWorld.trophyHistory || []),
+    ],
+  };
+  assert.equal(
+    detectTrophyWinFromMatch(alreadyRecordedWorld, userLeagueFix.id, completedUserLeagueFix.result),
+    null,
+    'Already clinched league title in trophyHistory must NOT re-trigger Trophy Lift on dead-rubber matches'
+  );
+
+  // =========================================================================
+  // PHASE 3B: PROMOTION PLAYOFFS (3RD–6TH) & ROLLOVER PROMOTION
+  // =========================================================================
+  const chTable = world.standings.ENG_CH;
+  assert.ok(chTable.length >= 6);
+  const poSfs = generatePromotionPlayoffFixtures(
+    'ENG_CH_PO',
+    chTable,
+    world.currentSeason,
+    '2026-05-15'
+  );
+  assert.equal(poSfs.length, 2, 'Promotion Playoffs must generate 2 Semi-Finals');
+  assert.equal(poSfs[0].homeClubId, chTable[2].clubId, 'SF1 home must be 3rd place');
+  assert.equal(poSfs[0].awayClubId, chTable[5].clubId, 'SF1 away must be 6th place');
+  assert.equal(poSfs[1].homeClubId, chTable[3].clubId, 'SF2 home must be 4th place');
+  assert.equal(poSfs[1].awayClubId, chTable[4].clubId, 'SF2 away must be 5th place');
+
+  // Simulate 6th place (away in SF1) upsetting 3rd place, and 4th beating 5th, then 6th winning the Final!
+  let poWorld = {
+    ...world,
+    fixtures: [...world.fixtures, ...poSfs],
+  };
+  poWorld = applyMatchResultToWorld(poWorld, poSfs[0].id, {
+    homeGoals: 1,
+    awayGoals: 2,
+    homeStats: mockTeamStats(1),
+    awayStats: mockTeamStats(2),
+    events: [],
+    playerRatings: {},
+    manOfTheMatchPlayerId: '',
+    attendance: 28000,
+  });
+  poWorld = applyMatchResultToWorld(poWorld, poSfs[1].id, {
+    homeGoals: 2,
+    awayGoals: 0,
+    homeStats: mockTeamStats(2),
+    awayStats: mockTeamStats(0),
+    events: [],
+    playerRatings: {},
+    manOfTheMatchPlayerId: '',
+    attendance: 27000,
+  });
+
+  const poFinal = poWorld.fixtures.find(
+    (f) => f.competitionId === 'ENG_CH_PO' && f.cupRound === 'FINAL'
+  );
+  assert.ok(poFinal, 'Completing both Promotion Playoff Semi-Finals must automatically generate the FINAL');
+  assert.equal(poFinal?.homeClubId, chTable[5].clubId, '6th place SF1 winner must reach Playoff Final');
+  assert.equal(poFinal?.awayClubId, chTable[3].clubId, '4th place SF2 winner must reach Playoff Final');
+  assert.equal(
+    checkAndAdvanceDomesticCup('ENG_CH_PO', poWorld.fixtures, world.currentSeason, '2026-05-21').length,
+    0,
+    'checkAndAdvanceDomesticCup must wait until FINAL completes'
+  );
+
+  poWorld = applyMatchResultToWorld(poWorld, poFinal!.id, {
+    homeGoals: 1,
+    awayGoals: 0,
+    homeStats: mockTeamStats(1),
+    awayStats: mockTeamStats(0),
+    events: [],
+    playerRatings: {},
+    manOfTheMatchPlayerId: '',
+    attendance: 82000,
+  });
+
+  // Verify rollover promotes 1st, 2nd, AND 6th place (Playoff Final Winner) to ENG_PL!
+  const rolled = processEndOfSeasonRollover(poWorld).nextState;
+  assert.equal(rolled.clubs[chTable[0].clubId].leagueId, 'ENG_PL', '1st place auto-promoted to ENG_PL');
+  assert.equal(rolled.clubs[chTable[1].clubId].leagueId, 'ENG_PL', '2nd place auto-promoted to ENG_PL');
+  assert.equal(
+    rolled.clubs[chTable[5].clubId].leagueId,
+    'ENG_PL',
+    '6th place Promotion Playoff Final winner must be promoted to ENG_PL!'
+  );
+  assert.equal(
+    rolled.clubs[chTable[2].clubId].leagueId,
+    'ENG_CH',
+    '3rd place who lost in Playoffs must remain in ENG_CH'
+  );
+
+  // Also test automatic trigger via checkAndTriggerPromotionPlayoffs when all ENG_L1 fixtures complete
+  const engL1CompletedWorld = {
+    ...world,
+    fixtures: world.fixtures.map((f) =>
+      f.competitionId === 'ENG_L1'
+        ? {
+            ...f,
+            status: 'Completed' as const,
+            result: {
+              homeGoals: 1,
+              awayGoals: 0,
+              homeStats: mockTeamStats(1),
+              awayStats: mockTeamStats(0),
+              events: [],
+              playerRatings: {},
+              manOfTheMatchPlayerId: '',
+              attendance: 12000,
+            },
+          }
+        : f
+    ),
+  };
+  const triggeredWorld = checkAndTriggerPromotionPlayoffs(engL1CompletedWorld, ['ENG_L1']);
+  const engL1PoSfs = triggeredWorld.fixtures.filter((f) => f.competitionId === 'ENG_L1_PO');
+  assert.equal(engL1PoSfs.length, 2, 'Completing ENG_L1 regular season must auto-trigger ENG_L1_PO Semi-Finals');
+
+  // =========================================================================
+  // PHASE 4: GLOBAL CONTINENTAL CHAMPIONS CUPS (AFC_ACL, CONMEBOL_LIB, CONCACAF_CCC)
+  // =========================================================================
+  for (const contId of ['AFC_ACL', 'CONMEBOL_LIB', 'CONCACAF_CCC'] as const) {
+    const r16Fixtures = world.fixtures.filter(
+      (f) => f.competitionId === contId && f.seasonId === world.currentSeason && f.cupRound === 'R16'
+    );
+    assert.equal(
+      r16Fixtures.length,
+      8,
+      `${contId} must initialize with 8 Round of 16 fixtures (16 clubs)`
+    );
+    assert.ok(CUP_COMPETITIONS_META[contId], `${contId} must exist in CUP_COMPETITIONS_META`);
+    assert.equal(CUP_COMPETITIONS_META[contId].qualifiesFor, 'GLB_CWC');
+
+    const trophyUrls = resolveCompetitionTrophyPhotoUrls(contId);
+    assert.ok(
+      trophyUrls.primaryTrophyUrl?.includes('/erfolge/verybigquad/'),
+      `${contId} must map to a 300x300 HD verybigquad trophy photo`
+    );
+    const logoUrls = resolveFotMobCompetitionLogoUrls(contId);
+    assert.ok(
+      logoUrls.darkUrl?.startsWith('https://images.fotmob.com/image_resources/logo/leaguelogo/dark/'),
+      `${contId} must map to a verified FotMob dark logo URL`
+    );
+  }
+
+  // Verify AFC_ACL blends KSA_SPL and JPN_J1 clubs and advances R16 -> QF -> SF -> FINAL
+  let contWorld = world;
+  const afcR16 = contWorld.fixtures.filter((f) => f.competitionId === 'AFC_ACL' && f.cupRound === 'R16');
+  const afcLeagues = new Set(
+    afcR16.flatMap((f) => [contWorld.clubs[f.homeClubId].leagueId, contWorld.clubs[f.awayClubId].leagueId])
+  );
+  assert.ok(afcLeagues.has('KSA_SPL') && afcLeagues.has('JPN_J1'), 'AFC_ACL must feature both KSA_SPL and JPN_J1 clubs');
+
+  for (const stage of ['R16', 'QF', 'SF', 'FINAL'] as const) {
+    const roundFixes = contWorld.fixtures.filter(
+      (f) => f.competitionId === 'AFC_ACL' && f.cupRound === stage && f.status !== 'Completed'
+    );
+    assert.ok(roundFixes.length > 0, `AFC_ACL must generate ${stage} fixtures`);
+    contWorld = simulateAndApplyFixturesBatch(contWorld, roundFixes);
+  }
+  const afcTrophy = (contWorld.trophyHistory || []).find(
+    (t) => t.competitionId === 'AFC_ACL' && t.season === world.currentSeason
+  );
+  assert.ok(afcTrophy, 'Completing AFC_ACL Final must record champion in trophyHistory');
+
+  // Verify rollover also generates next season's Continental Champions Cups
+  const nextSeasonAfc = rolled.fixtures.filter(
+    (f) => f.competitionId === 'AFC_ACL' && f.seasonId === rolled.currentSeason
+  );
+  assert.equal(nextSeasonAfc.length, 8, 'Season rollover must generate next season AFC_ACL R16 bracket');
 });
 
 

@@ -341,20 +341,53 @@ export function getLeaguePlayerLeaders(
   };
 }
 
+export type CupMetaCompetitionId =
+  | import('../types/game').CupId
+  | import('../types/game').SuperCupId
+  | import('../types/game').ContinentalCupId
+  | import('../types/game').PromotionPlayoffId;
+
 export interface CupCompetitionMeta {
-  id: import('../types/game').CupId | import('../types/game').SuperCupId;
+  id: CupMetaCompetitionId;
   name: string;
   shortName: string;
   countryId: string;
   countryFlag: string;
-  category: 'PRIMARY_CUP' | 'LEAGUE_CUP' | 'SUPER_CUP';
+  category: 'PRIMARY_CUP' | 'LEAGUE_CUP' | 'SUPER_CUP' | 'CONTINENTAL_CUP' | 'PROMO_PLAYOFF';
   fotmobLogoUrl: string;
   winnerPrize: number;
-  qualifiesFor?: 'UEFA_UEL' | 'UEFA_UECL';
+  qualifiesFor?: 'UEFA_UEL' | 'UEFA_UECL' | 'GLB_CWC' | 'PROMOTION';
 }
 
+export const PROMOTION_PLAYOFF_LEAGUE_MAP: Record<
+  import('../types/game').PromotionPlayoffId,
+  { lowerLeagueId: LeagueId; upperLeagueId: LeagueId; autoSpots: number }
+> = {
+  ENG_CH_PO: { lowerLeagueId: 'ENG_CH', upperLeagueId: 'ENG_PL', autoSpots: 2 },
+  ENG_L1_PO: { lowerLeagueId: 'ENG_L1', upperLeagueId: 'ENG_CH', autoSpots: 2 },
+  ESP_SD_PO: { lowerLeagueId: 'ESP_SD', upperLeagueId: 'ESP_LL', autoSpots: 2 },
+  ITA_SB_PO: { lowerLeagueId: 'ITA_SB', upperLeagueId: 'ITA_SA', autoSpots: 2 },
+  GER_2B_PO: { lowerLeagueId: 'GER_2B', upperLeagueId: 'GER_BL', autoSpots: 2 },
+  FRA_L2_PO: { lowerLeagueId: 'FRA_L2', upperLeagueId: 'FRA_L1', autoSpots: 2 },
+};
+
+export const CONTINENTAL_CUP_IDS: import('../types/game').ContinentalCupId[] = [
+  'AFC_ACL',
+  'CONMEBOL_LIB',
+  'CONCACAF_CCC',
+];
+
+export const PROMOTION_PLAYOFF_IDS: import('../types/game').PromotionPlayoffId[] = [
+  'ENG_CH_PO',
+  'ENG_L1_PO',
+  'ESP_SD_PO',
+  'ITA_SB_PO',
+  'GER_2B_PO',
+  'FRA_L2_PO',
+];
+
 export const CUP_COMPETITIONS_META: Record<
-  import('../types/game').CupId | import('../types/game').SuperCupId,
+  CupMetaCompetitionId,
   CupCompetitionMeta
 > = {
   // 10 Primary National Cups
@@ -676,21 +709,142 @@ export const CUP_COMPETITIONS_META: Record<
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/74.png',
     winnerPrize: 4_500_000,
   },
+  // Stage 11: 3 Global Continental Champions Cups
+  AFC_ACL: {
+    id: 'AFC_ACL',
+    name: 'AFC Champions League Elite',
+    shortName: 'AFC Champions League',
+    countryId: 'AFC',
+    countryFlag: '🌏',
+    category: 'CONTINENTAL_CUP',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/525.png',
+    winnerPrize: 12_000_000,
+    qualifiesFor: 'GLB_CWC',
+  },
+  CONMEBOL_LIB: {
+    id: 'CONMEBOL_LIB',
+    name: 'CONMEBOL Copa Libertadores',
+    shortName: 'Copa Libertadores',
+    countryId: 'SAM',
+    countryFlag: '🌎',
+    category: 'CONTINENTAL_CUP',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/45.png',
+    winnerPrize: 23_000_000,
+    qualifiesFor: 'GLB_CWC',
+  },
+  CONCACAF_CCC: {
+    id: 'CONCACAF_CCC',
+    name: 'CONCACAF Champions Cup',
+    shortName: 'CONCACAF Cup',
+    countryId: 'NAM',
+    countryFlag: '🌎',
+    category: 'CONTINENTAL_CUP',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/297.png',
+    winnerPrize: 5_000_000,
+    qualifiesFor: 'GLB_CWC',
+  },
+  // Stage 11: 6 Tier 2/3 Promotion Playoffs (3rd–6th)
+  ENG_CH_PO: {
+    id: 'ENG_CH_PO',
+    name: 'EFL Championship Promotion Playoffs',
+    shortName: 'Championship Playoffs',
+    countryId: 'ENG',
+    countryFlag: 'ENG',
+    category: 'PROMO_PLAYOFF',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/48.png',
+    winnerPrize: 20_000_000,
+    qualifiesFor: 'PROMOTION',
+  },
+  ENG_L1_PO: {
+    id: 'ENG_L1_PO',
+    name: 'EFL League One Promotion Playoffs',
+    shortName: 'League One Playoffs',
+    countryId: 'ENG',
+    countryFlag: 'ENG',
+    category: 'PROMO_PLAYOFF',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/108.png',
+    winnerPrize: 5_000_000,
+    qualifiesFor: 'PROMOTION',
+  },
+  ESP_SD_PO: {
+    id: 'ESP_SD_PO',
+    name: 'LaLiga Hypermotion Promotion Playoffs',
+    shortName: 'Segunda Playoffs',
+    countryId: 'ESP',
+    countryFlag: 'ESP',
+    category: 'PROMO_PLAYOFF',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/140.png',
+    winnerPrize: 10_000_000,
+    qualifiesFor: 'PROMOTION',
+  },
+  ITA_SB_PO: {
+    id: 'ITA_SB_PO',
+    name: 'Serie BKT Promotion Playoffs',
+    shortName: 'Serie B Playoffs',
+    countryId: 'ITA',
+    countryFlag: 'ITA',
+    category: 'PROMO_PLAYOFF',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/86.png',
+    winnerPrize: 9_000_000,
+    qualifiesFor: 'PROMOTION',
+  },
+  GER_2B_PO: {
+    id: 'GER_2B_PO',
+    name: '2. Bundesliga Promotion Playoffs',
+    shortName: '2. Bundesliga Playoffs',
+    countryId: 'GER',
+    countryFlag: 'GER',
+    category: 'PROMO_PLAYOFF',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/146.png',
+    winnerPrize: 10_000_000,
+    qualifiesFor: 'PROMOTION',
+  },
+  FRA_L2_PO: {
+    id: 'FRA_L2_PO',
+    name: 'Ligue 2 BKT Promotion Playoffs',
+    shortName: 'Ligue 2 Playoffs',
+    countryId: 'FRA',
+    countryFlag: 'FRA',
+    category: 'PROMO_PLAYOFF',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/110.png',
+    winnerPrize: 8_000_000,
+    qualifiesFor: 'PROMOTION',
+  },
 };
 
 export function getCupRoundPrizeMoney(
   competitionId: string,
   stage: import('../types/game').UefaStage | undefined
 ): number {
-  const meta =
-    CUP_COMPETITIONS_META[
-      competitionId as import('../types/game').CupId | import('../types/game').SuperCupId
-    ];
+  const meta = CUP_COMPETITIONS_META[competitionId as CupMetaCompetitionId];
   const isLeagueCup = String(competitionId).endsWith('_LC');
   const isSuperCup = String(competitionId).endsWith('_SC') || competitionId === 'UEFA_USC';
+  const isContinental =
+    competitionId === 'AFC_ACL' ||
+    competitionId === 'CONMEBOL_LIB' ||
+    competitionId === 'CONCACAF_CCC';
+  const isPromoPlayoff = String(competitionId).endsWith('_PO');
 
   if (isSuperCup) {
     return meta?.winnerPrize || 1_500_000;
+  }
+  if (isPromoPlayoff) {
+    if (stage === 'FINAL') return meta?.winnerPrize || 10_000_000;
+    return Math.round((meta?.winnerPrize || 10_000_000) * 0.2);
+  }
+  if (isContinental) {
+    switch (stage) {
+      case 'R16':
+        return 1_500_000;
+      case 'QF':
+        return 3_000_000;
+      case 'SF':
+        return 6_000_000;
+      case 'FINAL':
+        return meta?.winnerPrize || 12_000_000;
+      default:
+        return 1_000_000;
+    }
   }
   switch (stage) {
     case 'R32':
@@ -926,7 +1080,10 @@ function addDaysISO(dateStr: string, days: number): string {
  * and generates the next round (R32 -> R16 -> QF -> SF -> FINAL)
  */
 export function checkAndAdvanceDomesticCup(
-  cupId: import('../types/game').CupId,
+  cupId:
+    | import('../types/game').CupId
+    | import('../types/game').ContinentalCupId
+    | import('../types/game').PromotionPlayoffId,
   allFixtures: Fixture[],
   seasonId: string,
   currentGameDate: string
@@ -962,22 +1119,39 @@ export function checkAndAdvanceDomesticCup(
   const startYear = parseInt(seasonId.slice(0, 4), 10) || 2025;
   const endYear = startYear + 1;
   const isLeagueCup = String(cupId).endsWith('_LC');
+  const isPromoPlayoff = String(cupId).endsWith('_PO');
+  const isContinental =
+    cupId === 'AFC_ACL' || cupId === 'CONMEBOL_LIB' || cupId === 'CONCACAF_CCC';
 
-  const targetDateByStage: Record<'R16' | 'QF' | 'SF' | 'FINAL', string> = isLeagueCup
+  const targetDateByStage: Record<'R16' | 'QF' | 'SF' | 'FINAL', string> = isPromoPlayoff
     ? {
-        R16: `${startYear}-10-28`,
-        QF: `${startYear}-12-16`,
-        SF: `${endYear}-01-20`,
-        FINAL: `${endYear}-02-28`,
+        R16: `${endYear}-05-16`,
+        QF: `${endYear}-05-18`,
+        SF: `${endYear}-05-20`,
+        FINAL: `${endYear}-05-26`,
       }
-    : {
-        R16: `${endYear}-01-13`,
-        QF: `${endYear}-02-17`,
-        SF: `${endYear}-04-07`,
-        FINAL: `${endYear}-05-23`,
-      };
+    : isContinental
+      ? {
+          R16: `${startYear}-11-12`,
+          QF: `${endYear}-02-25`,
+          SF: `${endYear}-04-15`,
+          FINAL: `${endYear}-05-24`,
+        }
+      : isLeagueCup
+        ? {
+            R16: `${startYear}-10-28`,
+            QF: `${startYear}-12-16`,
+            SF: `${endYear}-01-20`,
+            FINAL: `${endYear}-02-28`,
+          }
+        : {
+            R16: `${endYear}-01-13`,
+            QF: `${endYear}-02-17`,
+            SF: `${endYear}-04-07`,
+            FINAL: `${endYear}-05-23`,
+          };
 
-  const fallbackNextDate = addDaysISO(currentGameDate, 28);
+  const fallbackNextDate = addDaysISO(currentGameDate, isPromoPlayoff ? 5 : 28);
   const targetCalendarDate = targetDateByStage[nextStage];
   const nextKickoff =
     targetCalendarDate && targetCalendarDate > currentGameDate
@@ -1004,6 +1178,156 @@ export function checkAndAdvanceDomesticCup(
   }
 
   return newFixtures;
+}
+
+/**
+ * Stage 11 Phase 4: Generates 16-team Round of 16 brackets for the 3 Global Continental Champions Cups:
+ * - AFC_ACL: Top 8 from KSA_SPL + Top 8 from JPN_J1 (East vs West seeded matchups)
+ * - CONMEBOL_LIB: Top 16 from BRA_SA
+ * - CONCACAF_CCC: Top 16 from USA_MLS
+ */
+export function generateContinentalChampionsCupFixtures(
+  seasonId: string,
+  clubsById: Record<string, Club>,
+  prevStandings?: Partial<Record<LeagueId, LeagueStanding[]>>,
+  controlledClubId?: string
+): Fixture[] {
+  const startYear = parseInt(seasonId.slice(0, 4), 10) || 2025;
+  const allClubs = Object.values(clubsById);
+  const cleanSeason = seasonId.replace('/', '');
+
+  const rankLeagueClubs = (leagueId: LeagueId, count: number): Club[] => {
+    const table = prevStandings?.[leagueId];
+    let ranked: Club[] = [];
+    if (table && table.length > 0) {
+      ranked = table
+        .map((row) => clubsById[row.clubId])
+        .filter((c): c is Club => Boolean(c) && c.leagueId === leagueId);
+    }
+    const existingIds = new Set(ranked.map((c) => c.id));
+    const remainder = allClubs
+      .filter((c) => c.leagueId === leagueId && !existingIds.has(c.id))
+      .sort((a, b) => b.reputation - a.reputation || a.id.localeCompare(b.id));
+    ranked = [...ranked, ...remainder];
+    const picked = ranked.slice(0, count);
+    if (
+      controlledClubId &&
+      clubsById[controlledClubId]?.leagueId === leagueId &&
+      !picked.some((c) => c.id === controlledClubId) &&
+      picked.length > 0
+    ) {
+      picked[picked.length - 1] = clubsById[controlledClubId];
+    }
+    return picked;
+  };
+
+  const buildR16Bracket = (
+    cupId: import('../types/game').ContinentalCupId,
+    participants: Club[],
+    kickoffDate: string
+  ): Fixture[] => {
+    const bracketSize = participants.length >= 16 ? 16 : participants.length >= 8 ? 8 : 0;
+    if (bracketSize === 0) return [];
+    const stage: 'R16' | 'QF' = bracketSize === 16 ? 'R16' : 'QF';
+    const slice = participants.slice(0, bracketSize);
+    const out: Fixture[] = [];
+    const pairs = Math.floor(slice.length / 2);
+    for (let i = 0; i < pairs; i++) {
+      const high = slice[i];
+      const low = slice[slice.length - 1 - i];
+      const home = i % 2 === 0 ? high : low;
+      const away = i % 2 === 0 ? low : high;
+      out.push({
+        id: `fix_${cupId}_${cleanSeason}_${stage}_${i + 1}`,
+        competitionId: cupId,
+        seasonId,
+        matchday: 1,
+        kickoffDate,
+        homeClubId: home.id,
+        awayClubId: away.id,
+        status: 'Scheduled',
+        uefaStage: stage,
+        cupRound: stage,
+        tieIndex: i,
+      });
+    }
+    return out;
+  };
+
+  const fixtures: Fixture[] = [];
+
+  // 1. AFC Champions League Elite (Top 8 Saudi Pro League + Top 8 J1 League, interleaved for cross-region clashes)
+  const ksaTop8 = rankLeagueClubs('KSA_SPL', 8);
+  const jpnTop8 = rankLeagueClubs('JPN_J1', 8);
+  const afcParticipants: Club[] = [];
+  for (let i = 0; i < Math.max(ksaTop8.length, jpnTop8.length); i++) {
+    if (ksaTop8[i]) afcParticipants.push(ksaTop8[i]);
+    if (jpnTop8[i]) afcParticipants.push(jpnTop8[i]);
+  }
+  fixtures.push(...buildR16Bracket('AFC_ACL', afcParticipants, `${startYear}-11-12`));
+
+  // 2. CONMEBOL Copa Libertadores (Top 16 Brasileirão Série A)
+  const braTop16 = rankLeagueClubs('BRA_SA', 16);
+  fixtures.push(...buildR16Bracket('CONMEBOL_LIB', braTop16, `${startYear}-11-19`));
+
+  // 3. CONCACAF Champions Cup (Top 16 Major League Soccer)
+  const usaTop16 = rankLeagueClubs('USA_MLS', 16);
+  fixtures.push(...buildR16Bracket('CONCACAF_CCC', usaTop16, `${startYear}-11-26`));
+
+  return fixtures;
+}
+
+/**
+ * Stage 11 Phase 3: Generates 4-team Promotion Playoff Semi-Finals (3rd vs 6th, 4th vs 5th)
+ * for a Tier 2/3 division once its regular-season schedule completes.
+ */
+export function generatePromotionPlayoffFixtures(
+  playoffId: import('../types/game').PromotionPlayoffId,
+  standingsTable: LeagueStanding[],
+  seasonId: string,
+  currentGameDate: string
+): Fixture[] {
+  if (standingsTable.length < 6) return [];
+  const startYear = parseInt(seasonId.slice(0, 4), 10) || 2025;
+  const endYear = startYear + 1;
+  const cleanSeason = seasonId.replace('/', '');
+
+  const third = standingsTable[2].clubId;
+  const fourth = standingsTable[3].clubId;
+  const fifth = standingsTable[4].clubId;
+  const sixth = standingsTable[5].clubId;
+
+  const targetSfDate = `${endYear}-05-20`;
+  const sfKickoff = targetSfDate > currentGameDate ? targetSfDate : addDaysISO(currentGameDate, 3);
+
+  return [
+    {
+      id: `fix_${playoffId}_${cleanSeason}_SF_1`,
+      competitionId: playoffId,
+      seasonId,
+      matchday: 1,
+      kickoffDate: sfKickoff,
+      homeClubId: third,
+      awayClubId: sixth,
+      status: 'Scheduled',
+      uefaStage: 'SF',
+      cupRound: 'SF',
+      tieIndex: 0,
+    },
+    {
+      id: `fix_${playoffId}_${cleanSeason}_SF_2`,
+      competitionId: playoffId,
+      seasonId,
+      matchday: 1,
+      kickoffDate: sfKickoff,
+      homeClubId: fourth,
+      awayClubId: fifth,
+      status: 'Scheduled',
+      uefaStage: 'SF',
+      cupRound: 'SF',
+      tieIndex: 1,
+    },
+  ];
 }
 
 /**

@@ -50,6 +50,7 @@ export interface SimulateMatchOptions {
   halfTimeTalk?: { home?: HalfTimeTalkType; away?: HalfTimeTalkType };
   substitutions?: { minute: number; teamId: string; playerOutId: string; playerInId: string }[];
   touchlineShouts?: { minute: number; teamId: string; shout: TouchlineShoutType }[];
+  preGroupedSquads?: { homeSquad: Player[]; awaySquad: Player[] };
 }
 
 function getMentalityMultipliers(mentality: Mentality): { atk: number; def: number } {
@@ -168,7 +169,8 @@ export function evaluateTeamMatchStrength(
   club: Club,
   tactic: TacticalSystem,
   playersById: Record<string, Player>,
-  isHome: boolean
+  isHome: boolean,
+  clubSquad?: Player[]
 ): TeamMatchStrength {
   const activePlayers: Player[] = [];
   let atkSum = 0;
@@ -313,6 +315,7 @@ export function evaluateTeamMatchStrength(
   }
   const fallbackPlayer: Player =
     gkPlayer ||
+    (clubSquad && clubSquad.length > 0 ? clubSquad[0] : undefined) ||
     Object.values(playersById).find((p) => p.clubId === club.id) || {
       id: 'fallback_p',
       firstName: 'Youth',
@@ -641,8 +644,20 @@ export function simulateMatch(
   const homeTactic = homeTacticOverride || homeClub.primaryTactic;
   const awayTactic = awayTacticOverride || awayClub.primaryTactic;
 
-  const homeStrength = evaluateTeamMatchStrength(homeClub, homeTactic, playersById, true);
-  const awayStrength = evaluateTeamMatchStrength(awayClub, awayTactic, playersById, false);
+  const homeStrength = evaluateTeamMatchStrength(
+    homeClub,
+    homeTactic,
+    playersById,
+    true,
+    options?.preGroupedSquads?.homeSquad
+  );
+  const awayStrength = evaluateTeamMatchStrength(
+    awayClub,
+    awayTactic,
+    playersById,
+    false,
+    options?.preGroupedSquads?.awaySquad
+  );
 
   // Deterministic Weather & Pitch Condition physics (Checkpoint 19)
   const weatherHash = Math.abs(seed + fixture.matchday * 37) % 100;

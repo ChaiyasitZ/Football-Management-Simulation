@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import {
   Club,
+  CompetitionId,
   CustomClubConfig,
   LeagueId,
   ManagerProfile,
@@ -34,6 +35,7 @@ import {
   WorldState,
 } from './types/game';
 import { createInitialWorldState } from './engine/worldGenerator';
+import { LEAGUES_CONFIG } from './engine/leaguesConfig';
 import { autoRegisterSquadIds } from './engine/tacticsEngine';
 import { ClubBadge } from './components/ClubBadge';
 import { TrophyArtwork } from './components/TrophyAndKitVisuals';
@@ -905,8 +907,59 @@ function TouchlineShell() {
   }, [shellState, commandPaletteOpen, quickPeekPlayerId, notifDrawerOpen]);
 
   const handleCompleteMatch = (fixtureId: string, result: MatchResult) => {
-    const trophyWin = detectTrophyWinFromMatch(world, fixtureId, result);
-    const updated = completeUserMatchdayAndSyncWorld(world, fixtureId, result);
+    let updated = completeUserMatchdayAndSyncWorld(world, fixtureId, result);
+    const trophyWin = detectTrophyWinFromMatch(updated, fixtureId, result);
+
+    // If user mathematically clinched a domestic league title, record it in trophyHistory now
+    // so subsequent dead-rubber league matches won't re-trigger the Trophy Lift celebration.
+    if (trophyWin && LEAGUES_CONFIG[trophyWin.competitionId as LeagueId]) {
+      const cleanSeason = updated.currentSeason.replace('/', '');
+      const trpId = `trp_${cleanSeason}_${trophyWin.competitionId}`;
+      const alreadyRecorded = (updated.trophyHistory || []).some((t) => t.id === trpId);
+      if (!alreadyRecorded) {
+        const leagueTable = updated.standings[trophyWin.competitionId as LeagueId] || [];
+        const runnerUpId = leagueTable[1]?.clubId;
+        const runnerUpClub = runnerUpId ? updated.clubs[runnerUpId] : undefined;
+        updated = {
+          ...updated,
+          trophyHistory: [
+            {
+              id: trpId,
+              season: updated.currentSeason,
+              competitionId: trophyWin.competitionId as CompetitionId,
+              competitionName: trophyWin.competitionName,
+              winnerClubId: trophyWin.clubId,
+              winnerClubName: trophyWin.clubName,
+              runnerUpClubId: runnerUpClub?.id,
+              runnerUpClubName: runnerUpClub?.name,
+            },
+            ...(updated.trophyHistory || []),
+          ],
+          manager: {
+            ...updated.manager,
+            reputation: Math.min(99, updated.manager.reputation + trophyWin.reputationGain),
+            careerStats: {
+              ...updated.manager.careerStats,
+              trophies: updated.manager.careerStats.trophies.some(
+                (t) =>
+                  t.season === updated.currentSeason &&
+                  t.competitionName === trophyWin.competitionName
+              )
+                ? updated.manager.careerStats.trophies
+                : [
+                    {
+                      season: updated.currentSeason,
+                      competitionName: trophyWin.competitionName,
+                      clubName: trophyWin.clubName,
+                    },
+                    ...updated.manager.careerStats.trophies,
+                  ],
+            },
+          },
+        };
+      }
+    }
+
     setWorld(updated);
     scheduleIdleAutosave(updated);
     if (trophyWin) {

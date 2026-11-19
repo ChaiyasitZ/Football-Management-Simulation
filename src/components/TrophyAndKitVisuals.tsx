@@ -1,15 +1,25 @@
 import React, { useEffect, useState } from 'react';
-import { Club, CupId, LeagueId, SuperCupId, UefaCompetitionId } from '../types/game';
+import {
+  Club,
+  ContinentalCupId,
+  CupId,
+  LeagueId,
+  PromotionPlayoffId,
+  SuperCupId,
+  UefaCompetitionId,
+} from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { UEFA_COMPETITIONS_CONFIG } from '../engine/uefaEngine';
 
 /* ============================================================================
-   1. AUTHENTIC COMPETITION & LEAGUE EMBLEMS (15 Leagues, 4 UEFA, 13 Domestic Cups, 9 Super Cups, Global)
+   1. AUTHENTIC COMPETITION & LEAGUE EMBLEMS (23 Leagues, 4 UEFA, 3 Continental, 20 Cups, 9 Super Cups, 6 Playoffs, Global)
 ============================================================================ */
 
 export type CompetitionVisualId =
   | LeagueId
   | UefaCompetitionId
+  | ContinentalCupId
+  | PromotionPlayoffId
   | CupId
   | SuperCupId
   | 'PRE_SEASON_FRIENDLY'
@@ -746,6 +756,107 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/225.png',
     trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/441.png',
   },
+  // Stage 11: 3 Global Continental Champions Cups
+  AFC_ACL: {
+    shortCode: 'AFC ELITE',
+    title: 'AFC Champions League Elite',
+    subtitle: 'Asian Continental Champions Cup',
+    primary: '#1e1b4b',
+    secondary: '#d97706',
+    accent: '#fde047',
+    motif: 'starball',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/525.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/144.png',
+  },
+  CONMEBOL_LIB: {
+    shortCode: 'LIBERTADORES',
+    title: 'CONMEBOL Copa Libertadores',
+    subtitle: 'South American Continental Champions Cup',
+    primary: '#422006',
+    secondary: '#ca8a04',
+    accent: '#fef08a',
+    motif: 'globe_crown',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/45.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/191.png',
+  },
+  CONCACAF_CCC: {
+    shortCode: 'CONCACAF CUP',
+    title: 'CONCACAF Champions Cup',
+    subtitle: 'North American Continental Champions Cup',
+    primary: '#0f172a',
+    secondary: '#eab308',
+    accent: '#f8fafc',
+    motif: 'starball',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/297.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/330.png',
+  },
+  // Stage 11: 6 Tier 2/3 Promotion Playoffs (3rd–6th)
+  ENG_CH_PO: {
+    shortCode: 'CH PLAYOFFS',
+    title: 'EFL Championship Promotion Playoffs',
+    subtitle: 'Wembley Promotion Final (3rd–6th)',
+    primary: '#172554',
+    secondary: '#f59e0b',
+    accent: '#fef08a',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/48.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/338.png',
+  },
+  ENG_L1_PO: {
+    shortCode: 'L1 PLAYOFFS',
+    title: 'EFL League One Promotion Playoffs',
+    subtitle: 'Wembley Promotion Final (3rd–6th)',
+    primary: '#1e3a8a',
+    secondary: '#38bdf8',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/108.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/342.png',
+  },
+  ESP_SD_PO: {
+    shortCode: 'SD PLAYOFFS',
+    title: 'LaLiga Hypermotion Promotion Playoffs',
+    subtitle: 'Spanish Promotion Final (3rd–6th)',
+    primary: '#7f1d1d',
+    secondary: '#ef4444',
+    accent: '#fde047',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/140.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/339.png',
+  },
+  ITA_SB_PO: {
+    shortCode: 'SB PLAYOFFS',
+    title: 'Serie BKT Promotion Playoffs',
+    subtitle: 'Italian Promotion Final (3rd–6th)',
+    primary: '#0c4a6e',
+    secondary: '#0284c7',
+    accent: '#ffffff',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/86.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/422.png',
+  },
+  GER_2B_PO: {
+    shortCode: '2B PLAYOFFS',
+    title: '2. Bundesliga Promotion Playoffs',
+    subtitle: 'German Promotion Final (3rd–6th)',
+    primary: '#7f1d1d',
+    secondary: '#dc2626',
+    accent: '#f8fafc',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/146.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/320.png',
+  },
+  FRA_L2_PO: {
+    shortCode: 'L2 PLAYOFFS',
+    title: 'Ligue 2 BKT Promotion Playoffs',
+    subtitle: 'French Promotion Final (3rd–6th)',
+    primary: '#064e3b',
+    secondary: '#10b981',
+    accent: '#fef08a',
+    motif: 'cup_shield',
+    fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/110.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/341.png',
+  },
 };
 
 /**
@@ -1259,7 +1370,8 @@ export type TrophyType =
 
 export function resolveTrophyType(competitionIdOrName: string): TrophyType {
   const id = (competitionIdOrName || '').toUpperCase();
-  if (id.includes('UCL') || id.includes('CHAMPIONS LEAGUE')) return 'UEFA_UCL';
+  if (id.includes('UCL') || id.includes('CHAMPIONS LEAGUE') || id.includes('AFC_ACL') || id.includes('CONCACAF')) return 'UEFA_UCL';
+  if (id.includes('LIBERTADORES') || id.includes('CONMEBOL')) return 'FIFA_CWC';
   if (id.includes('UEL') || id.includes('EUROPA LEAGUE')) return 'UEFA_UEL';
   if (id.includes('UECL') || id.includes('CONFERENCE LEAGUE')) return 'UEFA_UECL';
   if (id.includes('ENG_CH') || id.includes('ESP_SD') || id.includes('GER_2B') || id.includes('ITA_SB') || id.includes('FRA_L2') || id.includes('CHAMPIONSHIP') || id.includes('HYPERMOTION') || id.includes('2. BUNDESLIGA') || id.includes('SERIE B') || id.includes('LIGUE 2')) {

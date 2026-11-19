@@ -1084,17 +1084,13 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             </div>
           </div>
 
-          {/* Club Identity & League Trophy Strip */}
-          <div className="grid grid-cols-3 gap-2.5 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 items-center text-center">
-            <div className="flex flex-col items-center gap-1">
-              <ClubBadge club={activeSpotlightClub} size="md" showRing />
-              <span className="text-[10px] font-mono text-slate-400">CREST</span>
-            </div>
+          {/* League & Target Trophy Strip */}
+          <div className="grid grid-cols-2 gap-3 p-3.5 rounded-2xl bg-slate-950/60 border border-slate-800/80 items-center text-center">
             <div className="flex flex-col items-center gap-1">
               <CompetitionBadge competitionId={activeSpotlightClub.leagueId} size="md" />
               <span className="text-[10px] font-mono text-slate-400">LEAGUE</span>
             </div>
-            <div className="flex flex-col items-center gap-1 border-l border-slate-800 pl-2">
+            <div className="flex flex-col items-center gap-1 border-l border-slate-800 pl-3">
               <TrophyArtwork competitionId={activeSpotlightClub.leagueId} size="md" />
               <span className="text-[10px] font-mono text-amber-300">TARGET</span>
             </div>

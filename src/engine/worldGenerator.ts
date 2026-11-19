@@ -26,6 +26,7 @@ import { CLUB_TEMPLATES, LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConf
 import { REAL_CLUB_CORE_PLAYERS, REAL_CLUB_ROSTERS, RealPlayerSeed } from './realRostersData';
 import {
   createInitialStandings,
+  generateContinentalChampionsCupFixtures,
   generateEuropeanNationsCupFixtures,
   generateInitialDomesticCupFixtures,
   generateLeagueSchedule,
@@ -243,6 +244,61 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   BIR: [
     ['Jay', 'Stansfield', 'ST', 'ENG', 22, 142, 168, ['AML']],
   ],
+  BOT: [
+    ['Igor', 'Jesus', 'ST', 'BRA', 24, 158, 174, []],
+    ['Jefferson', 'Savarino', 'AMC', 'VEN', 28, 156, 164, ['AMR', 'AML']],
+    ['Thiago', 'Almada', 'AMC', 'ARG', 24, 160, 178, ['AML', 'MC']],
+    ['Alex', 'Telles', 'DL', 'BRA', 32, 156, 162, ['WBL']],
+  ],
+  SAO: [
+    ['Lucas', 'Moura', 'AMR', 'BRA', 32, 158, 166, ['AMC', 'AML']],
+    ['Oscar', 'Emboaba', 'AMC', 'BRA', 33, 158, 166, ['MC']],
+    ['Jonathan', 'Calleri', 'ST', 'ARG', 31, 156, 162, []],
+  ],
+  FLU: [
+    ['Jhon', 'Arias', 'AMR', 'COL', 27, 160, 170, ['AMC', 'AML']],
+    ['German', 'Cano', 'ST', 'ARG', 37, 154, 160, []],
+    ['Thiago', 'Silva', 'DC', 'BRA', 40, 160, 168, []],
+  ],
+  YFM: [
+    ['Anderson', 'Lopes', 'ST', 'BRA', 31, 152, 158, []],
+    ['Yan', 'Matheus', 'AMR', 'BRA', 26, 150, 160, ['AML']],
+  ],
+  KAW: [
+    ['Yasuto', 'Wakizaka', 'AMC', 'JPN', 30, 150, 158, ['MC']],
+    ['Marcinho', 'Silva', 'AML', 'BRA', 30, 148, 156, ['AMR']],
+    ['Shin', 'Yamada', 'ST', 'JPN', 25, 148, 164, []],
+  ],
+  URA: [
+    ['Ryoma', 'Watanabe', 'AMC', 'JPN', 28, 148, 156, ['MC', 'AML']],
+    ['Thiago', 'Santana', 'ST', 'BRA', 32, 150, 156, []],
+    ['Shusaku', 'Nishikawa', 'GK', 'JPN', 39, 148, 154, []],
+  ],
+  FCB2: [
+    ['Xherdan', 'Shaqiri', 'AMC', 'SUI', 33, 156, 164, ['AMR']],
+    ['Kevin', 'Carlos', 'ST', 'ESP', 24, 148, 166, []],
+    ['Dominik', 'Schmid', 'DL', 'SUI', 27, 146, 156, ['WBL']],
+  ],
+  YB: [
+    ['Cedric', 'Itten', 'ST', 'SUI', 28, 148, 156, []],
+    ['Filip', 'Ugrinic', 'MC', 'SUI', 26, 152, 164, ['AMC']],
+    ['Kastriot', 'Imeri', 'AML', 'SUI', 25, 148, 164, ['AMC']],
+  ],
+  PAOK: [
+    ['Giannis', 'Konstantelias', 'AMC', 'GRE', 22, 156, 182, ['AML']],
+    ['Andrija', 'Zivkovic', 'AMR', 'SRB', 28, 158, 166, ['AML']],
+    ['Kiril', 'Despodov', 'AMR', 'BUL', 28, 154, 162, ['ST']],
+  ],
+  PAO: [
+    ['Fotis', 'Ioannidis', 'ST', 'GRE', 25, 158, 174, []],
+    ['Tete', 'Martins', 'AMR', 'BRA', 25, 156, 170, ['AMC']],
+    ['Anastasios', 'Bakasetas', 'AMC', 'GRE', 32, 154, 162, ['MC']],
+  ],
+  AEK: [
+    ['Levi', 'Garcia', 'ST', 'TRI', 27, 156, 166, ['AMR']],
+    ['Orbelin', 'Pineda', 'MC', 'MEX', 29, 156, 164, ['AMC', 'AML']],
+    ['Anthony', 'Martial', 'ST', 'FRA', 29, 158, 168, ['AML']],
+  ],
 };
 
 const SQUAD_BLUEPRINT: { pos: PositionCode; secondary: PositionCode[]; isYouth?: boolean }[] = [
@@ -426,9 +482,12 @@ function buildClubSquadSeeds(
   targetPa: number;
   isYouth: boolean;
 }[] {
+  const countryScopedKey = `${countryId}_${shortName}`;
   const rosterLookupKey = countryId === 'FRA' && shortName === 'BRE' ? 'SB29' : shortName;
-  const fullRoster: RealPlayerSeed[] | undefined = REAL_CLUB_ROSTERS[rosterLookupKey];
-  const extraWonderkids: RealPlayerSeed[] = REAL_CLUB_WONDERKIDS[rosterLookupKey] || [];
+  const fullRoster: RealPlayerSeed[] | undefined =
+    REAL_CLUB_ROSTERS[countryScopedKey] || REAL_CLUB_ROSTERS[rosterLookupKey];
+  const extraWonderkids: RealPlayerSeed[] =
+    REAL_CLUB_WONDERKIDS[countryScopedKey] || REAL_CLUB_WONDERKIDS[rosterLookupKey] || [];
 
   if (fullRoster && fullRoster.length > 0) {
     const baseList = fullRoster.map((seed, idx) => {
@@ -977,6 +1036,15 @@ export function createInitialWorldState(
   // Generate 9 National Super Cups (Aug 10) + UEFA Super Cup (Aug 12)
   const superCupFixtures = generateSeasonSuperCupFixtures(currentSeason, 2025, clubs);
   fixtures.push(...superCupFixtures);
+
+  // Stage 11 Phase 4: Generate 3 Global Continental Champions Cups (AFC_ACL, CONMEBOL_LIB, CONCACAF_CCC)
+  const continentalCupFixtures = generateContinentalChampionsCupFixtures(
+    currentSeason,
+    clubs,
+    undefined,
+    resolvedControlledClubId
+  );
+  fixtures.push(...continentalCupFixtures);
 
   // Generate UEFA Club Competitions (New Format: 36 teams per competition, 4 Pots of 9, Swiss League Phase)
   const uefaQualified = selectUefaQualifiedClubs(clubs);

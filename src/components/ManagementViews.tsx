@@ -18,6 +18,7 @@ import {
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import {
   CUP_COMPETITIONS_META,
+  CupMetaCompetitionId,
   getCupRoundPrizeMoney,
   getDomesticCupFixtureWinnerId,
   getLeaguePlayerLeaders,
@@ -3105,8 +3106,10 @@ export const CompetitionsAndScheduleView: React.FC<{
 
   const [compCategory, setCompCategory] = useState<'domestic' | 'cups' | 'uefa' | 'data_hub'>('domestic');
   const [selectedLeague, setSelectedLeague] = useState<LeagueId>(myClub.leagueId);
-  const [cupTierFilter, setCupTierFilter] = useState<'PRIMARY_CUP' | 'LEAGUE_CUP' | 'SUPER_CUP'>('PRIMARY_CUP');
-  const [selectedCup, setSelectedCup] = useState<CupId | SuperCupId>(
+  const [cupTierFilter, setCupTierFilter] = useState<
+    'PRIMARY_CUP' | 'LEAGUE_CUP' | 'SUPER_CUP' | 'CONTINENTAL_CUP' | 'PROMO_PLAYOFF'
+  >('PRIMARY_CUP');
+  const [selectedCup, setSelectedCup] = useState<CupMetaCompetitionId>(
     LEAGUES_CONFIG[myClub.leagueId]?.cupId || 'ENG_CUP'
   );
   const [cupDisplayMode, setCupDisplayMode] = useState<'bracket_tree' | 'fixtures'>('bracket_tree');
@@ -3216,8 +3219,8 @@ export const CompetitionsAndScheduleView: React.FC<{
             }`}
           >
             {tr(
-              '🏅 Domestic Cups, League Cups & Super Cups (30 Trophies)',
-              '🏅 ฟุตบอลถ้วยในประเทศ, ลีกคัพ & ซูเปอร์คัพ (ครบ 30 ถ้วย)'
+              '🏅 Cups, Continental & Promotion Playoffs (39 Trophies)',
+              '🏅 บอลถ้วย, แชมเปียนส์ทวีป & เพลย์ออฟเลื่อนชั้น (ครบ 39 รายการ)'
             )}
           </button>
           <button
@@ -3698,14 +3701,18 @@ export const CompetitionsAndScheduleView: React.FC<{
               selectedCup
             );
           const isSuperCup = activeCupMeta.category === 'SUPER_CUP';
+          const isContinentalCup = activeCupMeta.category === 'CONTINENTAL_CUP';
+          const isPromoPlayoff = activeCupMeta.category === 'PROMO_PLAYOFF';
 
           const stageOrder: ('R32' | 'R16' | 'QF' | 'SF' | 'FINAL')[] = isSuperCup
             ? ['FINAL']
-            : hasR32
-              ? ['R32', 'R16', 'QF', 'SF', 'FINAL']
-              : selectedCup === 'SCO_CUP' || selectedCup === 'SCO_LC'
-                ? ['QF', 'SF', 'FINAL']
-                : ['R16', 'QF', 'SF', 'FINAL'];
+            : isPromoPlayoff
+              ? ['SF', 'FINAL']
+              : hasR32
+                ? ['R32', 'R16', 'QF', 'SF', 'FINAL']
+                : selectedCup === 'SCO_CUP' || selectedCup === 'SCO_LC'
+                  ? ['QF', 'SF', 'FINAL']
+                  : ['R16', 'QF', 'SF', 'FINAL'];
 
           const expectedTiesByStage: Record<'R32' | 'R16' | 'QF' | 'SF' | 'FINAL', number> = {
             R32: 16,
@@ -3719,15 +3726,26 @@ export const CompetitionsAndScheduleView: React.FC<{
             if (st === 'R32') return tr('ROUND OF 32 (T1 + T2)', 'รอบ 32 ทีม (ลีกสูงสุด + ลีกรอง)');
             if (st === 'R16') return tr('ROUND OF 16', 'รอบ 16 ทีมสุดท้าย');
             if (st === 'QF') return tr('QUARTER-FINALS', 'รอบก่อนรองชนะเลิศ (8 ทีม)');
-            if (st === 'SF') return tr('SEMI-FINALS', 'รอบรองชนะเลิศ (4 ทีม)');
+            if (st === 'SF')
+              return isPromoPlayoff
+                ? tr('PLAYOFF SEMI-FINALS (3rd–6th)', 'เพลย์ออฟรอบรองฯ (อันดับ 3–6)')
+                : tr('SEMI-FINALS', 'รอบรองชนะเลิศ (4 ทีม)');
             return isSuperCup
               ? tr('SUPER CUP CURTAIN-RAISER FINAL', 'นัดชิงชนะเลิศ ซูเปอร์คัพ')
-              : tr('GRAND FINAL', 'รอบชิงชนะเลิศ (Grand Final)');
+              : isPromoPlayoff
+                ? tr('PROMOTION PLAYOFF FINAL', 'นัดชิงชนะเลิศ เพลย์ออฟเลื่อนชั้น')
+                : tr('GRAND FINAL', 'รอบชิงชนะเลิศ (Grand Final)');
           };
+
+          const primaryCount = allCupMetas.filter((m) => m.category === 'PRIMARY_CUP').length;
+          const leagueCupCount = allCupMetas.filter((m) => m.category === 'LEAGUE_CUP').length;
+          const superCupCount = allCupMetas.filter((m) => m.category === 'SUPER_CUP').length;
+          const continentalCount = allCupMetas.filter((m) => m.category === 'CONTINENTAL_CUP').length;
+          const playoffCount = allCupMetas.filter((m) => m.category === 'PROMO_PLAYOFF').length;
 
           return (
             <div className="space-y-4" data-testid="domestic-cups-hub">
-              {/* Sub-Category Switcher: Primary National Cups (10) | League Cups (3) | Super Cups (10) */}
+              {/* Sub-Category Switcher: Primary Cups (17) | League Cups (3) | Super Cups (10) | Continental (3) | Playoffs (6) */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -3744,7 +3762,13 @@ export const CompetitionsAndScheduleView: React.FC<{
                         : 'bg-slate-950 text-slate-300 hover:text-white border border-slate-800'
                     }`}
                   >
-                    <span>🏆 {tr('Primary National Cups (10)', 'ถ้วยหลักประจำชาติ (10 ถ้วย — FA Cup / Copa del Rey ฯลฯ)')}</span>
+                    <span>
+                      🏆{' '}
+                      {tr(
+                        `Primary National Cups (${primaryCount})`,
+                        `ถ้วยหลักประจำชาติ (${primaryCount} ถ้วย)`
+                      )}
+                    </span>
                   </button>
 
                   <button
@@ -3761,7 +3785,13 @@ export const CompetitionsAndScheduleView: React.FC<{
                         : 'bg-slate-950 text-emerald-300 hover:text-white border border-emerald-500/40'
                     }`}
                   >
-                    <span>🥈 {tr('Secondary League Cups (3 — Carabao / Allianz / SPFL)', 'ถ้วยลีกคัพ (3 ประเทศ — คาราบาวคัพ / โปรตุเกส / สกอตแลนด์)')}</span>
+                    <span>
+                      🥈{' '}
+                      {tr(
+                        `League Cups (${leagueCupCount})`,
+                        `ถ้วยลีกคัพ (${leagueCupCount})`
+                      )}
+                    </span>
                   </button>
 
                   <button
@@ -3778,7 +3808,63 @@ export const CompetitionsAndScheduleView: React.FC<{
                         : 'bg-slate-950 text-sky-300 hover:text-white border border-sky-500/40'
                     }`}
                   >
-                    <span>🛡️ {tr('National & UEFA Super Cups (10)', 'ถ้วยซูเปอร์คัพเปิดฤดูกาล (9 ชาติ + UEFA Super Cup)')}</span>
+                    <span>
+                      🛡️{' '}
+                      {tr(
+                        `Super Cups (${superCupCount})`,
+                        `ถ้วยซูเปอร์คัพ (${superCupCount})`
+                      )}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="cup-filter-continental-btn"
+                    onClick={() => {
+                      setCupTierFilter('CONTINENTAL_CUP');
+                      const defaultCont: CupMetaCompetitionId =
+                        myClub.leagueId === 'BRA_SA'
+                          ? 'CONMEBOL_LIB'
+                          : myClub.leagueId === 'USA_MLS'
+                            ? 'CONCACAF_CCC'
+                            : 'AFC_ACL';
+                      setSelectedCup(defaultCont);
+                    }}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      cupTierFilter === 'CONTINENTAL_CUP'
+                        ? 'bg-violet-500 text-white shadow-sm'
+                        : 'bg-slate-950 text-violet-300 hover:text-white border border-violet-500/40'
+                    }`}
+                  >
+                    <span>
+                      🌍{' '}
+                      {tr(
+                        `Continental Champions Cups (${continentalCount})`,
+                        `ถ้วยแชมเปียนส์ทวีป (${continentalCount} — AFC / Libertadores / CONCACAF)`
+                      )}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    data-testid="cup-filter-playoff-btn"
+                    onClick={() => {
+                      setCupTierFilter('PROMO_PLAYOFF');
+                      setSelectedCup('ENG_CH_PO');
+                    }}
+                    className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                      cupTierFilter === 'PROMO_PLAYOFF'
+                        ? 'bg-rose-500 text-white shadow-sm'
+                        : 'bg-slate-950 text-rose-300 hover:text-white border border-rose-500/40'
+                    }`}
+                  >
+                    <span>
+                      🎟️{' '}
+                      {tr(
+                        `Promotion Playoffs (${playoffCount})`,
+                        `เพลย์ออฟเลื่อนชั้น (${playoffCount} ลีกรอง)`
+                      )}
+                    </span>
                   </button>
                 </div>
 
@@ -3847,10 +3933,14 @@ export const CompetitionsAndScheduleView: React.FC<{
                             🎟️{' '}
                             {activeCupMeta.qualifiesFor === 'UEFA_UEL'
                               ? tr('Winner → UEFA Europa League', 'แชมป์ได้สิทธิ์ลุย UEFA Europa League')
-                              : tr('Winner → UEFA Conference League', 'แชมป์ได้สิทธิ์ลุย UEFA Conference League')}
+                              : activeCupMeta.qualifiesFor === 'UEFA_UECL'
+                                ? tr('Winner → UEFA Conference League', 'แชมป์ได้สิทธิ์ลุย UEFA Conference League')
+                                : activeCupMeta.qualifiesFor === 'GLB_CWC'
+                                  ? tr('Winner → FIFA Club World Cup', 'แชมป์ได้ตั๋วลุยศึก FIFA Club World Cup')
+                                  : tr('Winner → Promoted to Upper Division', 'แชมป์เพลย์ออฟเลื่อนชั้นสู่ดิวิชั่นสูงขึ้นทันที')}
                           </span>
                         )}
-                        {hasR32 && !isSuperCup && (
+                        {hasR32 && !isSuperCup && !isContinentalCup && !isPromoPlayoff && (
                           <span className="px-2.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-mono">
                             ⚡ {tr('Multi-Tier Draw (Tier 1 + Tier 2 Clubs)', 'จับสลากรวมลีกสูงสุด + ลีกรอง (Giant-Killing)')}
                           </span>
@@ -3862,10 +3952,20 @@ export const CompetitionsAndScheduleView: React.FC<{
                               'Annual single-leg curtain-raiser clash between the reigning League Champion and Cup Winner (Extra Time & Penalties if level).',
                               'ศึกชิงโล่เปิดฤดูกาลนัดเดียวรู้ผลระหว่างแชมป์ลีกปะทะแชมป์บอลถ้วย (หากเสมอต่อเวลาพิเศษและดวลจุดโทษ)'
                             )
-                          : tr(
-                              'Single-leg knockout format with Extra Time & Penalty Shootouts. Lower-division clubs upsetting top-flight opponents trigger a Giant-Killing reputation & board confidence boost!',
-                              'แข่งขันน็อกเอาต์นัดเดียวรู้ผล (ต่อเวลาพิเศษและดวลจุดโทษ) หากทีมลีกรองล้มทีมลีกสูงสุดจะได้โบนัส Giant-Killing เพิ่มชื่อเสียงและความเชื่อมั่นบอร์ด!'
-                            )}
+                          : isContinentalCup
+                            ? tr(
+                                '16-team Continental Champions Knockout (R16 → QF → SF → Grand Final). Winners earn continental glory, major prize money, and represent their confederation on the global stage!',
+                                'ศึกน็อกเอาต์ชิงแชมป์ทวีป 16 สโมสร (รอบ 16 ทีม → 8 ทีม → รอบรองฯ → ชิงชนะเลิศ) ผู้ชนะรับถ้วยแชมป์ทวีป เงินรางวัลก้อนโต และสิทธิ์ตัวแทนสโมสรโลก!'
+                              )
+                            : isPromoPlayoff
+                              ? tr(
+                                  'End-of-season 4-team Promotion Playoffs (3rd vs 6th, 4th vs 5th in May) drawn automatically once the regular season finishes. The Final winner claims the final promotion spot!',
+                                  'ศึกเพลย์ออฟเลื่อนชั้น 4 ทีมหลังจบฤดูกาลปกติ (อันดับ 3 พบ 6, อันดับ 4 พบ 5 ในเดือนพฤษภาคม) ระบบจะจับสลากอัตโนมัติเมื่อแข่งลีกครบทุกนัด ผู้ชนะนัดชิงฯ จะได้เลื่อนชั้นทันที!'
+                                )
+                              : tr(
+                                  'Single-leg knockout format with Extra Time & Penalty Shootouts. Lower-division clubs upsetting top-flight opponents trigger a Giant-Killing reputation & board confidence boost!',
+                                  'แข่งขันน็อกเอาต์นัดเดียวรู้ผล (ต่อเวลาพิเศษและดวลจุดโทษ) หากทีมลีกรองล้มทีมลีกสูงสุดจะได้โบนัส Giant-Killing เพิ่มชื่อเสียงและความเชื่อมั่นบอร์ด!'
+                                )}
                       </p>
                       {/* Round-by-Round Prize Money Strip */}
                       <div className="flex flex-wrap items-center gap-2 mt-2.5">

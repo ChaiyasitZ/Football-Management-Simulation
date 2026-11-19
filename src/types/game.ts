@@ -55,6 +55,14 @@ export type SuperCupId =
   | 'TUR_SC'
   | 'UEFA_USC';
 export type UefaCompetitionId = 'UEFA_UCL' | 'UEFA_UEL' | 'UEFA_UECL';
+export type ContinentalCupId = 'AFC_ACL' | 'CONMEBOL_LIB' | 'CONCACAF_CCC';
+export type PromotionPlayoffId =
+  | 'ENG_CH_PO'
+  | 'ENG_L1_PO'
+  | 'ESP_SD_PO'
+  | 'ITA_SB_PO'
+  | 'GER_2B_PO'
+  | 'FRA_L2_PO';
 export type InternationalCompetitionId = 'INT_EURO' | 'GLB_CWC';
 export type FriendlyCompetitionId = 'PRE_SEASON_FRIENDLY';
 export type CompetitionId =
@@ -62,6 +70,8 @@ export type CompetitionId =
   | CupId
   | SuperCupId
   | UefaCompetitionId
+  | ContinentalCupId
+  | PromotionPlayoffId
   | InternationalCompetitionId
   | FriendlyCompetitionId;
 export type UefaStage = 'LEAGUE_PHASE' | 'KPO' | 'R32' | 'R16' | 'QF' | 'SF' | 'FINAL';

@@ -54,13 +54,17 @@ import {
   checkAndAdvanceDomesticCup,
   checkAndAdvanceEuroCup,
   CUP_COMPETITIONS_META,
+  CupMetaCompetitionId,
+  generateContinentalChampionsCupFixtures,
   generateEuropeanNationsCupFixtures,
   generateInitialDomesticCupFixtures,
   generateLeagueSchedule,
+  generatePromotionPlayoffFixtures,
   generateSeasonSuperCupFixtures,
   getCupRoundPrizeMoney,
   createInitialStandings,
   getDomesticCupFixtureWinnerId,
+  PROMOTION_PLAYOFF_LEAGUE_MAP,
 } from './leagueEngine';
 import { simulateMatch } from './matchEngine';
 import { SeededRNG } from './random';
@@ -130,9 +134,14 @@ export interface ClubStaffBonuses {
   hoydYouthDev: number;
 }
 
-export function getClubStaffBonuses(state: WorldState, clubId: string): ClubStaffBonuses {
+export function getClubStaffBonuses(
+  state: WorldState,
+  clubId: string,
+  staffListOverride?: StaffMember[]
+): ClubStaffBonuses {
   const club = state.clubs[clubId];
-  const staffList = Object.values(state.staff).filter((s) => s.clubId === clubId);
+  const staffList =
+    staffListOverride || Object.values(state.staff).filter((s) => s.clubId === clubId);
 
   const physios = staffList.filter((s) => s.role === 'Physio' || s.role === 'Fitness Coach');
   const bestPhysio = physios.reduce(
@@ -211,12 +220,38 @@ export function getClubStaffBonuses(state: WorldState, clubId: string): ClubStaf
  * - Logs home ticket revenue transaction
  * - Updates Manager career stats and Board Confidence if user club was involved
  */
+export interface ApplyMatchOptions {
+  skipStandingsRecompute?: boolean;
+  playersByClubId?: Map<string, Player[]>;
+  staffByClubId?: Map<string, StaffMember[]>;
+  fixtureIndexById?: Map<string, number>;
+  mutateInPlace?: boolean;
+}
+
+export function buildPlayersByClubIndex(players: Record<string, Player>): Map<string, Player[]> {
+  const index = new Map<string, Player[]>();
+  for (const p of Object.values(players)) {
+    const arr = index.get(p.clubId);
+    if (arr) {
+      arr.push(p);
+    } else {
+      index.set(p.clubId, [p]);
+    }
+  }
+  return index;
+}
+
 export function applyMatchResultToWorld(
   state: WorldState,
   fixtureId: string,
-  result: MatchResult
+  result: MatchResult,
+  options?: ApplyMatchOptions
 ): WorldState {
-  const fixtureIdx = state.fixtures.findIndex((f) => f.id === fixtureId);
+  const mappedIdx = options?.fixtureIndexById?.get(fixtureId);
+  const fixtureIdx =
+    mappedIdx !== undefined && state.fixtures[mappedIdx]?.id === fixtureId
+      ? mappedIdx
+      : state.fixtures.findIndex((f) => f.id === fixtureId);
   if (fixtureIdx === -1) return state;
 
   const existingFixture = state.fixtures[fixtureIdx];
@@ -225,7 +260,8 @@ export function applyMatchResultToWorld(
     return state;
   }
 
-  const updatedFixtures = [...state.fixtures];
+  const mutateInPlace = Boolean(options?.mutateInPlace);
+  const updatedFixtures = mutateInPlace ? state.fixtures : [...state.fixtures];
   const completedFixture: Fixture = {
     ...existingFixture,
     status: 'Completed',
@@ -235,10 +271,12 @@ export function applyMatchResultToWorld(
 
   const homeClub = { ...state.clubs[existingFixture.homeClubId] };
   const awayClub = { ...state.clubs[existingFixture.awayClubId] };
-  const updatedPlayers = { ...state.players };
-  const updatedClubs = { ...state.clubs, [homeClub.id]: homeClub, [awayClub.id]: awayClub };
-  const updatedTransactions = [...state.transactions];
-  const updatedInbox = [...state.inbox];
+  const updatedPlayers = mutateInPlace ? state.players : { ...state.players };
+  const updatedClubs = mutateInPlace ? state.clubs : { ...state.clubs };
+  updatedClubs[homeClub.id] = homeClub;
+  updatedClubs[awayClub.id] = awayClub;
+  const updatedTransactions = mutateInPlace ? state.transactions : [...state.transactions];
+  const updatedInbox = mutateInPlace ? state.inbox : [...state.inbox];
   let updatedManager = { ...state.manager, careerStats: { ...state.manager.careerStats } };
   const isPreSeasonFriendly = existingFixture.competitionId === 'PRE_SEASON_FRIENDLY';
 
@@ -266,8 +304,18 @@ export function applyMatchResultToWorld(
     }
   }
 
-  // Update players who participated
+  // Update players who participated (pre-compute staff bonus ONCE per club instead of 22x per match!)
   const participatedIds = new Set(Object.keys(result.playerRatings));
+  const homeStaffBonus = getClubStaffBonuses(
+    state,
+    homeClub.id,
+    options?.staffByClubId?.get(homeClub.id)
+  );
+  const awayStaffBonus = getClubStaffBonuses(
+    state,
+    awayClub.id,
+    options?.staffByClubId?.get(awayClub.id)
+  );
 
   for (const [playerId, rating] of Object.entries(result.playerRatings)) {
     const p = updatedPlayers[playerId];
@@ -312,7 +360,7 @@ export function applyMatchResultToWorld(
     // Muscle injury risk if started with Condition < 70% (1-3 weeks / 7-21 days)
     let injuryStatus = { ...p.injuryStatus };
     const startedLowCondition = preMatchFitness < 70;
-    const staffBonus = getClubStaffBonuses(state, p.clubId);
+    const staffBonus = isHomePlayer ? homeStaffBonus : awayStaffBonus;
     const rawInjuryChance =
       preMatchFitness < 60
         ? 0.34
@@ -426,8 +474,17 @@ export function applyMatchResultToWorld(
   }
 
   // Update non-participating squad players for both clubs (serve suspension, Sharpness decay / Reserves recovery & Squad Hierarchy 3-match drop rule)
-  for (const p of Object.values(updatedPlayers)) {
-    if (p.clubId !== homeClub.id && p.clubId !== awayClub.id) continue;
+  // Stage 11 Phase 2: Use indexed playersByClubId (O(44) instead of O(8,300) per match!)
+  const involvedClubPlayers: Player[] = options?.playersByClubId
+    ? [
+        ...(options.playersByClubId.get(homeClub.id) || []),
+        ...(options.playersByClubId.get(awayClub.id) || []),
+      ].map((p) => updatedPlayers[p.id] || p)
+    : Object.values(updatedPlayers).filter(
+        (p) => p.clubId === homeClub.id || p.clubId === awayClub.id
+      );
+
+  for (const p of involvedClubPlayers) {
     if (participatedIds.has(p.id)) continue;
 
     // Serve 1 match of suspension if suspended
@@ -532,38 +589,43 @@ export function applyMatchResultToWorld(
   // Recompute domestic league or UEFA competition standings
   const leagueId = existingFixture.competitionId as LeagueId;
   const uefaCompId = existingFixture.competitionId as UefaCompetitionId;
-  const updatedStandings = { ...state.standings };
+  const updatedStandings = mutateInPlace ? state.standings : { ...state.standings };
   const updatedUefaStandings: Record<UefaCompetitionId, LeagueStanding[]> = {
     UEFA_UCL: state.uefaStandings?.UEFA_UCL || [],
     UEFA_UEL: state.uefaStandings?.UEFA_UEL || [],
     UEFA_UECL: state.uefaStandings?.UEFA_UECL || [],
   };
 
-  if (LEAGUES_CONFIG[leagueId]) {
-    const leagueClubIds = Object.values(updatedClubs)
-      .filter((c) => c.leagueId === leagueId)
-      .map((c) => c.id);
-    updatedStandings[leagueId] = recomputeLeagueStandings(
-      LEAGUES_CONFIG[leagueId],
-      state.currentSeason,
-      leagueClubIds,
-      updatedFixtures,
-      updatedClubs
-    );
-  } else if (UEFA_COMPETITIONS_CONFIG[uefaCompId]) {
-    const uCfg = UEFA_COMPETITIONS_CONFIG[uefaCompId];
-    const participantIds =
-      state.uefaPots?.[uefaCompId]?.flat() ||
-      updatedUefaStandings[uefaCompId].map((s) => s.clubId);
-    if (participantIds.length > 0) {
-      updatedUefaStandings[uefaCompId] = recomputeUefaStandings(
-        uefaCompId,
+  if (!options?.skipStandingsRecompute) {
+    if (LEAGUES_CONFIG[leagueId]) {
+      const leagueClubIds = Object.values(updatedClubs)
+        .filter((c) => c.leagueId === leagueId)
+        .map((c) => c.id);
+      updatedStandings[leagueId] = recomputeLeagueStandings(
+        LEAGUES_CONFIG[leagueId],
         state.currentSeason,
-        participantIds,
+        leagueClubIds,
         updatedFixtures,
         updatedClubs
       );
+    } else if (UEFA_COMPETITIONS_CONFIG[uefaCompId]) {
+      const participantIds =
+        state.uefaPots?.[uefaCompId]?.flat() ||
+        updatedUefaStandings[uefaCompId].map((s) => s.clubId);
+      if (participantIds.length > 0) {
+        updatedUefaStandings[uefaCompId] = recomputeUefaStandings(
+          uefaCompId,
+          state.currentSeason,
+          participantIds,
+          updatedFixtures,
+          updatedClubs
+        );
+      }
     }
+  }
+
+  if (UEFA_COMPETITIONS_CONFIG[uefaCompId]) {
+    const uCfg = UEFA_COMPETITIONS_CONFIG[uefaCompId];
 
     // UEFA Match Performance Prize Money
     if (result.homeGoals > result.awayGoals) {
@@ -700,18 +762,23 @@ export function applyMatchResultToWorld(
     nextState = checkAndAdvanceUefaKnockoutPhase(nextState, uefaCompId);
   }
 
-  // Domestic Primary Cups (*_CUP), League Cups (*_LC), and Super Cups (*_SC / UEFA_USC)
+  // Domestic Primary Cups (*_CUP), League Cups (*_LC), Super Cups (*_SC / UEFA_USC),
+  // Global Continental Champions Cups (AFC_ACL, CONMEBOL_LIB, CONCACAF_CCC), and Promotion Playoffs (*_PO)
   const compIdStr = String(existingFixture.competitionId);
-  const isDomesticOrLeagueCup = compIdStr.endsWith('_CUP') || compIdStr.endsWith('_LC');
+  const isContinentalCup =
+    compIdStr === 'AFC_ACL' ||
+    compIdStr === 'CONMEBOL_LIB' ||
+    compIdStr === 'CONCACAF_CCC';
+  const isPromoPlayoff = compIdStr.endsWith('_PO');
+  const isDomesticOrLeagueCup =
+    compIdStr.endsWith('_CUP') ||
+    compIdStr.endsWith('_LC') ||
+    isContinentalCup ||
+    isPromoPlayoff;
   const isSuperCup = compIdStr.endsWith('_SC') || compIdStr === 'UEFA_USC';
 
   if (isDomesticOrLeagueCup || isSuperCup) {
-    const cupMeta =
-      CUP_COMPETITIONS_META[
-        existingFixture.competitionId as
-          | import('../types/game').CupId
-          | import('../types/game').SuperCupId
-      ];
+    const cupMeta = CUP_COMPETITIONS_META[existingFixture.competitionId as CupMetaCompetitionId];
     const cupDisplayName = cupMeta?.name || compIdStr;
     const stage = existingFixture.uefaStage || existingFixture.cupRound || 'R16';
     const winnerId = getDomesticCupFixtureWinnerId(completedFixture);
@@ -803,9 +870,12 @@ export function applyMatchResultToWorld(
       };
     }
 
-    // 2. Advance Knockout Bracket (for *_CUP and *_LC) or Crown Final Champion
+    // 2. Advance Knockout Bracket (for *_CUP, *_LC, Continental Cups, and Promotion Playoffs) or Crown Final Champion
     if (isDomesticOrLeagueCup) {
-      const cupId = existingFixture.competitionId as import('../types/game').CupId;
+      const cupId = existingFixture.competitionId as
+        | import('../types/game').CupId
+        | import('../types/game').ContinentalCupId
+        | import('../types/game').PromotionPlayoffId;
       const newCupFixtures = checkAndAdvanceDomesticCup(
         cupId,
         nextState.fixtures,
@@ -989,12 +1059,222 @@ export function applyMatchResultToWorld(
     }
   }
 
+  if (!options?.skipStandingsRecompute && LEAGUES_CONFIG[existingFixture.competitionId as LeagueId]) {
+    nextState = checkAndTriggerPromotionPlayoffs(nextState, [
+      existingFixture.competitionId as LeagueId,
+    ]);
+  }
+
   return nextState;
 }
 
 /**
+ * Stage 11 Phase 3: Automatically generates 4-team Promotion Playoff Semi-Finals
+ * (3rd vs 6th, 4th vs 5th) for any Tier 2/3 league whose regular-season schedule has 100% finished.
+ */
+export function checkAndTriggerPromotionPlayoffs(
+  state: WorldState,
+  leaguesToCheck?: Iterable<LeagueId>
+): WorldState {
+  const checkSet = leaguesToCheck ? new Set(leaguesToCheck) : null;
+  let newPlayoffFixtures: Fixture[] = [];
+  const playoffNews: NewsItem[] = [];
+
+  for (const [playoffId, cfg] of Object.entries(PROMOTION_PLAYOFF_LEAGUE_MAP) as [
+    import('../types/game').PromotionPlayoffId,
+    { lowerLeagueId: LeagueId; upperLeagueId: LeagueId; autoSpots: number },
+  ][]) {
+    if (checkSet && !checkSet.has(cfg.lowerLeagueId)) continue;
+
+    const alreadyScheduled = state.fixtures.some(
+      (f) => f.competitionId === playoffId && f.seasonId === state.currentSeason
+    );
+    if (alreadyScheduled) continue;
+
+    const regularFixtures = state.fixtures.filter(
+      (f) => f.competitionId === cfg.lowerLeagueId && f.seasonId === state.currentSeason
+    );
+    if (regularFixtures.length === 0) continue;
+    if (regularFixtures.some((f) => f.status !== 'Completed')) continue;
+
+    const table = state.standings[cfg.lowerLeagueId] || [];
+    if (table.length < 6) continue;
+
+    const generated = generatePromotionPlayoffFixtures(
+      playoffId,
+      table,
+      state.currentSeason,
+      state.gameDate
+    );
+    if (generated.length > 0) {
+      newPlayoffFixtures = [...newPlayoffFixtures, ...generated];
+      const poMeta = CUP_COMPETITIONS_META[playoffId];
+      const userInPlayoffs = generated.some(
+        (f) => f.homeClubId === state.controlledClubId || f.awayClubId === state.controlledClubId
+      );
+      const t3 = state.clubs[table[2].clubId]?.name || '3rd';
+      const t4 = state.clubs[table[3].clubId]?.name || '4th';
+      const t5 = state.clubs[table[4].clubId]?.name || '5th';
+      const t6 = state.clubs[table[5].clubId]?.name || '6th';
+
+      playoffNews.push({
+        id: `news_playoffs_drawn_${playoffId}_${state.currentSeason.replace('/', '')}`,
+        gameDate: state.gameDate,
+        category: 'Competition',
+        title: trText(
+          `🎟️ ${poMeta.name} Semi-Finals Confirmed!`,
+          `🎟️ ยืนยันคู่เพลย์ออฟเลื่อนชั้น ${poMeta.name} รอบรองชนะเลิศ!`
+        ),
+        body: trText(
+          `The regular season has concluded! Semi-Final 1: ${t3} (#3) vs ${t6} (#6) | Semi-Final 2: ${t4} (#4) vs ${t5} (#5). Winners advance to the Promotion Final for a place in ${LEAGUES_CONFIG[cfg.upperLeagueId].name}!`,
+          `จบฤดูกาลปกติเรียบร้อย! รอบรองฯ คู่ที่ 1: ${t3} (อันดับ 3) พบ ${t6} (อันดับ 6) | คู่ที่ 2: ${t4} (อันดับ 4) พบ ${t5} (อันดับ 5) ผู้ชนะนัดชิงฯ จะได้เลื่อนชั้นสู่ ${LEAGUES_CONFIG[cfg.upperLeagueId].name}!`
+        ),
+        isRead: false,
+        isImportant: userInPlayoffs,
+        relatedClubId: userInPlayoffs ? state.controlledClubId : table[2].clubId,
+      });
+    }
+  }
+
+  if (newPlayoffFixtures.length === 0) return state;
+
+  return {
+    ...state,
+    fixtures: [...state.fixtures, ...newPlayoffFixtures],
+    inbox: [...playoffNews, ...state.inbox],
+  };
+}
+
+/**
+ * Stage 11 Phase 2: High-speed batched AI fixture simulator.
+ * Clones world maps ONCE, indexes 8,300 players by clubId ONCE, simulates all
+ * fixtures with O(1) squad lookup, and recomputes league/UEFA standings ONCE per
+ * touched competition instead of 190x per matchday (30-50x faster!).
+ */
+export function simulateAndApplyFixturesBatch(
+  state: WorldState,
+  fixturesToSim: Fixture[]
+): WorldState {
+  if (fixturesToSim.length === 0) return state;
+
+  let working: WorldState = {
+    ...state,
+    fixtures: [...state.fixtures],
+    players: { ...state.players },
+    clubs: { ...state.clubs },
+    transactions: [...state.transactions],
+    inbox: [...state.inbox],
+    standings: { ...state.standings },
+    uefaStandings: state.uefaStandings
+      ? {
+          UEFA_UCL: state.uefaStandings.UEFA_UCL || [],
+          UEFA_UEL: state.uefaStandings.UEFA_UEL || [],
+          UEFA_UECL: state.uefaStandings.UEFA_UECL || [],
+        }
+      : undefined,
+  };
+
+  const playersByClubId = buildPlayersByClubIndex(working.players);
+  const staffByClubId = new Map<string, StaffMember[]>();
+  for (const s of Object.values(working.staff)) {
+    if (!s.clubId) continue;
+    const arr = staffByClubId.get(s.clubId);
+    if (arr) arr.push(s);
+    else staffByClubId.set(s.clubId, [s]);
+  }
+  const fixtureIndexById = new Map<string, number>();
+  for (let i = 0; i < working.fixtures.length; i++) {
+    fixtureIndexById.set(working.fixtures[i].id, i);
+  }
+  const touchedLeagues = new Set<LeagueId>();
+  const touchedUefa = new Set<UefaCompetitionId>();
+
+  for (const fix of fixturesToSim) {
+    const home = working.clubs[fix.homeClubId];
+    const away = working.clubs[fix.awayClubId];
+    if (!home || !away) continue;
+
+    const compStr = String(fix.competitionId);
+    const isKnockout =
+      Boolean(fix.cupRound) ||
+      Boolean(fix.uefaStage && fix.uefaStage !== 'LEAGUE_PHASE') ||
+      compStr.endsWith('_SC') ||
+      compStr === 'UEFA_USC';
+
+    const matchSeed = working.randomSeed + fix.matchday * 1009 + fix.id.length * 17;
+    const homeSquad = playersByClubId.get(fix.homeClubId) || [];
+    const awaySquad = playersByClubId.get(fix.awayClubId) || [];
+    const res = simulateMatch(fix, home, away, working.players, matchSeed, undefined, undefined, {
+      isKnockout,
+      preGroupedSquads: { homeSquad, awaySquad },
+    });
+
+    working = applyMatchResultToWorld(working, fix.id, res, {
+      skipStandingsRecompute: true,
+      playersByClubId,
+      staffByClubId,
+      fixtureIndexById,
+      mutateInPlace: true,
+    });
+
+    const lId = fix.competitionId as LeagueId;
+    if (LEAGUES_CONFIG[lId]) {
+      touchedLeagues.add(lId);
+    }
+    const uId = fix.competitionId as UefaCompetitionId;
+    if (UEFA_COMPETITIONS_CONFIG[uId]) {
+      touchedUefa.add(uId);
+    }
+  }
+
+  // Recompute standings ONCE per touched league/UEFA competition
+  if (touchedLeagues.size > 0) {
+    const clubIdsByLeague = new Map<LeagueId, string[]>();
+    for (const c of Object.values(working.clubs)) {
+      if (!touchedLeagues.has(c.leagueId)) continue;
+      const arr = clubIdsByLeague.get(c.leagueId);
+      if (arr) arr.push(c.id);
+      else clubIdsByLeague.set(c.leagueId, [c.id]);
+    }
+    for (const leagueId of touchedLeagues) {
+      const leagueClubIds = clubIdsByLeague.get(leagueId) || [];
+      working.standings[leagueId] = recomputeLeagueStandings(
+        LEAGUES_CONFIG[leagueId],
+        working.currentSeason,
+        leagueClubIds,
+        working.fixtures,
+        working.clubs
+      );
+    }
+  }
+
+  if (touchedUefa.size > 0 && working.uefaStandings) {
+    for (const uefaCompId of touchedUefa) {
+      const participantIds =
+        working.uefaPots?.[uefaCompId]?.flat() ||
+        (working.uefaStandings[uefaCompId] || []).map((s) => s.clubId);
+      if (participantIds.length > 0) {
+        working.uefaStandings[uefaCompId] = recomputeUefaStandings(
+          uefaCompId,
+          working.currentSeason,
+          participantIds,
+          working.fixtures,
+          working.clubs
+        );
+      }
+    }
+  }
+
+  if (touchedLeagues.size > 0) {
+    working = checkAndTriggerPromotionPlayoffs(working, touchedLeagues);
+  }
+
+  return working;
+}
+
+/**
  * Completes the user's fixture AND simulates all other scheduled AI fixtures
- * on the same matchday across all 5 leagues so League Standings are 100% synchronized.
+ * on the same matchday across all 23 leagues so League Standings are 100% synchronized.
  */
 export function completeUserMatchdayAndSyncWorld(
   state: WorldState,
@@ -1013,15 +1293,7 @@ export function completeUserMatchdayAndSyncWorld(
       f.awayClubId !== current.controlledClubId
   );
 
-  for (const aiFix of sameMatchdayAiFixtures) {
-    const home = current.clubs[aiFix.homeClubId];
-    const away = current.clubs[aiFix.awayClubId];
-    if (!home || !away) continue;
-    const seed = current.randomSeed + aiFix.matchday * 1009 + aiFix.id.length * 17;
-    const aiRes = simulateMatch(aiFix, home, away, current.players, seed);
-    current = applyMatchResultToWorld(current, aiFix.id, aiRes);
-  }
-
+  current = simulateAndApplyFixturesBatch(current, sameMatchdayAiFixtures);
   return current;
 }
 
@@ -1030,7 +1302,7 @@ export function completeUserMatchdayAndSyncWorld(
  * - Guards against duplicate execution for the same date
  * - Recovers player fitness, progresses injuries, and runs weekly training & development
  * - Progresses scout assignments
- * - Simulates all non-user fixtures scheduled on the current date
+ * - Simulates all non-user fixtures scheduled on the current date in a single indexed batch
  */
 export function advanceWorldOneDay(state: WorldState): {
   nextState: WorldState;
@@ -1049,7 +1321,7 @@ export function advanceWorldOneDay(state: WorldState): {
       (f.homeClubId === current.controlledClubId || f.awayClubId === current.controlledClubId)
   );
 
-  // Simulate all AI vs AI matches scheduled on `current.gameDate`
+  // Simulate all AI vs AI matches scheduled on `current.gameDate` via Stage 11 Phase 2 batch engine
   const aiFixturesToday = current.fixtures.filter(
     (f) =>
       f.kickoffDate === current.gameDate &&
@@ -1058,13 +1330,8 @@ export function advanceWorldOneDay(state: WorldState): {
       f.awayClubId !== current.controlledClubId
   );
 
-  for (const fix of aiFixturesToday) {
-    const home = current.clubs[fix.homeClubId];
-    const away = current.clubs[fix.awayClubId];
-    if (!home || !away) continue;
-    const matchSeed = current.randomSeed + fix.matchday * 1009 + fix.id.length * 17;
-    const res = simulateMatch(fix, home, away, current.players, matchSeed);
-    current = applyMatchResultToWorld(current, fix.id, res);
+  if (aiFixturesToday.length > 0) {
+    current = simulateAndApplyFixturesBatch(current, aiFixturesToday);
   }
 
   if (todayUserFixture) {
@@ -1337,6 +1604,8 @@ export function advanceWorldOneDay(state: WorldState): {
     }
 
     // AI Squad Rotation: Rotate out injured, suspended, or exhausted players in AI Starting XIs
+    // Stage 11 Phase 2: Build 1-pass club index instead of O(393 * 8,300) nested filter!
+    const mondaySquadsByClub = buildPlayersByClubIndex(updatedPlayers);
     for (const [cId, aiClub] of Object.entries(updatedClubs)) {
       if (cId === current.controlledClubId) continue;
       const needsRotation = aiClub.primaryTactic.lineup.some((slot) => {
@@ -1350,7 +1619,7 @@ export function advanceWorldOneDay(state: WorldState): {
         );
       });
       if (needsRotation) {
-        const clubSquad = Object.values(updatedPlayers).filter((pl) => pl.clubId === cId);
+        const clubSquad = mondaySquadsByClub.get(cId) || [];
         if (clubSquad.length >= 11) {
           updatedClubs[cId] = {
             ...aiClub,
@@ -1367,8 +1636,8 @@ export function advanceWorldOneDay(state: WorldState): {
     }
 
     // Living World AI: Generate an Incoming Transfer Offer for one of the user's players (~28% base, 3x boost if user has transfer-listed or discounted players)
-    const userSquad = Object.values(updatedPlayers).filter(
-      (pl) => pl.clubId === controlled.id && !pl.injuryStatus.isInjured
+    const userSquad = (mondaySquadsByClub.get(controlled.id) || []).filter(
+      (pl) => !pl.injuryStatus.isInjured
     );
     const hasListedOrDiscounted = userSquad.some(
       (pl) => pl.transferListed || pl.askingPrice <= pl.marketValue
@@ -3460,14 +3729,19 @@ export function processEndOfSeasonRollover(
     };
   }
 
-  // 2b. Multi-Tier Promotion & Relegation Swaps (including ENG_PL <-> ENG_CH <-> ENG_L1)
-  const promoRelegationPairs: Array<{ upper: LeagueId; lower: LeagueId; spots: number }> = [
-    { upper: 'ENG_PL', lower: 'ENG_CH', spots: 3 },
-    { upper: 'ENG_CH', lower: 'ENG_L1', spots: 3 },
-    { upper: 'ESP_LL', lower: 'ESP_SD', spots: 3 },
-    { upper: 'GER_BL', lower: 'GER_2B', spots: 2 },
-    { upper: 'ITA_SA', lower: 'ITA_SB', spots: 3 },
-    { upper: 'FRA_L1', lower: 'FRA_L2', spots: 2 },
+  // 2b. Multi-Tier Promotion & Relegation Swaps (including Promotion Playoff Final Winners!)
+  const promoRelegationPairs: Array<{
+    upper: LeagueId;
+    lower: LeagueId;
+    spots: number;
+    playoffId: import('../types/game').PromotionPlayoffId;
+  }> = [
+    { upper: 'ENG_PL', lower: 'ENG_CH', spots: 3, playoffId: 'ENG_CH_PO' },
+    { upper: 'ENG_CH', lower: 'ENG_L1', spots: 3, playoffId: 'ENG_L1_PO' },
+    { upper: 'ESP_LL', lower: 'ESP_SD', spots: 3, playoffId: 'ESP_SD_PO' },
+    { upper: 'GER_BL', lower: 'GER_2B', spots: 2, playoffId: 'GER_2B_PO' },
+    { upper: 'ITA_SA', lower: 'ITA_SB', spots: 3, playoffId: 'ITA_SB_PO' },
+    { upper: 'FRA_L1', lower: 'FRA_L2', spots: 2, playoffId: 'FRA_L2_PO' },
   ];
   const pendingLeagueAssignments: Record<string, LeagueId> = {};
   for (const pair of promoRelegationPairs) {
@@ -3475,7 +3749,33 @@ export function processEndOfSeasonRollover(
     const lowerTable = state.standings[pair.lower] || [];
     if (upperTable.length >= pair.spots && lowerTable.length >= pair.spots) {
       const relegatedIds = upperTable.slice(-pair.spots).map((r) => r.clubId);
-      const promotedIds = lowerTable.slice(0, pair.spots).map((r) => r.clubId);
+
+      // Check if a completed Promotion Playoff Final exists for this division
+      const completedPlayoffFinal = state.fixtures.find(
+        (f) =>
+          f.competitionId === pair.playoffId &&
+          f.seasonId === state.currentSeason &&
+          (f.uefaStage === 'FINAL' || f.cupRound === 'FINAL') &&
+          f.status === 'Completed' &&
+          f.result
+      );
+      const playoffWinnerId = completedPlayoffFinal
+        ? getDomesticCupFixtureWinnerId(completedPlayoffFinal)
+        : null;
+
+      let promotedIds: string[];
+      if (playoffWinnerId) {
+        const autoCount = Math.max(1, pair.spots - 1);
+        const autoPromoted = lowerTable.slice(0, autoCount).map((r) => r.clubId);
+        if (!autoPromoted.includes(playoffWinnerId)) {
+          promotedIds = [...autoPromoted, playoffWinnerId];
+        } else {
+          promotedIds = lowerTable.slice(0, pair.spots).map((r) => r.clubId);
+        }
+      } else {
+        promotedIds = lowerTable.slice(0, pair.spots).map((r) => r.clubId);
+      }
+
       for (const cid of relegatedIds) {
         pendingLeagueAssignments[cid] = pair.lower;
       }
@@ -3624,6 +3924,15 @@ export function processEndOfSeasonRollover(
     nextTrophyHistory
   );
   nextFixtures = [...nextFixtures, ...nextSuperCupFixtures];
+
+  // Stage 11 Phase 4: Generate 3 Global Continental Champions Cups (AFC_ACL, CONMEBOL_LIB, CONCACAF_CCC) for nextSeasonStr
+  const nextContinentalCupFixtures = generateContinentalChampionsCupFixtures(
+    nextSeasonStr,
+    updatedClubs,
+    state.standings,
+    state.controlledClubId
+  );
+  nextFixtures = [...nextFixtures, ...nextContinentalCupFixtures];
 
   // 3b. Seed 3-Tier European Cups (UEFA_UCL, UEFA_UEL, UEFA_UECL) from final standings + Cup & League Cup Winners!
   const uefaQualified = selectUefaQualifiedClubs(

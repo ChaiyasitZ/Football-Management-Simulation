@@ -12,7 +12,7 @@ import {
 } from '../types/game';
 import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import { UEFA_COMPETITIONS_CONFIG } from '../engine/uefaEngine';
-import { getCupRoundPrizeMoney } from '../engine/leagueEngine';
+import { getCupRoundPrizeMoney, recomputeLeagueStandings } from '../engine/leagueEngine';
 import {
   COMPETITION_STYLE_MAP,
   CompetitionBadge,
@@ -38,7 +38,8 @@ export interface TrophyLiftData {
 
 /**
  * Pure helper to determine whether completing a match fixture crowned the user's club
- * as champions of a Cup Final, UEFA Final, Super Cup, or Club World Cup Final.
+ * as champions of a Cup Final, UEFA Final, Super Cup, Continental Champions Cup,
+ * Promotion Playoff Final, OR mathematically clinched a Domestic League Title.
  */
 export function detectTrophyWinFromMatch(
   world: WorldState,
@@ -53,7 +54,79 @@ export function detectTrophyWinFromMatch(
   const isAway = fixture.awayClubId === myClubId;
   if (!isHome && !isAway) return null;
 
+  const myClub = world.clubs[myClubId];
+  if (!myClub) return null;
+
   const compId = String(fixture.competitionId);
+  const opponentClubId = isHome ? fixture.awayClubId : fixture.homeClubId;
+  const opponentClub = world.clubs[opponentClubId];
+  const { meta } = resolveCompetitionTrophyPhotoUrls(compId);
+
+  // Resolve Captain (club.captainId or highest leadership/reputation squad player)
+  const resolveCaptainName = (): string => {
+    const clubPlayers = Object.values(world.players).filter((p) => p.clubId === myClubId);
+    const captain =
+      clubPlayers.find((p) => p.id === myClub.primaryTactic.setPieces?.captainId) ||
+      clubPlayers.sort((a, b) => b.attributes.mental.leadership - a.attributes.mental.leadership)[0];
+    return captain ? `${captain.firstName} ${captain.lastName}` : 'Club Captain';
+  };
+
+  // Case A: Mathematical Domestic League Title Clinch (Stage 11 Phase 3)
+  const leagueCfg = LEAGUES_CONFIG[compId as LeagueId];
+  if (leagueCfg) {
+    const cleanSeason = world.currentSeason.replace('/', '');
+    const trpId = `trp_${cleanSeason}_${compId}`;
+    // Prevent duplicate modal on dead-rubber matches once already clinched this season
+    if ((world.trophyHistory || []).some((t) => t.id === trpId)) {
+      return null;
+    }
+
+    let table = world.standings[compId as LeagueId] || [];
+    // If called BEFORE world.fixtures updated this fixture to Completed, simulate its standings impact
+    if (fixture.status !== 'Completed') {
+      const leagueClubIds = Object.values(world.clubs)
+        .filter((c) => c.leagueId === (compId as LeagueId))
+        .map((c) => c.id);
+      const patchedFixtures = world.fixtures.map((f) =>
+        f.id === fixtureId ? { ...f, status: 'Completed' as const, result } : f
+      );
+      table = recomputeLeagueStandings(
+        leagueCfg,
+        world.currentSeason,
+        leagueClubIds,
+        patchedFixtures,
+        world.clubs
+      );
+    }
+
+    if (table.length < 2 || table[0].clubId !== myClubId) return null;
+
+    const totalGamesPerClub = Math.max(1, (table.length - 1) * 2);
+    const secondPlace = table[1];
+    const secondRemaining = Math.max(0, totalGamesPerClub - secondPlace.played);
+    const secondMaxPoints = secondPlace.points + secondRemaining * 3;
+    const isMathematicallyClinched =
+      table[0].points > secondMaxPoints ||
+      (secondRemaining === 0 && table[0].played >= totalGamesPerClub);
+
+    if (!isMathematicallyClinched) return null;
+
+    return {
+      competitionId: compId,
+      competitionName: meta.title || leagueCfg.name,
+      season: world.currentSeason,
+      clubId: myClubId,
+      clubName: myClub.name,
+      captainName: resolveCaptainName(),
+      managerName: world.manager.name,
+      prizeMoney: Math.round(leagueCfg.prizePoolTotal / 4),
+      reputationGain: leagueCfg.tier === 1 ? 6 : 4,
+      scorelineText: `${result.homeGoals} - ${result.awayGoals}`,
+      opponentName: opponentClub?.name,
+    };
+  }
+
+  // Case B: Knockout Cup / Super Cup / UEFA / Continental / Promotion Playoff Final
   const isSuperCup = compId.endsWith('_SC') || compId === 'UEFA_USC';
   const isCupFinal = fixture.cupRound === 'FINAL';
   const isUefaFinal = fixture.uefaStage === 'FINAL';
@@ -74,20 +147,9 @@ export function detectTrophyWinFromMatch(
 
   if (winnerClubId !== myClubId) return null;
 
-  const myClub = world.clubs[myClubId];
-  if (!myClub) return null;
-
-  const opponentClubId = isHome ? fixture.awayClubId : fixture.homeClubId;
-  const opponentClub = world.clubs[opponentClubId];
-  const { meta } = resolveCompetitionTrophyPhotoUrls(compId);
-
-  // Resolve Captain (club.captainId or highest leadership/reputation squad player)
-  const clubPlayers = Object.values(world.players).filter((p) => p.clubId === myClubId);
-  const captain =
-    clubPlayers.find((p) => p.id === myClub.primaryTactic.setPieces?.captainId) ||
-    clubPlayers.sort((a, b) => b.attributes.mental.leadership - a.attributes.mental.leadership)[0];
-
   const isUefa = compId === 'UEFA_UCL' || compId === 'UEFA_UEL' || compId === 'UEFA_UECL';
+  const isContinental =
+    compId === 'AFC_ACL' || compId === 'CONMEBOL_LIB' || compId === 'CONCACAF_CCC';
   const prizeMoney = isUefa
     ? compId === 'UEFA_UCL'
       ? 25_000_000
@@ -103,8 +165,8 @@ export function detectTrophyWinFromMatch(
   const reputationGain =
     compId === 'UEFA_UCL'
       ? 8
-      : compId === 'UEFA_UEL' || compId === 'FIFA_CWC' || compId === 'GLB_CWC'
-        ? 5
+      : compId === 'UEFA_UEL' || compId === 'FIFA_CWC' || compId === 'GLB_CWC' || isContinental
+        ? 6
         : isSuperCup
           ? 2
           : 4;
@@ -120,7 +182,7 @@ export function detectTrophyWinFromMatch(
     season: world.currentSeason,
     clubId: myClubId,
     clubName: myClub.name,
-    captainName: captain ? `${captain.firstName} ${captain.lastName}` : 'Club Captain',
+    captainName: resolveCaptainName(),
     managerName: world.manager.name,
     prizeMoney,
     reputationGain,
@@ -196,6 +258,16 @@ export function getCompetitionSilverwareMeta(
   } else if (compId.endsWith('_LC')) {
     qualificationRewardEn = 'UEFA Conference League Qualification + Major Domestic Trophy';
     qualificationRewardTh = 'สิทธิ์เพลย์ออฟยูฟ่า คอนเฟอเรนซ์ลีก + ถ้วยลีกคัพเกียรติยศ';
+  } else if (
+    compId === 'AFC_ACL' ||
+    compId === 'CONMEBOL_LIB' ||
+    compId === 'CONCACAF_CCC'
+  ) {
+    qualificationRewardEn = 'Continental Champions Crown + FIFA Club World Cup Berth';
+    qualificationRewardTh = 'แชมป์เจ้าทวีป + ตั๋วลุยศึกชิงแชมป์สโมสรโลก (FIFA Club World Cup)';
+  } else if (compId.endsWith('_PO')) {
+    qualificationRewardEn = 'Promotion to Upper Division + Promotion Final Trophy & Bonus';
+    qualificationRewardTh = 'เลื่อนชั้นสู่ลีกสูงสุดทันทีพร้อมถ้วยแชมป์เพลย์ออฟและเงินโบนัส';
   } else if (compId.endsWith('_SC') || compId === 'UEFA_USC') {
     qualificationRewardEn = 'Season Curtain-Raiser Super Cup Honours';
     qualificationRewardTh = 'แชมป์ถ้วยซูเปอร์คัพประเดิมเปิดฤดูกาล';
