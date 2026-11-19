@@ -17,7 +17,9 @@ export type CompetitionVisualId =
   | 'GLB_CWC'
   | 'EURO_NATIONS'
   | 'INT_EURO'
-  | 'WORLD_CUP';
+  | 'WORLD_CUP'
+  | 'BALLON_DOR'
+  | 'GOLDEN_BOOT';
 
 export interface CompStyleMeta {
   shortCode: string;
@@ -28,6 +30,7 @@ export interface CompStyleMeta {
   accent: string;
   motif: 'crown_lion' | 'starball' | 'uel_wave' | 'uecl_spire' | 'laliga' | 'bundesliga' | 'serie_a' | 'ligue_1' | 'cup_shield' | 'globe_crown' | 'heraldic';
   fotmobLogoUrl?: string;
+  trophyImageUrl?: string;
 }
 
 export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
@@ -41,6 +44,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#e2e8f0',
     motif: 'starball',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/42.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/4.png',
   },
   UEFA_UEL: {
     shortCode: 'UEL',
@@ -51,6 +55,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fb923c',
     motif: 'uel_wave',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/73.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/264.png',
   },
   UEFA_UECL: {
     shortCode: 'UECL',
@@ -61,6 +66,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#4ade80',
     motif: 'uecl_spire',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/10216.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/763.png',
   },
   UEFA_USC: {
     shortCode: 'USC',
@@ -71,6 +77,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'starball',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/74.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/354.png',
   },
   // Top 5 Leagues
   ENG_PL: {
@@ -82,6 +89,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#00ff85',
     motif: 'crown_lion',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/47.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/12.png',
   },
   ESP_LL: {
     shortCode: 'LALIGA',
@@ -92,6 +100,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'laliga',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/87.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/11.png',
   },
   GER_BL: {
     shortCode: 'BUNDESLIGA',
@@ -102,6 +111,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'bundesliga',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/54.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/10.png',
   },
   ITA_SA: {
     shortCode: 'SERIE A',
@@ -112,6 +122,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#38bdf8',
     motif: 'serie_a',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/55.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/13.png',
   },
   FRA_L1: {
     shortCode: 'L1',
@@ -122,6 +133,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#bef264',
     motif: 'ligue_1',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/53.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/14.png',
   },
   // European Tier 1 Leagues
   POR_LP: {
@@ -133,6 +145,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/61.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/15.png',
   },
   NED_ED: {
     shortCode: 'EREDIVISIE',
@@ -143,6 +156,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'crown_lion',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/57.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/16.png',
   },
   BEL_PL: {
     shortCode: 'JPL',
@@ -153,6 +167,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/40.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/18.png',
   },
   TUR_SL: {
     shortCode: 'SÜPER LİG',
@@ -163,6 +178,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'starball',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/71.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/20.png',
   },
   SCO_PR: {
     shortCode: 'SPFL',
@@ -173,6 +189,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'crown_lion',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/64.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/21.png',
   },
   // Second Divisions
   ENG_CH: {
@@ -184,6 +201,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'crown_lion',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/48.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/338.png',
   },
   ESP_SD: {
     shortCode: 'LALIGA 2',
@@ -194,6 +212,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#38bdf8',
     motif: 'laliga',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/140.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/339.png',
   },
   GER_2B: {
     shortCode: '2. BL',
@@ -204,6 +223,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#e5e7eb',
     motif: 'bundesliga',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/146.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/320.png',
   },
   ITA_SB: {
     shortCode: 'SERIE B',
@@ -214,6 +234,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'serie_a',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/86.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/340.png',
   },
   FRA_L2: {
     shortCode: 'L2',
@@ -224,6 +245,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#2dd4bf',
     motif: 'ligue_1',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/110.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/341.png',
   },
   // Primary Domestic National Cups (10)
   ENG_CUP: {
@@ -235,6 +257,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/132.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/29.png',
   },
   ESP_CUP: {
     shortCode: 'COPA',
@@ -245,6 +268,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fef08a',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/138.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/94.png',
   },
   GER_CUP: {
     shortCode: 'DFB-POKAL',
@@ -255,6 +279,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/209.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/27.png',
   },
   ITA_CUP: {
     shortCode: 'COPPA',
@@ -265,6 +290,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#22c55e',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/141.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/92.png',
   },
   FRA_CUP: {
     shortCode: 'CDF',
@@ -275,6 +301,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ef4444',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/134.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/96.png',
   },
   POR_CUP: {
     shortCode: 'TAÇA',
@@ -285,6 +312,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/186.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/97.png',
   },
   NED_CUP: {
     shortCode: 'KNVB',
@@ -295,6 +323,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/235.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/98.png',
   },
   BEL_CUP: {
     shortCode: 'CROKY',
@@ -305,6 +334,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/149.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/108.png',
   },
   TUR_CUP: {
     shortCode: 'ZTK',
@@ -315,6 +345,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/151.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/107.png',
   },
   SCO_CUP: {
     shortCode: 'SCO CUP',
@@ -325,6 +356,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/137.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/109.png',
   },
   // Secondary League Cups (3 Authentic European League Cups)
   ENG_LC: {
@@ -336,6 +368,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/133.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/47.png',
   },
   POR_LC: {
     shortCode: 'ALLIANZ',
@@ -346,6 +379,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#38bdf8',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/187.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/337.png',
   },
   SCO_LC: {
     shortCode: 'SPFL CUP',
@@ -356,6 +390,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/180.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/345.png',
   },
   // National Super Cups (9)
   ENG_SC: {
@@ -367,6 +402,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/247.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/316.png',
   },
   ESP_SC: {
     shortCode: 'SUPERCOPA',
@@ -377,6 +413,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fef08a',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/139.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/93.png',
   },
   GER_SC: {
     shortCode: 'SUPERCUP',
@@ -387,6 +424,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/8924.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/312.png',
   },
   ITA_SC: {
     shortCode: 'SUPERCOPPA',
@@ -397,6 +435,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/222.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/91.png',
   },
   FRA_SC: {
     shortCode: 'TDC',
@@ -407,6 +446,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#bef264',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/207.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/328.png',
   },
   POR_SC: {
     shortCode: 'SUPERTAÇA',
@@ -417,6 +457,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/188.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/336.png',
   },
   NED_SC: {
     shortCode: 'CRUYFF',
@@ -427,6 +468,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/237.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/327.png',
   },
   BEL_SC: {
     shortCode: 'BEL SC',
@@ -437,6 +479,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/9862.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/335.png',
   },
   TUR_SC: {
     shortCode: 'SÜPER KUPA',
@@ -447,6 +490,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/10366.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/344.png',
   },
   // Global / International
   FIFA_CWC: {
@@ -458,6 +502,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/78.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/318.png',
   },
   GLB_CWC: {
     shortCode: 'CWC',
@@ -468,6 +513,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/78.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/318.png',
   },
   EURO_NATIONS: {
     shortCode: 'EURO',
@@ -478,6 +524,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/50.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/102.png',
   },
   INT_EURO: {
     shortCode: 'EURO',
@@ -488,6 +535,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/50.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/102.png',
   },
   WORLD_CUP: {
     shortCode: 'WORLD CUP',
@@ -498,6 +546,27 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/77.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/101.png',
+  },
+  BALLON_DOR: {
+    shortCode: 'BALLON D\'OR',
+    title: 'Ballon d\'Or',
+    subtitle: 'World Player of the Year',
+    primary: '#451a03',
+    secondary: '#ca8a04',
+    accent: '#fef08a',
+    motif: 'globe_crown',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/676.png',
+  },
+  GOLDEN_BOOT: {
+    shortCode: 'GOLDEN SHOE',
+    title: 'European Golden Shoe',
+    subtitle: 'Top Goalscorer Award',
+    primary: '#451a03',
+    secondary: '#eab308',
+    accent: '#fef08a',
+    motif: 'globe_crown',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/195.png',
   },
   PRE_SEASON_FRIENDLY: {
     shortCode: 'FRIENDLY',
@@ -508,6 +577,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/105.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/318.png',
   },
   // 8 Stage 9 New Playable Leagues
   ENG_L1: {
@@ -519,6 +589,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#38bdf8',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/108.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/342.png',
   },
   AUT_BL: {
     shortCode: 'ADMIRAL BL',
@@ -529,6 +600,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'bundesliga',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/38.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/17.png',
   },
   SUI_SL: {
     shortCode: 'SUPER LEAGUE',
@@ -539,6 +611,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/69.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/19.png',
   },
   GRE_SL: {
     shortCode: 'STOIXIMAN SL',
@@ -549,6 +622,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#38bdf8',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/135.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/23.png',
   },
   KSA_SPL: {
     shortCode: 'ROSHN SPL',
@@ -559,6 +633,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/536.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/380.png',
   },
   USA_MLS: {
     shortCode: 'MLS',
@@ -569,6 +644,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/130.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/281.png',
   },
   BRA_SA: {
     shortCode: 'BRASILEIRÃO',
@@ -579,6 +655,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'globe_crown',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/268.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/275.png',
   },
   JPN_J1: {
     shortCode: 'J1 LEAGUE',
@@ -589,6 +666,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'heraldic',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/223.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/352.png',
   },
   // 7 Stage 9 New Domestic Cups
   AUT_CUP: {
@@ -600,6 +678,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/278.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/105.png',
   },
   SUI_CUP: {
     shortCode: 'SUI CUP',
@@ -610,6 +689,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/575.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/106.png',
   },
   GRE_CUP: {
     shortCode: 'GRE CUP',
@@ -620,6 +700,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/145.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/111.png',
   },
   KSA_CUP: {
     shortCode: 'KING CUP',
@@ -630,6 +711,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/9475.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/475.png',
   },
   USA_CUP: {
     shortCode: 'OPEN CUP',
@@ -640,6 +722,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#ffffff',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/9441.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/436.png',
   },
   BRA_CUP: {
     shortCode: 'COPA DO BRASIL',
@@ -650,6 +733,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#facc15',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/203.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/390.png',
   },
   JPN_CUP: {
     shortCode: 'EMPEROR CUP',
@@ -660,6 +744,7 @@ export const COMPETITION_STYLE_MAP: Record<string, CompStyleMeta> = {
     accent: '#fde047',
     motif: 'cup_shield',
     fotmobLogoUrl: 'https://images.fotmob.com/image_resources/logo/leaguelogo/dark/225.png',
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/441.png',
   },
 };
 
@@ -794,6 +879,16 @@ export function resolveFotMobCompetitionLogoUrls(competitionIdOrName: string): {
       matchedKey = 'SCO_PR';
     } else if (upper.includes('CHAMPIONSHIP') || upper.includes('ENG_CH')) {
       matchedKey = 'ENG_CH';
+    } else if (upper.includes('BALLON')) {
+      matchedKey = 'BALLON_DOR';
+    } else if (upper.includes('GOLDEN BOOT') || upper.includes('GOLDEN SHOE')) {
+      matchedKey = 'GOLDEN_BOOT';
+    } else if (upper.includes('CLUB WORLD CUP') || upper.includes('FIFA_CWC') || upper.includes('GLB_CWC')) {
+      matchedKey = 'FIFA_CWC';
+    } else if (upper.includes('WORLD CUP') || upper.includes('WORLD_CUP')) {
+      matchedKey = 'WORLD_CUP';
+    } else if (upper.includes('EURO_NATIONS') || upper.includes('INT_EURO') || upper.includes('EUROPEAN CHAMPIONSHIP')) {
+      matchedKey = 'EURO_NATIONS';
     }
   }
 
@@ -809,6 +904,7 @@ export function resolveFotMobCompetitionLogoUrls(competitionIdOrName: string): {
     accent: '#ffffff',
     motif: 'heraldic',
     fotmobLogoUrl: leagueCfg?.logoUrl || leagueCfg?.cupLogoUrl,
+    trophyImageUrl: 'https://tmssl.akamaized.net/images/erfolge/verybigquad/29.png',
   };
 
   const darkUrl = meta.fotmobLogoUrl || leagueCfg?.logoUrl || leagueCfg?.cupLogoUrl;
@@ -817,6 +913,28 @@ export function resolveFotMobCompetitionLogoUrls(competitionIdOrName: string): {
     : undefined;
 
   return { darkUrl, standardUrl, meta };
+}
+
+/**
+ * Stage 10 Phase 1: Resolves the real physical trophy cutout photograph URLs
+ * (`tmssl.akamaized.net/images/erfolge/verybigquad/<id>.png` -> `/medium/<id>.png` -> `/header/<id>.png`)
+ * for all 58 competitions and individual awards.
+ */
+export function resolveCompetitionTrophyPhotoUrls(competitionIdOrName: string): {
+  primaryTrophyUrl?: string;
+  mediumTrophyUrl?: string;
+  fallbackTrophyUrl?: string;
+  meta: CompStyleMeta;
+} {
+  const { meta } = resolveFotMobCompetitionLogoUrls(competitionIdOrName);
+  const primaryTrophyUrl = meta.trophyImageUrl;
+  const mediumTrophyUrl = primaryTrophyUrl
+    ? primaryTrophyUrl.replace('/erfolge/verybigquad/', '/erfolge/medium/')
+    : undefined;
+  const fallbackTrophyUrl = primaryTrophyUrl
+    ? primaryTrophyUrl.replace('/erfolge/verybigquad/', '/erfolge/header/')
+    : undefined;
+  return { primaryTrophyUrl, mediumTrophyUrl, fallbackTrophyUrl, meta };
 }
 
 export const CompetitionBadge: React.FC<{
@@ -1191,6 +1309,8 @@ export const TrophyArtwork: React.FC<{
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   showLabel?: boolean;
   customLabel?: string;
+  showCrestBadge?: boolean;
+  onClick?: () => void;
   className?: string;
 }> = ({
   competitionId = 'ENG_PL',
@@ -1198,70 +1318,94 @@ export const TrophyArtwork: React.FC<{
   size = 'md',
   showLabel = false,
   customLabel,
+  showCrestBadge = false,
+  onClick,
   className = '',
 }) => {
   const resolved = trophyType || resolveTrophyType(competitionId);
-  const { darkUrl, standardUrl, meta } = resolveFotMobCompetitionLogoUrls(
-    customLabel && !COMPETITION_STYLE_MAP[competitionId] ? customLabel : competitionId
-  );
-  const [fallbackStage, setFallbackStage] = useState<'dark' | 'standard' | 'svg'>('dark');
+  const lookupKey =
+    customLabel && !COMPETITION_STYLE_MAP[competitionId] ? customLabel : competitionId;
+  const { primaryTrophyUrl, mediumTrophyUrl, fallbackTrophyUrl, meta } =
+    resolveCompetitionTrophyPhotoUrls(lookupKey);
+  const [fallbackStage, setFallbackStage] = useState<'primary' | 'medium' | 'header' | 'svg'>('primary');
 
   useEffect(() => {
-    setFallbackStage('dark');
-  }, [darkUrl]);
+    setFallbackStage('primary');
+  }, [primaryTrophyUrl]);
 
   const dims =
     size === 'xs'
-      ? 'w-6 h-6'
+      ? 'w-7 h-7'
       : size === 'sm'
-        ? 'w-9 h-9'
+        ? 'w-11 h-11'
         : size === 'lg'
-          ? 'w-16 h-16'
+          ? 'w-20 h-20'
           : size === 'xl'
-            ? 'w-24 h-24'
-            : 'w-12 h-12';
+            ? 'w-36 h-36'
+            : 'w-14 h-14';
 
   const uid = `trp-${resolved}-${size}`;
-  const isIndividualAward = resolved === 'BALLON_DOR' || resolved === 'GOLDEN_BOOT';
-  const activeLogoUrl =
-    !isIndividualAward && fallbackStage === 'dark'
-      ? darkUrl
-      : !isIndividualAward && fallbackStage === 'standard'
-        ? standardUrl
-        : undefined;
+  const activeTrophyPhotoUrl =
+    fallbackStage === 'primary'
+      ? primaryTrophyUrl
+      : fallbackStage === 'medium'
+        ? mediumTrophyUrl
+        : fallbackStage === 'header'
+          ? fallbackTrophyUrl
+          : undefined;
 
-  if (activeLogoUrl && fallbackStage !== 'svg') {
+  if (activeTrophyPhotoUrl && fallbackStage !== 'svg') {
+    const WrapperTag = onClick ? 'button' : 'div';
     return (
-      <div
-        className={`inline-flex flex-col items-center justify-center shrink-0 select-none ${className}`}
+      <WrapperTag
+        type={onClick ? 'button' : undefined}
+        onClick={onClick}
+        className={`inline-flex flex-col items-center justify-center shrink-0 select-none group ${
+          onClick ? 'cursor-pointer hover:scale-105 transition-transform duration-200' : ''
+        } ${className}`}
         title={customLabel || meta.title || `${resolved.replace(/_/g, ' ')} Trophy`}
         data-testid={`trophy-artwork-${resolved}`}
       >
-        <div
-          className={`${dims} relative rounded-full p-1 bg-gradient-to-br from-amber-300/25 via-slate-900/90 to-amber-500/20 border border-amber-400/45 shadow-md flex items-center justify-center`}
-        >
+        <div className={`${dims} relative flex items-center justify-center`}>
+          {/* Ambient golden spotlight pedestal glow behind transparent physical trophy */}
+          <div className="pointer-events-none absolute inset-1 rounded-full bg-amber-400/15 blur-md group-hover:bg-amber-400/30 transition-colors" />
           <img
-            src={activeLogoUrl}
+            src={activeTrophyPhotoUrl}
             alt={customLabel || meta.title}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"
             onError={() => {
-              if (fallbackStage === 'dark' && standardUrl && standardUrl !== darkUrl) {
-                setFallbackStage('standard');
+              if (
+                fallbackStage === 'primary' &&
+                mediumTrophyUrl &&
+                mediumTrophyUrl !== primaryTrophyUrl
+              ) {
+                setFallbackStage('medium');
+              } else if (
+                (fallbackStage === 'primary' || fallbackStage === 'medium') &&
+                fallbackTrophyUrl &&
+                fallbackTrophyUrl !== activeTrophyPhotoUrl
+              ) {
+                setFallbackStage('header');
               } else {
                 setFallbackStage('svg');
               }
             }}
-            className="w-full h-full object-contain drop-shadow select-none"
+            className="relative z-10 w-full h-full object-contain drop-shadow-[0_10px_22px_rgba(250,204,21,0.38)] select-none"
           />
+          {showCrestBadge && meta.fotmobLogoUrl && (
+            <div className="absolute -bottom-1 -right-1 z-20 rounded-full bg-slate-950/90 p-0.5 border border-amber-400/50 shadow">
+              <CompetitionBadge competitionId={competitionId} size="xs" />
+            </div>
+          )}
         </div>
         {showLabel && (
-          <span className="mt-1 text-[10px] font-mono text-amber-300 font-semibold truncate max-w-[110px]">
+          <span className="mt-1 text-[10px] font-mono text-amber-300 font-semibold truncate max-w-[120px]">
             {customLabel || meta.shortCode || resolved.replace(/_/g, ' ')}
           </span>
         )}
-      </div>
+      </WrapperTag>
     );
   }
 

@@ -176,6 +176,7 @@ export {
   CompetitionBadge,
   TrophyArtwork,
   resolveTrophyType,
+  resolveCompetitionTrophyPhotoUrls,
 } from './TrophyAndKitVisuals';
 
 

@@ -38,6 +38,11 @@ import { autoRegisterSquadIds } from './engine/tacticsEngine';
 import { ClubBadge } from './components/ClubBadge';
 import { TrophyArtwork } from './components/TrophyAndKitVisuals';
 import {
+  ChampionshipTrophyLiftModal,
+  TrophyLiftData,
+  detectTrophyWinFromMatch,
+} from './components/SilverwareModals';
+import {
   activateReleaseClauseTransfer,
   adjustClubBudgetAllocation,
   advanceDeadlineDayTwoHours,
@@ -438,6 +443,7 @@ function TouchlineShell() {
   const [seasonGalaModalData, setSeasonGalaModalData] = useState<SeasonRolloverSummary | null>(
     null
   );
+  const [trophyLiftModalData, setTrophyLiftModalData] = useState<TrophyLiftData | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(() => soundService.getMuted());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState<boolean>(false);
@@ -639,8 +645,14 @@ function TouchlineShell() {
       setSaveSlots([]);
       setAuthUser(null);
       setCloudSyncStatus('idle');
+      if (shellState !== 'title') {
+        setShellState('title');
+      }
       showToast(
-        tr('Signed out from Google / Gmail account.', 'ออกจากระบบบัญชี Google / Gmail เรียบร้อยแล้ว')
+        tr(
+          'Signed out from Google / Gmail account. Returned to Title Screen.',
+          'ออกจากระบบบัญชี Google / Gmail เรียบร้อยแล้ว กลับสู่หน้าจอหลัก'
+        )
       );
     } catch (err) {
       console.error(err);
@@ -653,6 +665,16 @@ function TouchlineShell() {
   }, [shellState]);
 
   const handleQuickStart = () => {
+    if (!authUser && !isAutostart) {
+      showToast(
+        tr(
+          'Sign in with Google / Gmail required before starting a career.',
+          'กรุณาเข้าสู่ระบบด้วย Google / Gmail ก่อนเข้าเล่นเกม'
+        )
+      );
+      void handleGoogleSignIn();
+      return;
+    }
     soundService.playClick();
     const w = ensureWorld();
     scheduleIdleAutosave(w);
@@ -665,6 +687,16 @@ function TouchlineShell() {
     scenarioChallenge: ScenarioChallengeId = 'STANDARD',
     customClubConfig: CustomClubConfig | null = null
   ) => {
+    if (!authUser && !isAutostart) {
+      showToast(
+        tr(
+          'Sign in with Google / Gmail required before starting a career.',
+          'กรุณาเข้าสู่ระบบด้วย Google / Gmail ก่อนเข้าเล่นเกม'
+        )
+      );
+      void handleGoogleSignIn();
+      return;
+    }
     soundService.playWhistle();
     const freshWorld = createInitialWorldState(
       Date.now() % 1000000,
@@ -873,9 +905,14 @@ function TouchlineShell() {
   }, [shellState, commandPaletteOpen, quickPeekPlayerId, notifDrawerOpen]);
 
   const handleCompleteMatch = (fixtureId: string, result: MatchResult) => {
+    const trophyWin = detectTrophyWinFromMatch(world, fixtureId, result);
     const updated = completeUserMatchdayAndSyncWorld(world, fixtureId, result);
     setWorld(updated);
     scheduleIdleAutosave(updated);
+    if (trophyWin) {
+      soundService.playWhistle();
+      setTrophyLiftModalData(trophyWin);
+    }
     showToast(
       tr(
         'Match result recorded and all league & UEFA standings updated!',
@@ -1099,6 +1136,16 @@ function TouchlineShell() {
           onQuickStart={handleQuickStart}
           onStartCustomCareer={handleStartCustomCareer}
           onLoadSlot={async (slotId) => {
+            if (!authUser && !isAutostart) {
+              showToast(
+                tr(
+                  'Sign in with Google / Gmail required to load Cloud Saves.',
+                  'กรุณาเข้าสู่ระบบด้วย Google / Gmail ก่อนโหลดเซฟเกมบน Cloud'
+                )
+              );
+              void handleGoogleSignIn();
+              return;
+            }
             const loaded = authUser
               ? await loadWorldStateFromFirestoreSlot(slotId)
               : loadWorldStateFromSlot(slotId);
@@ -2257,9 +2304,33 @@ function TouchlineShell() {
                     showToast(res.message);
                   }}
                   onTriggerSeasonRollover={() => {
+                    const prevClub = world.clubs[world.controlledClubId];
                     const res = processEndOfSeasonRollover(world);
                     setWorld(res.nextState);
                     setSeasonGalaModalData(res.seasonSummary);
+                    if (res.seasonSummary.finalPosition === 1 && prevClub) {
+                      const clubPlayers = Object.values(world.players).filter(
+                        (p) => p.clubId === prevClub.id
+                      );
+                      const captain =
+                        clubPlayers.find((p) => p.id === prevClub.primaryTactic.setPieces?.captainId) ||
+                        clubPlayers.sort(
+                          (a, b) => b.attributes.mental.leadership - a.attributes.mental.leadership
+                        )[0];
+                      setTrophyLiftModalData({
+                        competitionId: prevClub.leagueId,
+                        competitionName: res.seasonSummary.leagueName,
+                        season: res.seasonSummary.completedSeason,
+                        clubId: prevClub.id,
+                        clubName: prevClub.name,
+                        captainName: captain
+                          ? `${captain.firstName} ${captain.lastName}`
+                          : 'Club Captain',
+                        managerName: world.manager.name,
+                        prizeMoney: res.seasonSummary.totalPrizeAndTvPayout,
+                        reputationGain: 6,
+                      });
+                    }
                     scheduleIdleAutosave(res.nextState);
                     showToast(res.message);
                   }}
@@ -2865,6 +2936,13 @@ function TouchlineShell() {
           </div>
         </div>
       )}
+
+      {/* Stage 10 Phase 4: Live Championship Trophy Lift Celebration Modal */}
+      <ChampionshipTrophyLiftModal
+        data={trophyLiftModalData}
+        club={trophyLiftModalData ? world.clubs[trophyLiftModalData.clubId] : null}
+        onClose={() => setTrophyLiftModalData(null)}
+      />
 
       {/* Toast Notification */}
       {toastMessage && (

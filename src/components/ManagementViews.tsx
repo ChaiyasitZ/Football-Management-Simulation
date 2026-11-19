@@ -60,6 +60,7 @@ import {
   CompetitionBadge,
   TrophyArtwork,
 } from './TrophyAndKitVisuals';
+import { SilverwareInspectionModal } from './SilverwareModals';
 import { PreSeasonCommandCenterCard } from '../ui/UIComponents';
 import type { User } from '../firebase';
 import { LanguageSwitcher, useLanguage } from '../i18n/LanguageContext';
@@ -3123,6 +3124,7 @@ export const CompetitionsAndScheduleView: React.FC<{
   );
   const [selectedUefaMatchday, setSelectedUefaMatchday] = useState<number>(1);
   const [inspectedUefaClubId, setInspectedUefaClubId] = useState<string>('');
+  const [inspectedTrophyId, setInspectedTrophyId] = useState<string | null>(null);
 
   const cfg = LEAGUES_CONFIG[selectedLeague];
   const standings = world.standings[selectedLeague] || [];
@@ -3886,13 +3888,18 @@ export const CompetitionsAndScheduleView: React.FC<{
                     </div>
                   </div>
 
-                  <div className="shrink-0">
+                  <div className="shrink-0 flex flex-col items-center">
                     <TrophyArtwork
                       competitionId={selectedCup}
                       size="lg"
                       showLabel
+                      showCrestBadge
                       customLabel={activeCupMeta.shortName}
+                      onClick={() => setInspectedTrophyId(selectedCup)}
                     />
+                    <span className="text-[10px] font-mono text-amber-300/80 mt-0.5">
+                      {tr('Click to inspect', 'คลิกส่องถ้วย')}
+                    </span>
                   </div>
                 </div>
 
@@ -4152,32 +4159,40 @@ export const CompetitionsAndScheduleView: React.FC<{
                 const isActive = selectedUefaComp === uId;
                 const isUserInThis = myUefaComp === uId;
                 return (
-                  <button
+                  <div
                     key={uId}
-                    type="button"
-                    onClick={() => {
-                      setSelectedUefaComp(uId);
-                      setSelectedUefaMatchday(1);
-                    }}
-                    className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 cursor-pointer flex items-center gap-2 ${
+                    className={`px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all duration-200 flex items-center gap-2 ${
                       isActive
                         ? 'bg-sky-500/20 border-sky-400 text-white shadow-sm'
                         : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
                     }`}
                   >
-                    <CompetitionBadge competitionId={uId} size="xs" />
-                    <span className="font-mono font-bold text-sky-400">{u.shortName}</span>
-                    <span>{u.name}</span>
-                    <TrophyArtwork competitionId={uId} size="xs" />
-                    <span className="text-[10px] font-mono text-slate-400">
-                      {tr(`(36 Teams · ${u.leaguePhaseMatches} MD)`, `(36 ทีม · ${u.leaguePhaseMatches} นัด)`)}
-                    </span>
-                    {isUserInThis && (
-                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">
-                        {tr('Your Club', 'ทีมของคุณ')}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedUefaComp(uId);
+                        setSelectedUefaMatchday(1);
+                      }}
+                      className="flex items-center gap-2 cursor-pointer"
+                    >
+                      <CompetitionBadge competitionId={uId} size="xs" />
+                      <span className="font-mono font-bold text-sky-400">{u.shortName}</span>
+                      <span>{u.name}</span>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        {tr(`(36 Teams · ${u.leaguePhaseMatches} MD)`, `(36 ทีม · ${u.leaguePhaseMatches} นัด)`)}
                       </span>
-                    )}
-                  </button>
+                      {isUserInThis && (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono">
+                          {tr('Your Club', 'ทีมของคุณ')}
+                        </span>
+                      )}
+                    </button>
+                    <TrophyArtwork
+                      competitionId={uId}
+                      size="xs"
+                      onClick={() => setInspectedTrophyId(uId)}
+                    />
+                  </div>
                 );
               })}
             </div>
@@ -4828,12 +4843,19 @@ export const CompetitionsAndScheduleView: React.FC<{
                 </p>
               </div>
             </div>
-            <TrophyArtwork
-              competitionId={selectedLeague}
-              size="md"
-              showLabel
-              customLabel={`${cfg.name} Trophy`}
-            />
+            <div className="flex flex-col items-center shrink-0">
+              <TrophyArtwork
+                competitionId={selectedLeague}
+                size="lg"
+                showLabel
+                showCrestBadge
+                customLabel={`${cfg.name} Trophy`}
+                onClick={() => setInspectedTrophyId(selectedLeague)}
+              />
+              <span className="text-[10px] font-mono text-amber-300/80 mt-0.5">
+                {tr('Click to inspect Roll of Honour', 'คลิกดูถ้วยและทำเนียบแชมป์')}
+              </span>
+            </div>
           </div>
 
           {subView === 'table' && (
@@ -5134,6 +5156,13 @@ export const CompetitionsAndScheduleView: React.FC<{
           )}
         </>
       )}
+
+      {/* Stage 10 Phase 3: Interactive Silverware Inspection & Roll of Honour Modal */}
+      <SilverwareInspectionModal
+        competitionId={inspectedTrophyId}
+        world={world}
+        onClose={() => setInspectedTrophyId(null)}
+      />
     </div>
   );
 };
@@ -5260,6 +5289,7 @@ export const ClubStaffYouthWorldView: React.FC<{
   const [inspectedClubId, setInspectedClubId] = useState<string>(club.id);
   const [budgetSliderPct, setBudgetSliderPct] = useState<number>(65);
   const [youthTab, setYouthTab] = useState<'academy' | 'wonderkids' | 'mentoring'>('academy');
+  const [inspectedClubTrophyId, setInspectedClubTrophyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (externalInspectedClubId && world.clubs[externalInspectedClubId]) {
@@ -5766,29 +5796,49 @@ export const ClubStaffYouthWorldView: React.FC<{
               </span>
             </div>
 
-            {/* Authentic Trophy Showcase Shelf */}
-            <div className="grid grid-cols-4 gap-2 p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
-              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
-                <TrophyArtwork competitionId="UEFA_UCL" size="sm" showLabel customLabel="UCL" />
+            {/* Authentic Trophy Showcase Shelf (Stage 10: Real Cutout Trophy Photos + Click to Inspect) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-center">
+              <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/75 hover:bg-slate-800/80 border border-slate-800/90 hover:border-amber-400/50 transition-all">
+                <TrophyArtwork
+                  competitionId="UEFA_UCL"
+                  size="md"
+                  showLabel
+                  showCrestBadge
+                  customLabel="UCL"
+                  onClick={() => setInspectedClubTrophyId('UEFA_UCL')}
+                />
               </div>
-              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
+              <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/75 hover:bg-slate-800/80 border border-slate-800/90 hover:border-amber-400/50 transition-all">
                 <TrophyArtwork
                   competitionId={club.leagueId}
-                  size="sm"
+                  size="md"
                   showLabel
+                  showCrestBadge
                   customLabel={LEAGUES_CONFIG[club.leagueId]?.name}
+                  onClick={() => setInspectedClubTrophyId(club.leagueId)}
                 />
               </div>
-              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
+              <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/75 hover:bg-slate-800/80 border border-slate-800/90 hover:border-amber-400/50 transition-all">
                 <TrophyArtwork
-                  competitionId={LEAGUES_CONFIG[club.leagueId]?.cupId || 'DOMESTIC_CUP'}
-                  size="sm"
+                  competitionId={LEAGUES_CONFIG[club.leagueId]?.cupId || 'ENG_CUP'}
+                  size="md"
                   showLabel
+                  showCrestBadge
                   customLabel={LEAGUES_CONFIG[club.leagueId]?.cupName || 'Domestic Cup'}
+                  onClick={() =>
+                    setInspectedClubTrophyId(LEAGUES_CONFIG[club.leagueId]?.cupId || 'ENG_CUP')
+                  }
                 />
               </div>
-              <div className="flex flex-col items-center justify-center p-2 rounded-lg bg-slate-900/70 border border-slate-800/80">
-                <TrophyArtwork competitionId="WORLD_CUP" size="sm" showLabel customLabel="World Cup / CWC" />
+              <div className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/75 hover:bg-slate-800/80 border border-slate-800/90 hover:border-amber-400/50 transition-all">
+                <TrophyArtwork
+                  competitionId="FIFA_CWC"
+                  size="md"
+                  showLabel
+                  showCrestBadge
+                  customLabel="FIFA CWC"
+                  onClick={() => setInspectedClubTrophyId('FIFA_CWC')}
+                />
               </div>
             </div>
 
@@ -5797,18 +5847,22 @@ export const ClubStaffYouthWorldView: React.FC<{
                 const winClub = world.clubs[trp.winnerClubId];
                 const isMyClubTrophy = trp.winnerClubId === club.id;
                 return (
-                  <div
+                  <button
                     key={trp.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border text-xs ${
+                    type="button"
+                    onClick={() =>
+                      setInspectedClubTrophyId(trp.competitionId || trp.competitionName)
+                    }
+                    className={`w-full text-left flex items-center justify-between p-3 rounded-lg border text-xs cursor-pointer transition-colors ${
                       isMyClubTrophy
-                        ? 'bg-amber-950/30 border-amber-500/60'
-                        : 'bg-slate-950 border-slate-800'
+                        ? 'bg-amber-950/30 border-amber-500/60 hover:bg-amber-950/50'
+                        : 'bg-slate-950 border-slate-800 hover:border-amber-500/40'
                     }`}
                   >
                     <div className="flex items-center gap-2.5">
                       <TrophyArtwork
                         competitionId={trp.competitionId || trp.competitionName}
-                        size="xs"
+                        size="sm"
                       />
                       <ClubBadge club={winClub} size="xs" />
                       <div>
@@ -5830,7 +5884,7 @@ export const ClubStaffYouthWorldView: React.FC<{
                     <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-800">
                       {trp.competitionId}
                     </span>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -5854,8 +5908,16 @@ export const ClubStaffYouthWorldView: React.FC<{
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <TrophyArtwork competitionId="BALLON_DOR" size="sm" />
-                <TrophyArtwork competitionId="GOLDEN_BOOT" size="sm" />
+                <TrophyArtwork
+                  competitionId="BALLON_DOR"
+                  size="md"
+                  onClick={() => setInspectedClubTrophyId('BALLON_DOR')}
+                />
+                <TrophyArtwork
+                  competitionId="GOLDEN_BOOT"
+                  size="md"
+                  onClick={() => setInspectedClubTrophyId('GOLDEN_BOOT')}
+                />
               </div>
             </div>
 
@@ -6101,6 +6163,13 @@ export const ClubStaffYouthWorldView: React.FC<{
           })()}
         </div>
         )}
+
+        {/* Stage 10 Phase 3: Interactive Silverware Inspection Modal for Club Trophy Cabinet */}
+        <SilverwareInspectionModal
+          competitionId={inspectedClubTrophyId}
+          world={world}
+          onClose={() => setInspectedClubTrophyId(null)}
+        />
       </div>
     );
   }

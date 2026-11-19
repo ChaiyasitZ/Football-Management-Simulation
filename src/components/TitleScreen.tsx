@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Cloud,
   FolderOpen,
+  Lock,
   LogIn,
   LogOut,
   Play,
@@ -260,6 +261,10 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2>(1);
   const [loadModalOpen, setLoadModalOpen] = useState(false);
+  const [loginRequiredModalOpen, setLoginRequiredModalOpen] = useState(false);
+  const [pendingPostLoginAction, setPendingPostLoginAction] = useState<
+    'NEW_CAREER' | 'QUICK_START' | 'CLOUD_SAVES' | 'CUSTOMIZE_SPOTLIGHT' | null
+  >(null);
 
   // Career Setup Form State
   const [managerName, setManagerName] = useState(world?.manager.name || 'Alex Mercer');
@@ -530,6 +535,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   };
 
   const handleQuickStartFeaturedClub = (clubToManage: Club) => {
+    if (!authUser) {
+      setPendingPostLoginAction('QUICK_START');
+      setLoginRequiredModalOpen(true);
+      return;
+    }
     onStartCustomCareer(
       {
         name: managerName.trim() || 'Alex Mercer',
@@ -543,6 +553,48 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       null
     );
   };
+
+  // Automatically execute pending post-login action once user signs in with Google
+  useEffect(() => {
+    if (!authUser || !pendingPostLoginAction) return;
+    setLoginRequiredModalOpen(false);
+    const action = pendingPostLoginAction;
+    setPendingPostLoginAction(null);
+    if (action === 'NEW_CAREER') {
+      setWizardStep(1);
+      setSetupModalOpen(true);
+    } else if (action === 'QUICK_START') {
+      onStartCustomCareer(
+        {
+          name: managerName.trim() || 'Alex Mercer',
+          nationality,
+          age,
+          coachingStyle,
+          tacticalStyle,
+        },
+        activeSpotlightClub.id,
+        'STANDARD',
+        null
+      );
+    } else if (action === 'CLOUD_SAVES') {
+      setLoadModalOpen(true);
+    } else if (action === 'CUSTOMIZE_SPOTLIGHT') {
+      setSelectedLeagueId(activeSpotlightClub.leagueId);
+      setSelectedClubId(activeSpotlightClub.id);
+      setWizardStep(2);
+      setSetupModalOpen(true);
+    }
+  }, [
+    authUser,
+    pendingPostLoginAction,
+    activeSpotlightClub,
+    age,
+    coachingStyle,
+    managerName,
+    nationality,
+    onStartCustomCareer,
+    tacticalStyle,
+  ]);
 
   const leagueList = useMemo(() => Object.values(LEAGUES_CONFIG), []);
 
@@ -675,8 +727,51 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
           {/* FM27 Vertical Hero Action Stack */}
           <div className="w-full max-w-xl space-y-2.5 pt-1">
-            {/* 1. CONTINUE CLOUD CAREER (Shown when user has a cloud/session save) */}
-            {latestSave && (
+            {/* Stage 10 Phase 2: Mandatory Cloud Account Required Gate Banner when unauthenticated */}
+            {!authUser && (
+              <div
+                data-testid="mandatory-login-gate-card"
+                className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/20 via-slate-900/95 to-emerald-500/20 border-2 border-amber-400/60 shadow-xl space-y-3"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-300 shrink-0">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-mono uppercase tracking-wider font-extrabold text-amber-300">
+                        🔒 {tr('CLOUD ACCOUNT REQUIRED TO PLAY', 'กรุณาเข้าสู่ระบบด้วย GOOGLE ก่อนเข้าเล่น')}
+                      </div>
+                      <p className="text-xs text-slate-300 mt-0.5 leading-relaxed">
+                        {tr(
+                          '100% Cloud Firestore Save Edition — Sign in with your Google / Gmail account to unlock career modes and prevent save data loss.',
+                          'ระบบเซฟเกม Cloud Firestore 100% — กรุณาเข้าสู่ระบบด้วยบัญชี Google / Gmail เพื่อปลดล็อกโหมดผู้จัดการทีมและป้องกันข้อมูลเซฟสูญหาย'
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {onGoogleSignIn && (
+                  <button
+                    type="button"
+                    data-testid="mandatory-google-login-btn"
+                    onClick={onGoogleSignIn}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>
+                      {tr(
+                        'Sign in with Google / Gmail to Unlock Dugout →',
+                        'เข้าสู่ระบบด้วย Google / Gmail เพื่อปลดล็อกเข้าเล่นเกม →'
+                      )}
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* 1. CONTINUE CLOUD CAREER (Shown when user is logged in and has a cloud save) */}
+            {authUser && latestSave && (
               <button
                 type="button"
                 data-testid="continue-career-hero-btn"
@@ -709,16 +804,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </button>
             )}
 
-            {/* 2. START NEW CAREER (Opens 2-Step Wizard Modal) */}
+            {/* 2. START NEW CAREER (Opens 2-Step Wizard Modal or Login Gate if unauthenticated) */}
             <button
               type="button"
               data-testid="open-setup-modal-btn"
               onClick={() => {
+                if (!authUser) {
+                  setPendingPostLoginAction('NEW_CAREER');
+                  setLoginRequiredModalOpen(true);
+                  return;
+                }
                 setWizardStep(1);
                 setSetupModalOpen(true);
               }}
               className={`w-full group p-4 rounded-2xl border flex items-center justify-between gap-4 cursor-pointer hover:translate-x-1.5 transition-all duration-200 ${
-                latestSave
+                !authUser || latestSave
                   ? 'bg-slate-900/90 hover:bg-slate-800/95 border-slate-700/80 text-white'
                   : 'bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 border-emerald-400 text-slate-950 shadow-xl shadow-emerald-950/50'
               }`}
@@ -726,7 +826,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               <div className="flex items-center gap-3.5 text-left">
                 <div
                   className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
-                    latestSave
+                    !authUser || latestSave
                       ? 'bg-emerald-500/15 border border-emerald-500/40 text-emerald-400'
                       : 'bg-slate-950/15 text-slate-950'
                   }`}
@@ -735,18 +835,21 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 </div>
                 <div>
                   <div
-                    className={`text-base font-display font-extrabold ${
-                      latestSave ? 'text-white' : 'text-slate-950'
+                    className={`text-base font-display font-extrabold flex items-center gap-2 ${
+                      !authUser || latestSave ? 'text-white' : 'text-slate-950'
                     }`}
                   >
-                    {tr(
-                      'START NEW CAREER (394 CLUBS · 23 LEAGUES)',
-                      'เริ่มต้นอาชีพผู้จัดการทีมใหม่ (เลือกจาก 394 สโมสร · 23 ลีก)'
-                    )}
+                    {!authUser && <span title="Sign in required">🔒</span>}
+                    <span>
+                      {tr(
+                        'START NEW CAREER (394 CLUBS · 23 LEAGUES)',
+                        'เริ่มต้นอาชีพผู้จัดการทีมใหม่ (เลือกจาก 394 สโมสร · 23 ลีก)'
+                      )}
+                    </span>
                   </div>
                   <div
                     className={`text-xs ${
-                      latestSave ? 'text-slate-400' : 'text-slate-900/85 font-medium'
+                      !authUser || latestSave ? 'text-slate-400' : 'text-slate-900/85 font-medium'
                     }`}
                   >
                     {tr(
@@ -758,12 +861,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </div>
               <span
                 className={`px-3 py-1.5 rounded-xl font-mono text-xs font-bold shrink-0 ${
-                  latestSave
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                    : 'bg-slate-950 text-emerald-400'
+                  !authUser
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                    : latestSave
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-slate-950 text-emerald-400'
                 }`}
               >
-                {tr('Configure →', 'ตั้งค่า →')}
+                {!authUser ? tr('🔒 Sign In →', '🔒 ล็อกอิน →') : tr('Configure →', 'ตั้งค่า →')}
               </span>
             </button>
 
@@ -780,6 +885,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-display font-bold text-white flex items-center gap-2">
+                    {!authUser && <span title="Sign in required">🔒</span>}
                     <span>{tr('QUICK START DUGOUT', 'เริ่มคุมทีมด่วนทันที')}</span>
                     <span className="px-2 py-0.5 rounded bg-slate-800 text-emerald-400 font-mono text-[11px] truncate">
                       {activeSpotlightClub.name}
@@ -827,7 +933,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <button
               type="button"
               data-testid="open-load-modal-btn"
-              onClick={() => setLoadModalOpen(true)}
+              onClick={() => {
+                if (!authUser) {
+                  setPendingPostLoginAction('CLOUD_SAVES');
+                  setLoginRequiredModalOpen(true);
+                  return;
+                }
+                setLoadModalOpen(true);
+              }}
               className="w-full p-3.5 rounded-2xl bg-slate-900/75 hover:bg-slate-800/90 border border-slate-800 text-slate-200 flex items-center justify-between gap-4 cursor-pointer hover:translate-x-1.5 transition-all duration-200"
             >
               <div className="flex items-center gap-3.5 text-left">
@@ -836,6 +949,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 </div>
                 <div>
                   <div className="text-sm font-display font-bold text-white flex items-center gap-2">
+                    {!authUser && <span title="Sign in required">🔒</span>}
                     <span>{tr('CLOUD SAVE MANAGER', 'จัดการช่องเซฟเกมบน CLOUD')}</span>
                     <span className="px-2 py-0.5 rounded-full bg-slate-800 text-emerald-400 font-mono text-[11px]">
                       {saveSlots.length}/5 {tr('Slots', 'สล็อต')}
@@ -848,14 +962,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                           `ซิงก์ข้อมูลกับบัญชี ${authUser.email || authUser.displayName} แล้ว`
                         )
                       : tr(
-                          'Sign in with Google/Gmail to sync & load your Cloud Career saves across devices',
-                          'เข้าสู่ระบบด้วย Gmail เพื่อซิงก์และโหลดเซฟเกมบน Cloud ข้ามอุปกรณ์'
+                          'Sign in with Google/Gmail required to access your Cloud Career saves',
+                          'กรุณาเข้าสู่ระบบด้วย Gmail เพื่อเปิดดูและโหลดเซฟเกมบน Cloud'
                         )}
                   </div>
                 </div>
               </div>
               <span className="text-xs font-mono text-emerald-400 shrink-0">
-                {tr('Open →', 'เปิดดู →')}
+                {!authUser ? tr('🔒 Locked', '🔒 ล็อกอิน') : tr('Open →', 'เปิดดู →')}
               </span>
             </button>
           </div>
@@ -1022,7 +1136,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               onClick={() => handleQuickStartFeaturedClub(activeSpotlightClub)}
               className="flex-1 py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider cursor-pointer transition-colors flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50"
             >
-              <Play className="w-4 h-4 fill-slate-950" />
+              {!authUser ? (
+                <Lock className="w-4 h-4 text-slate-950" />
+              ) : (
+                <Play className="w-4 h-4 fill-slate-950" />
+              )}
               <span>
                 {tr(
                   `Manage ${activeSpotlightClub.shortName} Now`,
@@ -1033,6 +1151,11 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             <button
               type="button"
               onClick={() => {
+                if (!authUser) {
+                  setPendingPostLoginAction('CUSTOMIZE_SPOTLIGHT');
+                  setLoginRequiredModalOpen(true);
+                  return;
+                }
                 setSelectedLeagueId(activeSpotlightClub.leagueId);
                 setSelectedClubId(activeSpotlightClub.id);
                 setWizardStep(2);
@@ -1040,6 +1163,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               }}
               className="py-3 px-3.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold cursor-pointer transition-colors"
             >
+              {!authUser ? '🔒 ' : ''}
               {tr('Customize Contract', 'ปรับสัญญาคุมทีม')}
             </button>
           </div>
@@ -1704,6 +1828,102 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* STAGE 10 PHASE 2: MANDATORY GOOGLE LOGIN REQUIRED GATE MODAL          */}
+      {/* ===================================================================== */}
+      {loginRequiredModalOpen && !authUser && (
+        <div
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4"
+          data-testid="login-required-modal"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-slate-900 border-2 border-amber-400/60 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-400/40 flex items-center justify-center text-amber-300 mx-auto">
+                <Lock className="w-7 h-7" />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-300 font-mono text-[11px] font-bold">
+                  🔒 {tr('100% CLOUD FIRESTORE SAVE SECURITY', 'ระบบป้องกันข้อมูลเซฟสูญหายบน CLOUD')}
+                </div>
+                <h2 className="text-xl font-display font-extrabold text-white">
+                  {tr(
+                    'Sign In Required to Start Career',
+                    'กรุณาเข้าสู่ระบบด้วย Google ก่อนเริ่มเกม'
+                  )}
+                </h2>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {tr(
+                    'TOUCHLINE stores your managerial career 100% on Cloud Firestore. Please sign in with your Google / Gmail account so your progress, trophies, and transfers are automatically synced and never lost.',
+                    'เกมนี้บันทึกข้อมูลอาชีพผู้จัดการทีมของคุณไว้บน Cloud Firestore 100% กรุณาเข้าสู่ระบบด้วยบัญชี Google / Gmail เพื่อให้เซฟเกม ถ้วยแชมป์ และการซื้อขายนักเตะของคุณซิงก์อัตโนมัติและไม่สูญหาย'
+                  )}
+                </p>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-slate-800 text-left space-y-1.5 text-xs text-slate-300">
+                <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                  <Cloud className="w-4 h-4 shrink-0" />
+                  <span>
+                    {tr(
+                      'Instant Auto-Resume After Sign-In',
+                      'เข้าสู่ขั้นตอนที่คุณเลือกต่อให้อัตโนมัติทันทีหลังล็อกอิน'
+                    )}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  {pendingPostLoginAction === 'NEW_CAREER'
+                    ? tr(
+                        'Selected Action: Open 2-Step New Career Setup Wizard (394 Clubs · 23 Leagues)',
+                        'คำสั่งที่เลือกไว้: เปิดหน้าตั้งค่าผู้จัดการทีมใหม่ (394 สโมสร · 23 ลีก)'
+                      )
+                    : pendingPostLoginAction === 'QUICK_START'
+                      ? tr(
+                          `Selected Action: Quick Start Dugout with ${activeSpotlightClub.name}`,
+                          `คำสั่งที่เลือกไว้: เริ่มคุมทีมด่วนกับ ${activeSpotlightClub.name}`
+                        )
+                      : tr(
+                          'Selected Action: Open Cloud Save Manager',
+                          'คำสั่งที่เลือกไว้: เปิดหน้าจัดการเซฟเกมบน Cloud'
+                        )}
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-1">
+                {onGoogleSignIn && (
+                  <button
+                    type="button"
+                    data-testid="login-required-modal-signin-btn"
+                    onClick={onGoogleSignIn}
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-slate-950 font-display font-extrabold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/60 cursor-pointer transition-all"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span>
+                      {tr(
+                        'Sign in with Google / Gmail & Continue →',
+                        'เข้าสู่ระบบด้วย Google / Gmail แล้วไปต่อทันที →'
+                      )}
+                    </span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  data-testid="close-login-required-modal-btn"
+                  onClick={() => {
+                    setLoginRequiredModalOpen(false);
+                    setPendingPostLoginAction(null);
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white text-xs font-semibold cursor-pointer transition-colors"
+                >
+                  {tr('Back to Title Screen', 'กลับสู่หน้าจอหลัก')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

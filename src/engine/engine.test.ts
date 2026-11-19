@@ -11,8 +11,13 @@ import {
 } from './leagueEngine';
 import {
   COMPETITION_STYLE_MAP,
+  resolveCompetitionTrophyPhotoUrls,
   resolveFotMobCompetitionLogoUrls,
 } from '../components/TrophyAndKitVisuals';
+import {
+  detectTrophyWinFromMatch,
+  getCompetitionSilverwareMeta,
+} from '../components/SilverwareModals';
 import {
   computeSetPieceThreatScore,
   reconcileMatchResultEventsAndStats,
@@ -2253,6 +2258,215 @@ test('Stage 9 Complete Suite: 23 Playable Leagues (8 New), 30 Domestic/Super Cup
     'Red cards in PRE_SEASON_FRIENDLY must NOT trigger competitive suspensions'
   );
 });
+
+test('23. Stage 10 Complete Suite: 58 Real Physical Trophy Photographs, FotMob Separation & Trophy Lift Detection', () => {
+  // 1. Verify all 58 distinct competitions & individual awards have exact tmssl physical trophy photo URLs
+  const expectedTrophyIds: Record<string, string> = {
+    // 9 UEFA, Global & Individual Awards (+ aliases)
+    UEFA_UCL: '4',
+    UEFA_UEL: '264',
+    UEFA_UECL: '763',
+    UEFA_USC: '354',
+    FIFA_CWC: '318',
+    GLB_CWC: '318',
+    EURO_NATIONS: '102',
+    INT_EURO: '102',
+    WORLD_CUP: '101',
+    BALLON_DOR: '676',
+    GOLDEN_BOOT: '195',
+    // 23 Playable Leagues
+    ENG_PL: '12',
+    ESP_LL: '11',
+    GER_BL: '10',
+    ITA_SA: '13',
+    FRA_L1: '14',
+    POR_LP: '15',
+    NED_ED: '16',
+    AUT_BL: '17',
+    BEL_PL: '18',
+    SUI_SL: '19',
+    TUR_SL: '20',
+    SCO_PR: '21',
+    GRE_SL: '23',
+    BRA_SA: '275',
+    USA_MLS: '281',
+    JPN_J1: '352',
+    KSA_SPL: '380',
+    ENG_CH: '338',
+    GER_2B: '320',
+    ESP_SD: '339',
+    ITA_SB: '340',
+    FRA_L2: '341',
+    ENG_L1: '342',
+    // 17 Primary Domestic Cups
+    ENG_CUP: '29',
+    ESP_CUP: '94',
+    GER_CUP: '27',
+    ITA_CUP: '92',
+    FRA_CUP: '96',
+    POR_CUP: '97',
+    NED_CUP: '98',
+    AUT_CUP: '105',
+    SUI_CUP: '106',
+    TUR_CUP: '107',
+    BEL_CUP: '108',
+    SCO_CUP: '109',
+    GRE_CUP: '111',
+    BRA_CUP: '390',
+    USA_CUP: '436',
+    JPN_CUP: '441',
+    KSA_CUP: '475',
+    // 3 Secondary League Cups
+    ENG_LC: '47',
+    POR_LC: '337',
+    SCO_LC: '345',
+    // 9 National Super Cups
+    ENG_SC: '316',
+    ESP_SC: '93',
+    GER_SC: '312',
+    ITA_SC: '91',
+    FRA_SC: '328',
+    POR_SC: '336',
+    NED_SC: '327',
+    BEL_SC: '335',
+    TUR_SC: '344',
+  };
+
+  for (const [compId, expectedErfId] of Object.entries(expectedTrophyIds)) {
+    const entry = COMPETITION_STYLE_MAP[compId];
+    assert.ok(entry, `COMPETITION_STYLE_MAP must contain ${compId}`);
+    const expectedPrimary = `https://tmssl.akamaized.net/images/erfolge/verybigquad/${expectedErfId}.png`;
+    const expectedFallback = `https://tmssl.akamaized.net/images/erfolge/header/${expectedErfId}.png`;
+
+    assert.equal(
+      entry.trophyImageUrl,
+      expectedPrimary,
+      `${compId} must map to real physical trophy photo ${expectedPrimary}`
+    );
+
+    const resolvedTrophy = resolveCompetitionTrophyPhotoUrls(compId);
+    assert.equal(resolvedTrophy.primaryTrophyUrl, expectedPrimary);
+    assert.equal(resolvedTrophy.fallbackTrophyUrl, expectedFallback);
+
+    // Every non-individual competition must also have a FotMob 2D logo URL separate from trophyImageUrl
+    if (compId !== 'BALLON_DOR' && compId !== 'GOLDEN_BOOT') {
+      const resolvedLogo = resolveFotMobCompetitionLogoUrls(compId);
+      assert.ok(
+        resolvedLogo.darkUrl && resolvedLogo.darkUrl.startsWith('https://images.fotmob.com/image_resources/logo/leaguelogo/dark/'),
+        `${compId} must have a verified FotMob dark logo URL`
+      );
+      assert.notEqual(
+        resolvedLogo.darkUrl,
+        resolvedTrophy.primaryTrophyUrl,
+        `${compId} must separate FotMob 2D competition logo from real physical trophy photo`
+      );
+    }
+  }
+
+  // 2. Verify display-name resolution for Trophy History strings
+  assert.equal(
+    resolveCompetitionTrophyPhotoUrls('Premier League (England)').primaryTrophyUrl,
+    'https://tmssl.akamaized.net/images/erfolge/verybigquad/12.png'
+  );
+  assert.equal(
+    resolveCompetitionTrophyPhotoUrls('Emirates FA Cup').primaryTrophyUrl,
+    'https://tmssl.akamaized.net/images/erfolge/verybigquad/29.png'
+  );
+  assert.equal(
+    resolveCompetitionTrophyPhotoUrls('EFL Carabao Cup').primaryTrophyUrl,
+    'https://tmssl.akamaized.net/images/erfolge/verybigquad/47.png'
+  );
+
+  // 3. Verify Silverware Inspection Metadata & Championship Trophy Lift Detection
+  const world = createInitialWorldState(101010);
+  const uclMeta = getCompetitionSilverwareMeta('UEFA_UCL', world);
+  assert.equal(uclMeta.winnerPrizeMoney, 25_000_000);
+  assert.ok(uclMeta.pastWinners.length >= 1, 'UEFA_UCL Roll of Honour must include historical winners');
+
+  const myClubId = world.controlledClubId;
+  const rivalClubId = Object.keys(world.clubs).find((id) => id !== myClubId)!;
+  const mockFinalFixture = {
+    id: 'fix_stage10_fa_final',
+    competitionId: 'ENG_CUP' as const,
+    seasonId: world.currentSeason,
+    matchday: 5,
+    kickoffDate: '2026-05-16',
+    homeClubId: myClubId,
+    awayClubId: rivalClubId,
+    status: 'Scheduled' as const,
+    cupRound: 'FINAL' as const,
+  };
+  const worldWithFinal = {
+    ...world,
+    fixtures: [...world.fixtures, mockFinalFixture],
+  };
+
+  const makeMockTeamStats = (goals: number, xG: number) => ({
+    goals,
+    possession: 50,
+    totalShots: 12,
+    shotsOnTarget: 5,
+    blockedShots: 2,
+    xG,
+    passes: 420,
+    passAccuracy: 84,
+    tackles: 16,
+    interceptions: 10,
+    clearances: 14,
+    fouls: 9,
+    yellowCards: 1,
+    redCards: 0,
+    corners: 5,
+    offsides: 1,
+    saves: 3,
+    bigChances: 2,
+  });
+
+  // Win in normal time -> triggers Championship Trophy Lift Modal
+  const winLift = detectTrophyWinFromMatch(worldWithFinal, mockFinalFixture.id, {
+    homeGoals: 2,
+    awayGoals: 1,
+    homeStats: makeMockTeamStats(2, 2.1),
+    awayStats: makeMockTeamStats(1, 0.9),
+    events: [],
+    playerRatings: {},
+    manOfTheMatchPlayerId: '',
+    attendance: 88000,
+  });
+  assert.ok(winLift, 'Winning a Cup Final must trigger ChampionshipTrophyLiftModal data');
+  assert.equal(winLift?.competitionId, 'ENG_CUP');
+  assert.equal(winLift?.clubId, myClubId);
+  assert.ok((winLift?.prizeMoney || 0) >= 2_000_000);
+
+  // Loss in Final -> must NOT trigger Trophy Lift Modal
+  const lossLift = detectTrophyWinFromMatch(worldWithFinal, mockFinalFixture.id, {
+    homeGoals: 0,
+    awayGoals: 2,
+    homeStats: makeMockTeamStats(0, 0.8),
+    awayStats: makeMockTeamStats(2, 1.9),
+    events: [],
+    playerRatings: {},
+    manOfTheMatchPlayerId: '',
+    attendance: 88000,
+  });
+  assert.equal(lossLift, null, 'Losing a Cup Final must NOT trigger Trophy Lift Modal');
+
+  // Win on penalties -> triggers Trophy Lift Modal
+  const penWinLift = detectTrophyWinFromMatch(worldWithFinal, mockFinalFixture.id, {
+    homeGoals: 1,
+    awayGoals: 1,
+    penaltyShootout: { homePenalties: 5, awayPenalties: 4 },
+    homeStats: makeMockTeamStats(1, 1.4),
+    awayStats: makeMockTeamStats(1, 1.3),
+    events: [],
+    playerRatings: {},
+    manOfTheMatchPlayerId: '',
+    attendance: 88000,
+  });
+  assert.ok(penWinLift, 'Winning a Cup Final on penalties must trigger ChampionshipTrophyLiftModal data');
+  assert.ok(penWinLift?.scorelineText?.includes('5-4 pens'));
+});
+
 
 
 
