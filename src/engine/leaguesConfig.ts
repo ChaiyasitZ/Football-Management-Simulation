@@ -1,4 +1,4 @@
-import { FormationId, LeagueConfig, LeagueId, TacticalPresetId } from '../types/game';
+import { DerbyRivalry, FormationId, LeagueConfig, LeagueId, TacticalPresetId } from '../types/game';
 
 /**
  * Centralized League & Competition Configuration (Single Source of Truth — 2026/27 Season)
@@ -1312,3 +1312,98 @@ export const NATIONALITY_POOLS: Record<string, { firstNames: string[]; lastNames
     lastNames: ['Kubo', 'Mitoma', 'Endo', 'Minamino', 'Kamada', 'Doan', 'Ueda', 'Furuhashi', 'Morita', 'Tomiyasu', 'Itakura', 'Sugawara', 'Hatate', 'Maeda', 'Nakamura', 'Suzuki'],
   },
 };
+
+// ============================================================================
+// FIERCE DERBY & ARCH-RIVALRY CATALOG (48 GLOBAL DERBIES ACROSS 23 LEAGUES)
+// ============================================================================
+export const DERBY_RIVALRIES_CATALOG: DerbyRivalry[] = [
+  // England (Premier League, Championship, League One)
+  { id: 'eng_north_london', clubShortA: 'ARS', clubShortB: 'TOT', nameEn: 'North London Derby', nameTh: 'นอร์ทลอนดอน ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'eng_northwest', clubShortA: 'LIV', clubShortB: 'MUN', nameEn: 'North-West Derby', nameTh: 'ศึกแดงเดือด (North-West Derby)', intensity: 'FIERCE' },
+  { id: 'eng_manchester', clubShortA: 'MCI', clubShortB: 'MUN', nameEn: 'Manchester Derby', nameTh: 'แมนเชสเตอร์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'eng_merseyside', clubShortA: 'LIV', clubShortB: 'EVE', nameEn: 'Merseyside Derby', nameTh: 'เมอร์ซีย์ไซด์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'eng_tyne_wear', clubShortA: 'NEW', clubShortB: 'SUN', nameEn: 'Tyne-Wear Derby', nameTh: 'ไทน์-แวร์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'eng_west_london', clubShortA: 'CHE', clubShortB: 'FUL', nameEn: 'West London Derby', nameTh: 'เวสต์ลอนดอน ดาร์บี้', intensity: 'HISTORIC' },
+  { id: 'eng_london_ars_che', clubShortA: 'ARS', clubShortB: 'CHE', nameEn: 'London Clash', nameTh: 'ศึกลอนดอน ดาร์บี้', intensity: 'HISTORIC' },
+  { id: 'eng_second_city', clubShortA: 'AVL', clubShortB: 'BIR', nameEn: 'Second City Derby', nameTh: 'เบอร์มิงแฮม ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'eng_east_anglia', clubShortA: 'NOR', clubShortB: 'IPS', nameEn: 'East Anglian Derby', nameTh: 'อีสต์แองเกลีย ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'eng_steel_city', clubShortA: 'SHU', clubShortB: 'SHW', nameEn: 'Steel City Derby', nameTh: 'สตีลซิตี้ ดาร์บี้ (เชฟฟิลด์)', intensity: 'FIERCE' },
+  { id: 'eng_south_wales', clubShortA: 'SWA', clubShortB: 'CARF', nameEn: 'South Wales Derby', nameTh: 'เซาท์เวลส์ ดาร์บี้', intensity: 'FIERCE' },
+
+  // Spain (La Liga & Segunda)
+  { id: 'esp_clasico', clubShortA: 'RMA', clubShortB: 'BAR', nameEn: 'El Clásico', nameTh: 'เอล กลาซิโก้', intensity: 'FIERCE' },
+  { id: 'esp_madrileno', clubShortA: 'RMA', clubShortB: 'ATM', nameEn: 'El Derbi Madrileño', nameTh: 'มาดริด ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'esp_gran_derbi', clubShortA: 'BET', clubShortB: 'SEV', nameEn: 'El Gran Derbi (Seville)', nameTh: 'เซบีย่า ดาร์บี้ (El Gran Derbi)', intensity: 'FIERCE' },
+  { id: 'esp_basque', clubShortA: 'ATH', clubShortB: 'RSO', nameEn: 'Basque Derby', nameTh: 'บาสก์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'esp_barceloni', clubShortA: 'BAR', clubShortB: 'ESP', nameEn: 'Derbi Barceloní', nameTh: 'บาร์เซโลน่า ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'esp_valencia', clubShortA: 'VAL', clubShortB: 'LEV', nameEn: 'Derbi del Turia (Valencia)', nameTh: 'บาเลนเซีย ดาร์บี้', intensity: 'HISTORIC' },
+
+  // Germany (Bundesliga & 2. Bundesliga)
+  { id: 'ger_klassiker', clubShortA: 'FCB', clubShortB: 'BVB', nameEn: 'Der Klassiker', nameTh: 'แดร์ คลาสสิเคอร์', intensity: 'FIERCE' },
+  { id: 'ger_revier', clubShortA: 'BVB', clubShortB: 'S04', nameEn: 'Revierderby', nameTh: 'เรเวียร์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'ger_hamburg', clubShortA: 'HSV', clubShortB: 'STP', nameEn: 'Hamburger Stadtderby', nameTh: 'ฮัมบูร์ก ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'ger_rhine_b04_koe', clubShortA: 'B04', clubShortB: 'KOE', nameEn: 'Rhine Derby', nameTh: 'ไรน์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'ger_rhine_bmg_koe', clubShortA: 'BMG', clubShortB: 'KOE', nameEn: 'Rheinisches Derby', nameTh: 'ไรน์นิช ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'ger_berlin', clubShortA: 'FCU', clubShortB: 'BSC', nameEn: 'Berlin Derby', nameTh: 'เบอร์ลิน ดาร์บี้', intensity: 'FIERCE' },
+
+  // Italy (Serie A & Serie B)
+  { id: 'ita_madonnina', clubShortA: 'INT', clubShortB: 'MIL', nameEn: 'Derby della Madonnina', nameTh: 'มิลาน ดาร์บี้ (Madonnina)', intensity: 'FIERCE' },
+  { id: 'ita_ditalia', clubShortA: 'INT', clubShortB: 'JUV', nameEn: "Derby d'Italia", nameTh: 'ดาร์บี้ อิตาเลีย', intensity: 'FIERCE' },
+  { id: 'ita_capitale', clubShortA: 'ROM', clubShortB: 'LAZ', nameEn: 'Derby della Capitale', nameTh: 'โรม ดาร์บี้ (Capitale)', intensity: 'FIERCE' },
+  { id: 'ita_mole', clubShortA: 'JUV', clubShortB: 'TOR', nameEn: 'Derby della Mole', nameTh: 'ตูริน ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'ita_sole', clubShortA: 'NAP', clubShortB: 'ROM', nameEn: 'Derby del Sole', nameTh: 'ดาร์บี้ เดล โซเล่', intensity: 'HISTORIC' },
+  { id: 'ita_lanterna', clubShortA: 'GEN', clubShortB: 'SAM2', nameEn: 'Derby della Lanterna', nameTh: 'เจนัว ดาร์บี้ (Lanterna)', intensity: 'FIERCE' },
+
+  // France (Ligue 1 & Ligue 2)
+  { id: 'fra_classique', clubShortA: 'PSG', clubShortB: 'OM', nameEn: 'Le Classique', nameTh: 'เลอ กลาซิก (PSG vs OM)', intensity: 'FIERCE' },
+  { id: 'fra_olympiques', clubShortA: 'OL', clubShortB: 'OM', nameEn: 'Choc des Olympiques', nameTh: 'ศึกโอลิมปิก (OL vs OM)', intensity: 'FIERCE' },
+  { id: 'fra_du_nord', clubShortA: 'LOSC', clubShortB: 'RCL', nameEn: 'Derby du Nord', nameTh: 'ดาร์บี้ ดู นอร์ด', intensity: 'FIERCE' },
+  { id: 'fra_paris', clubShortA: 'PSG', clubShortB: 'PFC', nameEn: 'Paris Derby', nameTh: 'ปารีส ดาร์บี้', intensity: 'HISTORIC' },
+  { id: 'fra_rhone', clubShortA: 'OL', clubShortB: 'ASSE', nameEn: 'Derby Rhône-Alpes', nameTh: 'โรน-อัลป์ ดาร์บี้', intensity: 'FIERCE' },
+
+  // European Challenger Leagues (POR, NED, BEL, TUR, SCO, AUT, SUI, GRE)
+  { id: 'por_classico', clubShortA: 'SLB', clubShortB: 'FCP', nameEn: 'O Clássico', nameTh: 'โอ กลาซิโก้ (โปรตุเกส)', intensity: 'FIERCE' },
+  { id: 'por_lisboa', clubShortA: 'SLB', clubShortB: 'SCP', nameEn: 'Derby de Lisboa', nameTh: 'ลิสบอน ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'ned_klassieker', clubShortA: 'AJX', clubShortB: 'FEY', nameEn: 'De Klassieker', nameTh: 'เดอ คลาสสิเคอร์ (ฮอลแลนด์)', intensity: 'FIERCE' },
+  { id: 'ned_topper', clubShortA: 'AJX', clubShortB: 'PSV', nameEn: 'De Topper', nameTh: 'เดอ ท็อปเปอร์', intensity: 'FIERCE' },
+  { id: 'bel_topper', clubShortA: 'CLB', clubShortB: 'AND', nameEn: 'De Topper (Belgium)', nameTh: 'ศึกยักษ์ใหญ่เบลเยียม', intensity: 'FIERCE' },
+  { id: 'tur_intercontinental', clubShortA: 'GAL', clubShortB: 'FEN', nameEn: 'Kıtalararası Derbi (Istanbul)', nameTh: 'ศึกข้ามทวีปอิสตันบูล (GAL vs FEN)', intensity: 'FIERCE' },
+  { id: 'tur_gal_bjk', clubShortA: 'GAL', clubShortB: 'BJK', nameEn: 'Istanbul Derby (GAL vs BJK)', nameTh: 'อิสตันบูล ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'sco_old_firm', clubShortA: 'CELT', clubShortB: 'RAN', nameEn: 'Old Firm Derby', nameTh: 'โอลด์เฟิร์ม ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'aut_vienna', clubShortA: 'RAP', clubShortB: 'FAK', nameEn: 'Wiener Derby', nameTh: 'เวียนนา ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'sui_klassiker', clubShortA: 'FCB2', clubShortB: 'FCZ', nameEn: 'Swiss Klassiker', nameTh: 'สวิส คลาสสิเคอร์', intensity: 'FIERCE' },
+  { id: 'gre_eternal', clubShortA: 'OLY', clubShortB: 'PAO', nameEn: 'Derby of the Eternal Enemies', nameTh: 'ศึกคู่แค้นตลอดกาลกรีซ', intensity: 'FIERCE' },
+  { id: 'gre_oly_aek', clubShortA: 'OLY', clubShortB: 'AEK', nameEn: 'Athens–Piraeus Clash', nameTh: 'เอเธนส์-ไพรีอัส ดาร์บี้', intensity: 'FIERCE' },
+
+  // Global Leagues (Saudi, MLS, Brazil, Japan)
+  { id: 'ksa_clasico', clubShortA: 'HIL', clubShortB: 'ITT', nameEn: 'Saudi El Clásico', nameTh: 'ซาอุดี เอล กลาซิโก้', intensity: 'FIERCE' },
+  { id: 'ksa_riyadh', clubShortA: 'HIL', clubShortB: 'NAS', nameEn: 'Riyadh Derby', nameTh: 'ริยาด ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'usa_el_trafico', clubShortA: 'LAG', clubShortB: 'LAFC', nameEn: 'El Tráfico (LA Derby)', nameTh: 'เอล ทราฟิโก้ (แอลเอ ดาร์บี้)', intensity: 'FIERCE' },
+  { id: 'usa_hudson', clubShortA: 'RBNY', clubShortB: 'NYC', nameEn: 'Hudson River Derby', nameTh: 'ฮัดสัน ริเวอร์ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'bra_fla_flu', clubShortA: 'FLA', clubShortB: 'FLU', nameEn: 'Fla-Flu Derby', nameTh: 'ฟลา-ฟลู ดาร์บี้ (ริโอ)', intensity: 'FIERCE' },
+  { id: 'bra_paulista', clubShortA: 'PAL', clubShortB: 'COR', nameEn: 'Derby Paulista', nameTh: 'เปาลิสต้า ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'bra_san_sao', clubShortA: 'SAO', clubShortB: 'SAN', nameEn: 'San-São Derby', nameTh: 'ซาน-เซา ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'bra_mineiro', clubShortA: 'CAM', clubShortB: 'CRU', nameEn: 'Clássico Mineiro', nameTh: 'มิไนโร่ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'jpn_kanagawa', clubShortA: 'YFM', clubShortB: 'KAW', nameEn: 'Kanagawa Derby', nameTh: 'คานางาวะ ดาร์บี้', intensity: 'FIERCE' },
+  { id: 'jpn_national', clubShortA: 'URA', clubShortB: 'KASH', nameEn: 'J1 National Derby', nameTh: 'เจลีก เนชั่นแนล ดาร์บี้', intensity: 'HISTORIC' },
+];
+
+const DERBY_LOOKUP_MAP = new Map<string, DerbyRivalry>();
+for (const d of DERBY_RIVALRIES_CATALOG) {
+  const key1 = `${d.clubShortA.toUpperCase()}__${d.clubShortB.toUpperCase()}`;
+  const key2 = `${d.clubShortB.toUpperCase()}__${d.clubShortA.toUpperCase()}`;
+  DERBY_LOOKUP_MAP.set(key1, d);
+  DERBY_LOOKUP_MAP.set(key2, d);
+}
+
+/**
+ * O(1) lookup to detect whether a match between two clubs is a Fierce Derby or Arch-Rivalry.
+ */
+export function getDerbyRivalryForClubs(
+  clubA?: { shortName?: string } | null,
+  clubB?: { shortName?: string } | null
+): DerbyRivalry | null {
+  if (!clubA?.shortName || !clubB?.shortName) return null;
+  const key = `${clubA.shortName.toUpperCase()}__${clubB.shortName.toUpperCase()}`;
+  return DERBY_LOOKUP_MAP.get(key) || null;
+}

@@ -13,9 +13,11 @@ import {
 } from '../types/game';
 import {
   computeMatchPassingNetwork,
+  evaluateTacticalCounterMatchup,
   reconcileMatchResultEventsAndStats,
   simulateMatch,
 } from '../engine/matchEngine';
+import { getDerbyRivalryForClubs } from '../engine/leaguesConfig';
 import { computeTacticalPhaseCoordinates } from '../engine/tacticsEngine';
 import { soundService } from '../engine/soundService';
 import { ClubBadge } from './ClubBadge';
@@ -459,11 +461,37 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
       ...futureEvents,
     ];
 
+    const pastShifts = (simResult?.aiTacticalShifts || []).filter(
+      (s) => s.minute <= currentMinute
+    );
+    const futureShifts = (newSim.aiTacticalShifts || []).filter(
+      (s) => s.minute > currentMinute
+    );
+    const mergedShifts = [...pastShifts, ...futureShifts];
+    const latestOppShift = [...mergedShifts]
+      .reverse()
+      .find((s) => s.teamId !== myClub.id);
+    const liveCounterEval = latestOppShift
+      ? evaluateTacticalCounterMatchup(updatedTactic, latestOppShift)
+      : null;
+
     const reconciled = reconcileMatchResultEventsAndStats(
       targetFixture,
       homeClub,
       awayClub,
-      newSim,
+      {
+        ...newSim,
+        aiTacticalShifts: mergedShifts.length > 0 ? mergedShifts : undefined,
+        tacticalCounterBonus:
+          liveCounterEval?.matched
+            ? {
+                teamId: myClub.id,
+                labelEn: liveCounterEval.labelEn,
+                labelTh: liveCounterEval.labelTh,
+                xgMultiplier: liveCounterEval.xgMultiplier,
+              }
+            : newSim.tacticalCounterBonus,
+      },
       mergedEvents
     );
     setSimResult(reconciled);
@@ -2244,6 +2272,127 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Stage 14 Phase 2 & 3: Fierce Rivalry Derby Banner & Live Opponent AI Tactical Shift Dugout Alert */}
+      {(() => {
+        const activeDerby =
+          simResult?.derbyRivalry || getDerbyRivalryForClubs(homeClub, awayClub);
+        const visibleOppShifts = (simResult?.aiTacticalShifts || []).filter(
+          (s) => s.teamId !== myClub.id && currentMinute >= s.minute
+        );
+        const latestOppShift =
+          visibleOppShifts.length > 0
+            ? visibleOppShifts[visibleOppShifts.length - 1]
+            : null;
+        const liveCounterStatus = latestOppShift
+          ? evaluateTacticalCounterMatchup(myClub.primaryTactic, latestOppShift)
+          : null;
+
+        const handleApplyTacticalCounter = () => {
+          if (!latestOppShift || !targetFixture || currentMinute >= maxMatchMinute) return;
+          const nextInstructions =
+            latestOppShift.mode === 'LOW_BLOCK_COUNTER'
+              ? {
+                  ...myClub.primaryTactic.instructions,
+                  attackingWidth: 'Wide' as const,
+                  passingDirectness: 'Shorter' as const,
+                  mentality: 'Attacking' as const,
+                }
+              : {
+                  ...myClub.primaryTactic.instructions,
+                  passingDirectness: 'More Direct' as const,
+                  tempo: 'Higher' as const,
+                  whenPossessionWon: 'Counter' as const,
+                };
+          const updatedTactic: TacticalSystem = {
+            ...myClub.primaryTactic,
+            instructions: nextInstructions,
+          };
+          setLiveMentality(nextInstructions.mentality);
+          onUpdateClubTactic(updatedTactic);
+          reSimulateRemainingMinutes(updatedTactic, liveSubstitutions, {
+            id: `tac_counter_${currentMinute}_${latestOppShift.mode}`,
+            fixtureId: targetFixture.id,
+            minute: Math.max(1, currentMinute),
+            eventType: 'TacticalChange',
+            teamId: myClub.id,
+            text: tr(
+              `Min ${currentMinute}': ⚡ TACTICAL COUNTER (${myClub.shortName}) — Manager counters ${latestOppShift.clubShortName}'s ${latestOppShift.newFormation} shift (+15% xG Outclass Bonus activated)!`,
+              `นาที ${currentMinute}': ⚡ แก้เกมโต้กลับ (${myClub.shortName}) — ปรับแท็กติกแก้ทางแผน ${latestOppShift.newFormation} ของ ${latestOppShift.clubShortName} สำเร็จ (ปลดล็อกโบนัสสร้างโอกาส +15% xG)!`
+            ),
+            pitchX: 50,
+            pitchY: 50,
+            isHighlight: true,
+          });
+        };
+
+        if (!activeDerby && !latestOppShift) return null;
+
+        return (
+          <div className="px-3 py-1 bg-slate-950/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2 shrink-0">
+            {activeDerby && (
+              <div
+                data-testid="match-derby-banner"
+                className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-gradient-to-r from-rose-950/90 to-amber-950/80 border border-rose-500/50 text-xs"
+              >
+                <span>🔥</span>
+                <span className="font-display font-bold uppercase tracking-wider text-rose-300">
+                  {tr(
+                    `DERBY: ${activeDerby.nameEn}`,
+                    `ดาร์บี้แมตช์: ${activeDerby.nameTh}`
+                  )}
+                </span>
+                <span className="text-[11px] font-mono text-amber-300/90 hidden sm:inline">
+                  · {homeClub.stadiumCapacity.toLocaleString()} {tr('Sold Out', 'เต็มความจุ')} · 2x {tr('Morale', 'กำลังใจ')}
+                </span>
+              </div>
+            )}
+
+            {latestOppShift && (
+              <div
+                data-testid="ai-tactical-shift-banner"
+                className="flex-1 min-w-[280px] flex flex-wrap items-center justify-between gap-2 px-3 py-1 rounded-lg bg-amber-950/75 border border-amber-500/50 text-xs"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-bold text-[10px] shrink-0">
+                    ⚠️ {latestOppShift.minute}&apos; {latestOppShift.newFormation}
+                  </span>
+                  <span className="text-amber-100 font-medium truncate">
+                    {tr(latestOppShift.descriptionEn, latestOppShift.descriptionTh)}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {liveCounterStatus?.matched ? (
+                    <span
+                      data-testid="tactical-outclass-bonus-badge"
+                      className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 font-semibold text-[11px]"
+                    >
+                      ⚡ {tr('Tactical Outclass Bonus (+15% xG) Active', 'โบนัสแก้เกมเหนือชั้น (+15% xG) ทำงานอยู่')}
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-[11px] text-amber-300/90 hidden xl:inline">
+                        {tr(latestOppShift.recommendedCounterEn, latestOppShift.recommendedCounterTh)}
+                      </span>
+                      {currentMinute < maxMatchMinute && (
+                        <button
+                          type="button"
+                          data-testid="apply-tactical-counter-btn"
+                          onClick={handleApplyTacticalCounter}
+                          className="px-2.5 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] cursor-pointer whitespace-nowrap transition-colors"
+                        >
+                          ⚡ {tr('Counter Now (+15% xG)', 'ปรับแก้ทางทันที (+15% xG)')}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Collapsible Touchline Shouts & AssMan Co-Pilot Strip */}
       <div

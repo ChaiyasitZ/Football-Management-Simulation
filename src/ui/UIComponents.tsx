@@ -23,7 +23,7 @@ import {
   PreSeasonTourRegion,
   WorldState,
 } from '../types/game';
-import { LEAGUES_CONFIG } from '../engine/leaguesConfig';
+import { getDerbyRivalryForClubs, LEAGUES_CONFIG } from '../engine/leaguesConfig';
 import {
   evaluateSquadMedicalRisk,
   getAgeAtDate,
@@ -1015,6 +1015,37 @@ export const PortalView: React.FC<{
 
           {nextFixture && nextOpponent ? (
             <div className="space-y-4">
+              {(() => {
+                const upcomingDerby = getDerbyRivalryForClubs(club, nextOpponent);
+                if (!upcomingDerby) return null;
+                return (
+                  <div
+                    data-testid="dashboard-derby-banner"
+                    className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-rose-950/90 via-amber-950/75 to-rose-950/90 border border-rose-500/50 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-base shrink-0">🔥</span>
+                      <div className="min-w-0">
+                        <div className="text-xs font-display font-bold uppercase tracking-wider text-rose-300 truncate">
+                          {tr(
+                            `FIERCE RIVALRY DERBY: ${upcomingDerby.nameEn}`,
+                            `ศึกดาร์บี้แมตช์หยุดโลก: ${upcomingDerby.nameTh}`
+                          )}
+                        </div>
+                        <div className="text-[11px] text-amber-200/90">
+                          {tr(
+                            'Sold-Out Stadium · +25% Tackle Intensity · 2x Morale & Fan Confidence Swing',
+                            'สนามแตกเต็มความจุ · เข้าปะทะดุเดือด +25% · ขวัญกำลังใจและศรัทธาแฟนบอลคูณสอง'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-400/40 text-[10px] font-mono font-bold text-rose-200 uppercase shrink-0">
+                      {upcomingDerby.intensity}
+                    </span>
+                  </div>
+                );
+              })()}
               <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3">
                 {/* Home Team */}
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">

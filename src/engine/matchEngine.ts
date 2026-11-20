@@ -4,6 +4,7 @@ import {
   Fixture,
   FreeKickRoutineType,
   HalfTimeTalkType,
+  LiveAiTacticalShift,
   MatchEvent,
   MatchResult,
   MatchTeamStats,
@@ -14,6 +15,7 @@ import {
   TouchlineShoutType,
   WeatherCondition,
 } from '../types/game';
+import { getDerbyRivalryForClubs } from './leaguesConfig';
 import { SeededRNG } from './random';
 import {
   calculatePositionFit,
@@ -22,6 +24,49 @@ import {
   evaluateRoleSuitability,
 } from './tacticsEngine';
 import { trText } from '../i18n/LanguageContext';
+
+export function evaluateTacticalCounterMatchup(
+  userTactic: TacticalSystem,
+  aiShift: LiveAiTacticalShift
+): { matched: boolean; xgMultiplier: number; labelEn: string; labelTh: string } {
+  const ins = userTactic.instructions;
+  if (aiShift.mode === 'LOW_BLOCK_COUNTER') {
+    const wideStretch = ins.attackingWidth === 'Wide';
+    const incisiveAttack =
+      ins.passingDirectness === 'Shorter' ||
+      ins.passingDirectness === 'Much Shorter' ||
+      ins.mentality === 'Attacking' ||
+      ins.mentality === 'Very Attacking';
+    if (wideStretch && incisiveAttack) {
+      return {
+        matched: true,
+        xgMultiplier: 1.15,
+        labelEn: 'Tactical Outclass (+15% xG): Wide & incisive play unlocks the 5-4-1 Low Block!',
+        labelTh: 'แก้เกมเหนือชั้น (+15% xG): เปิดเกมรุกริมเส้นกว้างเจาะแนวรับ 5-4-1 Low Block สำเร็จ!',
+      };
+    }
+  } else if (aiShift.mode === 'ALL_OUT_ATTACK') {
+    const directTransition =
+      ins.passingDirectness === 'More Direct' ||
+      ins.passingDirectness === 'Much More Direct' ||
+      ins.tempo === 'Higher' ||
+      ins.tempo === 'Much Higher';
+    const counterShape =
+      ins.whenPossessionWon === 'Counter' ||
+      ins.mentality === 'Cautious' ||
+      ins.mentality === 'Defensive' ||
+      ins.defensiveLine === 'Deep';
+    if (directTransition && counterShape) {
+      return {
+        matched: true,
+        xgMultiplier: 1.15,
+        labelEn: 'Tactical Outclass (+15% xG): Direct counter-attacks punish their high defensive line!',
+        labelTh: 'แก้เกมเหนือชั้น (+15% xG): บอลเร็วสวนกลับฉีกแนวรับดันสูงของคู่แข่งกระจุย!',
+      };
+    }
+  }
+  return { matched: false, xgMultiplier: 1.0, labelEn: '', labelTh: '' };
+}
 
 interface TeamMatchStrength {
   attack: number;
@@ -695,9 +740,22 @@ export function simulateMatch(
     awayStrength.cornerMultiplier *= 0.9;
   }
 
+  const derbyRivalry = getDerbyRivalryForClubs(homeClub, awayClub);
+  if (derbyRivalry) {
+    // Fierce Derby Atmosphere: +25% tackle/yellow-card intensity & slightly higher match tempo
+    homeStrength.foulMultiplier *= 1.25;
+    awayStrength.foulMultiplier *= 1.25;
+    homeStrength.tempoModifier *= 1.05;
+    awayStrength.tempoModifier *= 1.05;
+  }
+
   const homeStats = createEmptyTeamStats();
   const awayStats = createEmptyTeamStats();
   const events: MatchEvent[] = [];
+  const aiTacticalShifts: LiveAiTacticalShift[] = [];
+  let homeCounterXgMult = 1.0;
+  let awayCounterXgMult = 1.0;
+  let activeCounterBonus: MatchResult['tacticalCounterBonus'] = null;
   const recordedSubstitutions: { minute: number; teamId: string; playerOutId: string; playerInId: string }[] = [
     ...(options?.substitutions || []),
   ];
@@ -782,12 +840,18 @@ export function simulateMatch(
     minute: 1,
     eventType: 'KickOff',
     teamId: homeClub.id,
-    text: trText(
-      `The referee blows the whistle to kick off the match between ${homeClub.name} and ${awayClub.name}!`,
-      `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`
-    ),
+    text: derbyRivalry
+      ? trText(
+          `🔥 DERBY DAY (${derbyRivalry.nameEn}): A sold-out crowd of ${homeClub.stadiumCapacity.toLocaleString()} roars as ${homeClub.name} kick off against arch-rivals ${awayClub.name}!`,
+          `🔥 ศึกดาร์บี้แมตช์ (${derbyRivalry.nameTh}): แฟนบอลแน่นเต็มความจุ ${homeClub.stadiumCapacity.toLocaleString()} คน! ผู้ตัดสินเป่านกหวีดเริ่มเกมระหว่าง ${homeClub.name} พบคู่ปรับตลอดกาล ${awayClub.name}!`
+        )
+      : trText(
+          `The referee blows the whistle to kick off the match between ${homeClub.name} and ${awayClub.name}!`,
+          `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`
+        ),
     pitchX: 50,
     pitchY: 50,
+    isHighlight: Boolean(derbyRivalry),
   });
 
   const sentOffIds = new Set<string>();
@@ -951,12 +1015,14 @@ export function simulateMatch(
         }
       }
 
-      // Dynamic AI In-Match Tactical Adaptation (Minutes 62 & 76)
-      if (minute === 62 || minute === 76) {
+      // Dynamic AI In-Match Tactical Adaptation (Minutes 60 & 75)
+      if (minute === 60 || minute === 75) {
         const evalAiTeam = (
           aiClub: Club,
           aiTactic: TacticalSystem,
           aiStr: TeamMatchStrength,
+          oppClub: Club,
+          oppTactic: TacticalSystem,
           myGoals: number,
           oppGoals: number
         ) => {
@@ -967,37 +1033,102 @@ export function simulateMatch(
           const diff = myGoals - oppGoals;
           const mgrName = aiClub.aiManager?.name || `${aiClub.shortName} Manager`;
           const mgrStyle = aiClub.aiManager?.style || 'Pragmatic Manager';
+          const alreadyShiftedMode = aiTacticalShifts.find((s) => s.teamId === aiClub.id)?.mode;
 
-          if (minute === 62 && diff < 0) {
-            aiStr.attack *= 1.11;
-            aiStr.pressModifier *= 1.07;
-            aiStr.defense *= 0.94;
+          let triggeredMode: 'ALL_OUT_ATTACK' | 'LOW_BLOCK_COUNTER' | null = null;
+
+          if (diff < 0 && alreadyShiftedMode !== 'ALL_OUT_ATTACK') {
+            triggeredMode = 'ALL_OUT_ATTACK';
+            aiStr.attack *= 1.13;
+            aiStr.pressModifier *= 1.09;
+            aiStr.defense *= 0.92;
+            aiStr.highLineVulnerability += 0.14;
+            const shift: LiveAiTacticalShift = {
+              minute,
+              teamId: aiClub.id,
+              clubShortName: aiClub.shortName,
+              managerName: mgrName,
+              newFormation: '3-4-3',
+              mode: 'ALL_OUT_ATTACK',
+              descriptionEn: `${mgrName} (${mgrStyle}) switches ${aiClub.shortName} to an aggressive 3-4-3 All-Out Attack with Very High Press to chase the game!`,
+              descriptionTh: `${mgrName} ปรับหมาก ${aiClub.shortName} เป็นแผน 3-4-3 บุกเต็มสูบและเพรสซิ่งสูงเพื่อทวงประตูคืน!`,
+              recommendedCounterEn: 'Counter: Use More Direct / Higher Tempo + Counter-Attack to punish space behind their high line (+15% xG).',
+              recommendedCounterTh: 'วิธีแก้ทาง: ปรับส่งบอลยาวขึ้น/สปีดเร็ว + สวนกลับเร็ว (Counter) เจาะพื้นที่หลังแนวรับดันสูง (+15% xG)',
+            };
+            aiTacticalShifts.push(shift);
+
+            const counterEval = evaluateTacticalCounterMatchup(oppTactic, shift);
+            if (counterEval.matched) {
+              if (oppClub.id === homeClub.id) {
+                homeCounterXgMult = Math.max(homeCounterXgMult, counterEval.xgMultiplier);
+              } else {
+                awayCounterXgMult = Math.max(awayCounterXgMult, counterEval.xgMultiplier);
+              }
+              activeCounterBonus = {
+                teamId: oppClub.id,
+                labelEn: counterEval.labelEn,
+                labelTh: counterEval.labelTh,
+                xgMultiplier: counterEval.xgMultiplier,
+              };
+            }
+
             events.push({
-              id: `${fixture.id}_ev_62_aitac_${aiClub.id}`,
+              id: `${fixture.id}_ev_${minute}_aitac_${aiClub.id}`,
               fixtureId: fixture.id,
-              minute: 62,
+              minute,
               eventType: 'TacticalChange',
               teamId: aiClub.id,
               text: trText(
-                `Min 62': Tactical Shift (${aiClub.shortName}) — ${mgrName} (${mgrStyle}) switches to an Attacking mentality with a high press to chase the game!`,
-                `นาที 62': ปรับหมากแก้เกม (${aiClub.shortName}) — ${mgrName} สั่งลูกทีมเปิดเกมรุกเต็มสูบและบีบพื้นที่สูงเพื่อทวงประตูคืน!`
+                `Min ${minute}': ⚠️ OPPONENT TACTICAL SHIFT (${aiClub.shortName}) — ${shift.descriptionEn}`,
+                `นาที ${minute}': ⚠️ คู่แข่งปรับแท็กติก (${aiClub.shortName}) — ${shift.descriptionTh}`
               ),
               pitchX: 50,
               pitchY: 50,
               isHighlight: true,
             });
-          } else if (minute === 76 && diff === 1) {
-            aiStr.defense *= 1.12;
-            aiStr.attack *= 0.92;
+          } else if (minute === 75 && diff === 1 && alreadyShiftedMode !== 'LOW_BLOCK_COUNTER') {
+            triggeredMode = 'LOW_BLOCK_COUNTER';
+            aiStr.defense *= 1.14;
+            aiStr.attack *= 0.91;
+            aiStr.tempoModifier *= 0.93;
+            const shift: LiveAiTacticalShift = {
+              minute: 75,
+              teamId: aiClub.id,
+              clubShortName: aiClub.shortName,
+              managerName: mgrName,
+              newFormation: '5-4-1',
+              mode: 'LOW_BLOCK_COUNTER',
+              descriptionEn: `${mgrName} drops ${aiClub.shortName} into a compact 5-4-1 Low Block & Time Wasting to protect the narrow 1-goal lead.`,
+              descriptionTh: `${mgrName} สั่ง ${aiClub.shortName} ถอยแพ็ก 5-4-1 Low Block และดึงจังหวะเพื่อรักษาสกอร์นำ 1 ประตู`,
+              recommendedCounterEn: 'Counter: Stretch play with Attacking Width: Wide + Shorter Passing (or Attacking Mentality) (+15% xG).',
+              recommendedCounterTh: 'วิธีแก้ทาง: เปิดพื้นที่กว้าง (Wide) + จ่ายบอลสั้นเจาะช่อง หรือบุกเต็มตัว (+15% xG)',
+            };
+            aiTacticalShifts.push(shift);
+
+            const counterEval = evaluateTacticalCounterMatchup(oppTactic, shift);
+            if (counterEval.matched) {
+              if (oppClub.id === homeClub.id) {
+                homeCounterXgMult = Math.max(homeCounterXgMult, counterEval.xgMultiplier);
+              } else {
+                awayCounterXgMult = Math.max(awayCounterXgMult, counterEval.xgMultiplier);
+              }
+              activeCounterBonus = {
+                teamId: oppClub.id,
+                labelEn: counterEval.labelEn,
+                labelTh: counterEval.labelTh,
+                xgMultiplier: counterEval.xgMultiplier,
+              };
+            }
+
             events.push({
-              id: `${fixture.id}_ev_76_aitac_${aiClub.id}`,
+              id: `${fixture.id}_ev_75_aitac_${aiClub.id}`,
               fixtureId: fixture.id,
-              minute: 76,
+              minute: 75,
               eventType: 'TacticalChange',
               teamId: aiClub.id,
               text: trText(
-                `Min 76': Tactical Shift (${aiClub.shortName}) — ${mgrName} drops into a compact Defensive block to protect the narrow lead.`,
-                `นาที 76': ปรับหมากแก้เกม (${aiClub.shortName}) — ${mgrName} สั่งลูกทีมถอยลงมาแพ็กเกมรับรัดกุมเพื่อรักษาสกอร์นำ`
+                `Min 75': ⚠️ OPPONENT TACTICAL SHIFT (${aiClub.shortName}) — ${shift.descriptionEn}`,
+                `นาที 75': ⚠️ คู่แข่งปรับแท็กติก (${aiClub.shortName}) — ${shift.descriptionTh}`
               ),
               pitchX: 50,
               pitchY: 50,
@@ -1005,7 +1136,7 @@ export function simulateMatch(
             });
           }
 
-          // AI Fresh-Legs Substitution from bench
+          // AI Tactical / Fresh-Legs Substitution from bench
           const usedIds = new Set([
             ...aiStr.activePlayers.map((p) => p.id),
             ...recordedSubstitutions.map((s) => s.playerInId),
@@ -1017,9 +1148,16 @@ export function simulateMatch(
           const outfieldActive = aiStr.activePlayers.filter(
             (p) => p.positions[0] !== 'GK' && !sentOffIds.has(p.id)
           );
-          if (benchCandidates.length > 0 && outfieldActive.length > 0 && rng.chance(0.65)) {
+          if (benchCandidates.length > 0 && outfieldActive.length > 0 && (triggeredMode !== null || rng.chance(0.65))) {
+            // Prefer attacking sub when chasing, defensive sub when parking the bus
+            const preferredSub =
+              triggeredMode === 'ALL_OUT_ATTACK'
+                ? benchCandidates.find((p) => ['ST', 'AMR', 'AML', 'AMC'].includes(p.positions[0])) || benchCandidates[0]
+                : triggeredMode === 'LOW_BLOCK_COUNTER'
+                  ? benchCandidates.find((p) => ['DC', 'DM', 'DR', 'DL'].includes(p.positions[0])) || benchCandidates[0]
+                  : benchCandidates[0];
             const pOut = outfieldActive[outfieldActive.length - 1];
-            const pIn = benchCandidates[0];
+            const pIn = preferredSub;
             recordedSubstitutions.push({
               minute,
               teamId: aiClub.id,
@@ -1054,8 +1192,8 @@ export function simulateMatch(
           }
         };
 
-        evalAiTeam(awayClub, awayTactic, awayStrength, awayStats.goals, homeStats.goals);
-        evalAiTeam(homeClub, homeTactic, homeStrength, homeStats.goals, awayStats.goals);
+        evalAiTeam(awayClub, awayTactic, awayStrength, homeClub, homeTactic, awayStats.goals, homeStats.goals);
+        evalAiTeam(homeClub, homeTactic, homeStrength, awayClub, awayTactic, homeStats.goals, awayStats.goals);
       }
 
       const homeShoutMod = getShoutModifiersForTeam(homeClub.id, minute, homeStats.goals > awayStats.goals);
@@ -1503,13 +1641,14 @@ export function simulateMatch(
       atkStats.totalShots += 1;
       const atkShoutBoost = isHomeAttacking ? homeShoutMod.atkMult : awayShoutMod.atkMult;
       const defShoutBoost = isHomeAttacking ? awayShoutMod.defMult : homeShoutMod.defMult;
-      const attackAdv = (atkStr.attack * atkShoutBoost - defStr.defense * defShoutBoost) / 100;
+      const counterXgMult = isHomeAttacking ? homeCounterXgMult : awayCounterXgMult;
+      const attackAdv = (atkStr.attack * atkShoutBoost * counterXgMult - defStr.defense * defShoutBoost) / 100;
       const baseXg = Number(
-        Math.max(0.03, Math.min(0.48, rng.float(0.04, 0.22) + attackAdv * 0.12)).toFixed(2)
+        Math.max(0.03, Math.min(0.48, (rng.float(0.04, 0.22) + attackAdv * 0.12) * counterXgMult)).toFixed(2)
       );
       const killerBallBonus = creator.traits?.includes('Tries Killer Balls Often') ? 0.06 : 0;
       const isBigChance = baseXg >= 0.22 || rng.chance(0.14 + killerBallBonus);
-      const shotXg = Number((isBigChance ? Math.min(0.65, baseXg + 0.16) : baseXg).toFixed(2));
+      const shotXg = Number((isBigChance ? Math.min(0.68, baseXg + 0.16) : baseXg).toFixed(2));
 
       atkStats.xG = Number((atkStats.xG + shotXg).toFixed(2));
       if (isBigChance) {
@@ -1762,10 +1901,12 @@ export function simulateMatch(
     }
   }
 
-  const attendance = Math.min(
-    homeClub.stadiumCapacity,
-    Math.round(homeClub.stadiumCapacity * rng.float(0.84, 0.99))
-  );
+  const attendance = derbyRivalry
+    ? homeClub.stadiumCapacity
+    : Math.min(
+        homeClub.stadiumCapacity,
+        Math.round(homeClub.stadiumCapacity * rng.float(0.84, 0.99))
+      );
 
   const initialResult: MatchResult = {
     homeGoals: homeStats.goals,
@@ -1781,6 +1922,9 @@ export function simulateMatch(
     penaltyShootout,
     weather,
     pitchCondition,
+    derbyRivalry: derbyRivalry || null,
+    aiTacticalShifts: aiTacticalShifts.length > 0 ? aiTacticalShifts : undefined,
+    tacticalCounterBonus: activeCounterBonus,
   };
 
   return reconcileMatchResultEventsAndStats(fixture, homeClub, awayClub, initialResult, events);
@@ -1815,12 +1959,18 @@ export function reconcileMatchResultEventsAndStats(
       minute: 1,
       eventType: 'KickOff',
       teamId: homeClub.id,
-      text: trText(
-        `The referee blows the whistle to kick off the match between ${homeClub.name} and ${awayClub.name}!`,
-        `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`
-      ),
+      text: baseResult.derbyRivalry
+        ? trText(
+            `🔥 DERBY DAY (${baseResult.derbyRivalry.nameEn}): A sold-out crowd of ${homeClub.stadiumCapacity.toLocaleString()} roars as ${homeClub.name} kick off against arch-rivals ${awayClub.name}!`,
+            `🔥 ศึกดาร์บี้แมตช์ (${baseResult.derbyRivalry.nameTh}): แฟนบอลแน่นเต็มความจุ ${homeClub.stadiumCapacity.toLocaleString()} คน! ผู้ตัดสินเป่านกหวีดเริ่มเกมระหว่าง ${homeClub.name} พบคู่ปรับตลอดกาล ${awayClub.name}!`
+          )
+        : trText(
+            `The referee blows the whistle to kick off the match between ${homeClub.name} and ${awayClub.name}!`,
+            `ผู้ตัดสินเป่านกหวีดเริ่มเกมการแข่งขันระหว่าง ${homeClub.name} เปิดบ้านพบกับ ${awayClub.name}!`
+          ),
       pitchX: 50,
       pitchY: 50,
+      isHighlight: Boolean(baseResult.derbyRivalry),
     },
   ];
 

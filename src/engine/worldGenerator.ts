@@ -571,7 +571,8 @@ function buildClubSquadSeeds(
   shortName: string,
   reputation: number,
   countryId: string,
-  rng: SeededRNG
+  rng: SeededRNG,
+  minHomegrownQuota = 8
 ): {
   firstName: string;
   lastName: string;
@@ -627,6 +628,54 @@ function buildClubSquadSeeds(
         });
       }
     }
+
+    // Pad clubs with 11-17 real stars up to >= 21 players AND ensure league minHomegrownTotal quota is met
+    const domesticPool = NATIONALITY_POOLS[countryId] || NATIONALITY_POOLS.ENG;
+    const existingDomesticCount = baseList.filter(
+      (p) => p.natCode === countryId || p.isYouth
+    ).length;
+    const neededForQuota = Math.max(0, minHomegrownQuota - existingDomesticCount);
+    const neededForDepth = Math.max(0, 21 - baseList.length);
+    const padCount = Math.max(neededForQuota, neededForDepth);
+    const hasSecondGk = baseList.filter((p) => p.pos === 'GK').length >= 2;
+    const padPositions: PositionCode[] = hasSecondGk
+      ? ['DC', 'DL', 'DR', 'DM', 'MC', 'AML', 'AMR', 'ST', 'DC', 'MC']
+      : ['GK', 'DC', 'DL', 'DR', 'DM', 'MC', 'AML', 'AMR', 'ST', 'DC'];
+
+    for (let i = 0; i < padCount; i++) {
+      const pos = padPositions[i % padPositions.length];
+      const isYouth = i >= Math.max(0, padCount - 3);
+      let fName = capitalizeName(rng.pick(domesticPool.firstNames));
+      let lName = capitalizeName(rng.pick(domesticPool.lastNames));
+      let attempts = 0;
+      while (existingNames.has(`${fName.toLowerCase()} ${lName.toLowerCase()}`) && attempts < 20) {
+        fName = capitalizeName(rng.pick(domesticPool.firstNames));
+        lName = capitalizeName(rng.pick(domesticPool.lastNames));
+        attempts++;
+      }
+      existingNames.add(`${fName.toLowerCase()} ${lName.toLowerCase()}`);
+
+      const age = isYouth ? rng.int(17, 19) : rng.int(21, 28);
+      const targetCa = isYouth
+        ? Math.round(reputation * 1.44 + rng.int(-6, 8))
+        : Math.round(reputation * 1.66 + rng.int(-8, 6));
+      const targetPa = isYouth
+        ? Math.min(182, targetCa + rng.int(20, 34))
+        : Math.min(176, targetCa + (age <= 24 ? rng.int(6, 14) : rng.int(0, 4)));
+
+      baseList.push({
+        firstName: fName,
+        lastName: lName,
+        pos,
+        secondary: getDefaultSecondaryPositions(pos),
+        natCode: countryId,
+        age,
+        targetCa,
+        targetPa,
+        isYouth,
+      });
+    }
+
     return baseList;
   }
 
@@ -687,9 +736,16 @@ function buildClubSquadSeeds(
     }
   }
 
-  // Ensure every position in SQUAD_BLUEPRINT has adequate depth up to 21 players
+  // Ensure every position in SQUAD_BLUEPRINT has adequate depth up to 21 players & meets minHomegrownQuota
   const pool = NATIONALITY_POOLS[countryId] || NATIONALITY_POOLS.ENG;
-  const neededCount = Math.max(0, 21 - results.length);
+  const existingDomesticCount = results.filter(
+    (p) => p.natCode === countryId || p.isYouth
+  ).length;
+  const neededCount = Math.max(
+    0,
+    21 - results.length,
+    minHomegrownQuota - existingDomesticCount
+  );
   const fallbackPositions: { pos: PositionCode; isYouth: boolean }[] = [
     { pos: 'GK', isYouth: false },
     { pos: 'DC', isYouth: false },
@@ -799,7 +855,13 @@ export function createInitialWorldState(
       const clubPlayers: Player[] = [];
       let totalWageUsed = 0;
 
-      const squadSeeds = buildClubSquadSeeds(tpl.shortName, tpl.reputation, config.countryId, rng);
+      const squadSeeds = buildClubSquadSeeds(
+        tpl.shortName,
+        tpl.reputation,
+        config.countryId,
+        rng,
+        config.registrationRules?.minHomegrownTotal ?? 8
+      );
 
       squadSeeds.forEach((pSeed, pIdx) => {
         const playerId = `plr_${clubId}_${pIdx + 1}`;

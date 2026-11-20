@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CLUB_TEMPLATES, LEAGUES_CONFIG } from './leaguesConfig';
+import {
+  CLUB_TEMPLATES,
+  DERBY_RIVALRIES_CATALOG,
+  getDerbyRivalryForClubs,
+  LEAGUES_CONFIG,
+} from './leaguesConfig';
 import { createInitialWorldState } from './worldGenerator';
 import {
   checkAndAdvanceDomesticCup,
@@ -25,6 +30,7 @@ import {
 import {
   computeMatchPassingNetwork,
   computeSetPieceThreatScore,
+  evaluateTacticalCounterMatchup,
   reconcileMatchResultEventsAndStats,
   simulateMatch,
 } from './matchEngine';
@@ -49,10 +55,12 @@ import {
   simulateAndApplyFixturesBatch,
   createCustomPlayerInWorld,
   dehydrateWorldStateToCareerMap,
+  detectTransferBiddingWar,
   dispatchSouthAmericaWonderkidScout,
   evaluateAiManagerJobSecurity,
   evaluateClubFFPStatus,
   evaluateSquadMedicalRisk,
+  evaluateSwapPlayerValuation,
   exerciseBuyBackClause,
   expandClubStadium,
   exportWorldDatabaseJson,
@@ -457,9 +465,13 @@ test('Transfer and Contract Engine enforces budgets, updates club ownership atom
   const myClubId = world.controlledClubId;
   const myClub = world.clubs[myClubId];
 
-  // Pick a target player from another club with affordable price
+  // Pick a target player from another club with affordable price (non-marquee standard signing)
   const targetPlayer = Object.values(world.players).find(
-    (p) => p.clubId !== myClubId && p.askingPrice <= myClub.finances.transferBudget * 0.6
+    (p) =>
+      p.clubId !== myClubId &&
+      p.currentAbility < 155 &&
+      p.potentialAbility < 168 &&
+      p.askingPrice <= myClub.finances.transferBudget * 0.6
   )!;
   assert.ok(targetPlayer, 'Should find an affordable target player');
 
@@ -3335,6 +3347,362 @@ test('26. Stage 13 Complete Suite: 18 Remaining Leagues 2025/26 DB (394/394), Le
     }
   }
 });
+
+test('27. Stage 14 Complete Suite: Global & Challenger 2025/26 Real Squads, 45+ Global Derbies, Live AI Tactical Adaptation & Player Swap / Bidding Wars', () => {
+  const world = createInitialWorldState(141414);
+
+  // =========================================================================
+  // PHASE 1: FULL 2025/26 GLOBAL & CHALLENGER REAL SQUADS EXPANSION
+  // =========================================================================
+  const allPlayers = Object.values(world.players);
+  const fullNames = new Set(allPlayers.map((p) => `${p.firstName} ${p.lastName}`));
+  const expectedStage14Stars = [
+    // Saudi Pro League
+    'Yassine Bounou',
+    'Aleksandar Mitrovic',
+    'Jhon Duran',
+    'Ivan Toney',
+    'Pierre-Emerick Aubameyang',
+    // MLS
+    'Riqui Puig',
+    'Marco Reus',
+    'Denis Bouanga',
+    'Luciano Acosta',
+    // Brasileirao
+    'Giorgian De Arrascaeta',
+    'Estevao Willian',
+    'Igor Jesus',
+    'Thiago Silva',
+    // J1 League
+    'Yoshinori Muto',
+    'Anderson Lopes',
+    'Yasuto Wakizaka',
+    // Austria / Switzerland / Greece
+    'Oscar Gloukh',
+    'Mika Biereth',
+    'Xherdan Shaqiri',
+    'Ayoub El Kaabi',
+    'Giannis Konstantelias',
+    // Tier 2/3
+    'Omari Hutchinson',
+    'Kenan Karaman',
+    'Joel Pohjanpalo',
+    'Lucas Stassin',
+    'Keito Nakamura',
+  ];
+  for (const star of expectedStage14Stars) {
+    assert.ok(fullNames.has(star), `Stage 14 Global/Challenger star "${star}" must exist in generated world`);
+  }
+
+  // Verify 100% of 394 clubs remain registration-compliant after adding 45 real rosters
+  const playersByClub = new Map<string, typeof allPlayers>();
+  for (const p of allPlayers) {
+    const arr = playersByClub.get(p.clubId);
+    if (arr) arr.push(p);
+    else playersByClub.set(p.clubId, [p]);
+  }
+  const allClubs = Object.values(world.clubs);
+  assert.equal(allClubs.length, 394);
+  for (const club of allClubs) {
+    const squad = playersByClub.get(club.id) || [];
+    assert.ok(squad.length >= 18, `Club ${club.shortName} must have >= 18 players (got ${squad.length})`);
+    const evalRes = evaluateSquadRegistration(squad, club.countryId, club.leagueId, world.gameDate);
+    assert.equal(
+      evalRes.isCompliant,
+      true,
+      `Club ${club.shortName} (${club.leagueId}) must remain registration-compliant: ${evalRes.issues.map((i) => i.en).join('; ')}`
+    );
+  }
+
+  // =========================================================================
+  // PHASE 2: FIERCE DERBY & ARCH-RIVALRY ENGINE (45+ GLOBAL DERBIES)
+  // =========================================================================
+  assert.ok(
+    DERBY_RIVALRIES_CATALOG.length >= 45,
+    `DERBY_RIVALRIES_CATALOG must contain >= 45 global derbies (got ${DERBY_RIVALRIES_CATALOG.length})`
+  );
+
+  const findClubByShort = (shortName: string, leagueId?: string) =>
+    allClubs.find((c) => c.shortName === shortName && (!leagueId || c.leagueId === leagueId))!;
+
+  const rma = findClubByShort('RMA', 'ESP_LL');
+  const bar = findClubByShort('BAR', 'ESP_LL');
+  const ars = findClubByShort('ARS', 'ENG_PL');
+  const tot = findClubByShort('TOT', 'ENG_PL');
+  const hil = findClubByShort('HIL', 'KSA_SPL');
+  const nas = findClubByShort('NAS', 'KSA_SPL');
+  const lag = findClubByShort('LAG', 'USA_MLS');
+  const lafc = findClubByShort('LAFC', 'USA_MLS');
+  const fla = findClubByShort('FLA', 'BRA_SA');
+  const flu = findClubByShort('FLU', 'BRA_SA');
+  const cel = findClubByShort('CELT', 'SCO_PR');
+  const ran = findClubByShort('RAN', 'SCO_PR');
+
+  assert.equal(getDerbyRivalryForClubs(rma, bar)?.nameEn, 'El Clásico');
+  assert.equal(getDerbyRivalryForClubs(ars, tot)?.nameEn, 'North London Derby');
+  assert.equal(getDerbyRivalryForClubs(hil, nas)?.nameEn, 'Riyadh Derby');
+  assert.equal(getDerbyRivalryForClubs(lag, lafc)?.nameEn, 'El Tráfico (LA Derby)');
+  assert.equal(getDerbyRivalryForClubs(fla, flu)?.nameEn, 'Fla-Flu Derby');
+  assert.equal(getDerbyRivalryForClubs(cel, ran)?.nameEn, 'Old Firm Derby');
+
+  // Simulate a real North London Derby and verify 100% sold-out attendance + derby metadata + 2x morale/fan swing
+  const derbyFixture = world.fixtures.find(
+    (f) =>
+      (f.homeClubId === ars.id && f.awayClubId === tot.id) ||
+      (f.homeClubId === tot.id && f.awayClubId === ars.id)
+  )!;
+  assert.ok(derbyFixture, 'North London Derby fixture must exist in ENG_PL schedule');
+  const derbyHome = world.clubs[derbyFixture.homeClubId];
+  const derbyAway = world.clubs[derbyFixture.awayClubId];
+  const derbyRes = simulateMatch(derbyFixture, derbyHome, derbyAway, world.players, 14001);
+  assert.equal(derbyRes.derbyRivalry?.nameEn, 'North London Derby');
+  assert.equal(
+    derbyRes.attendance,
+    derbyHome.stadiumCapacity,
+    'Derby match must be 100% sold-out (attendance === stadiumCapacity)'
+  );
+
+  // Apply a controlled-club derby victory and verify 2x morale (+8) & supporter confidence (+10) + DERBY VICTORY headline
+  const controlledDerbyWorld = {
+    ...world,
+    controlledClubId: derbyHome.id,
+  };
+  const starterId = Object.keys(derbyRes.playerRatings).find(
+    (pid) => controlledDerbyWorld.players[pid]?.clubId === derbyHome.id
+  )!;
+  const starterBefore = controlledDerbyWorld.players[starterId];
+  // Set starter morale to 70 so +8 is cleanly measurable without clamping at 100
+  controlledDerbyWorld.players = {
+    ...controlledDerbyWorld.players,
+    [starterId]: { ...starterBefore, morale: 70 },
+  };
+  controlledDerbyWorld.clubs = {
+    ...controlledDerbyWorld.clubs,
+    [derbyHome.id]: { ...derbyHome, supporterConfidence: 70 },
+  };
+  const forcedDerbyWinResult = {
+    ...derbyRes,
+    homeGoals: 3,
+    awayGoals: 1,
+    homeStats: { ...derbyRes.homeStats, goals: 3 },
+    awayStats: { ...derbyRes.awayStats, goals: 1 },
+  };
+  const afterDerby = applyMatchResultToWorld(
+    controlledDerbyWorld,
+    derbyFixture.id,
+    forcedDerbyWinResult
+  );
+  assert.equal(
+    afterDerby.players[starterId].morale,
+    78,
+    'Winning a Fierce Rivalry Derby must grant 2x player morale (+8 instead of +4)'
+  );
+  assert.equal(
+    afterDerby.clubs[derbyHome.id].supporterConfidence,
+    80,
+    'Winning a Fierce Rivalry Derby must grant +10 supporter confidence'
+  );
+  assert.ok(
+    afterDerby.inbox.some((n) => n.title.includes('DERBY VICTORY')),
+    'Derby win must emit a celebratory DERBY VICTORY headline in Inbox'
+  );
+
+  // =========================================================================
+  // PHASE 3: LIVE MID-MATCH AI TACTICAL ADAPTATION & +15% xG COUNTER BONUS
+  // =========================================================================
+  let foundAiShift = false;
+  for (let s = 1; s <= 25; s++) {
+    const res = simulateMatch(derbyFixture, derbyHome, derbyAway, world.players, 14500 + s);
+    if (res.aiTacticalShifts && res.aiTacticalShifts.length > 0) {
+      foundAiShift = true;
+      const shift = res.aiTacticalShifts[0];
+      assert.ok(shift.minute === 60 || shift.minute === 75, 'AI tactical shift must trigger at 60\' or 75\'');
+      assert.ok(shift.newFormation === '3-4-3' || shift.newFormation === '5-4-1');
+      break;
+    }
+  }
+  assert.ok(foundAiShift, 'Mid-match AI tactical adaptation (3-4-3 / 5-4-1) must trigger during matches');
+
+  const lowBlockShift = {
+    minute: 75,
+    teamId: derbyAway.id,
+    clubShortName: derbyAway.shortName,
+    managerName: derbyAway.aiManager.name,
+    newFormation: '5-4-1' as const,
+    mode: 'LOW_BLOCK_COUNTER' as const,
+    descriptionEn: 'Low block',
+    descriptionTh: 'รับลึก',
+    recommendedCounterEn: 'Wide + Shorter',
+    recommendedCounterTh: 'กว้าง + สั้น',
+  };
+  const wideCounterTactic = {
+    ...derbyHome.primaryTactic,
+    instructions: {
+      ...derbyHome.primaryTactic.instructions,
+      attackingWidth: 'Wide' as const,
+      passingDirectness: 'Shorter' as const,
+    },
+  };
+  const narrowMismatchTactic = {
+    ...derbyHome.primaryTactic,
+    instructions: {
+      ...derbyHome.primaryTactic.instructions,
+      attackingWidth: 'Narrow' as const,
+      passingDirectness: 'More Direct' as const,
+    },
+  };
+  const matchedLowBlock = evaluateTacticalCounterMatchup(wideCounterTactic, lowBlockShift);
+  assert.equal(matchedLowBlock.matched, true);
+  assert.equal(matchedLowBlock.xgMultiplier, 1.15);
+  const unmatchedLowBlock = evaluateTacticalCounterMatchup(narrowMismatchTactic, lowBlockShift);
+  assert.equal(unmatchedLowBlock.matched, false);
+  assert.equal(unmatchedLowBlock.xgMultiplier, 1.0);
+
+  const allOutAttackShift = {
+    ...lowBlockShift,
+    minute: 60,
+    newFormation: '3-4-3' as const,
+    mode: 'ALL_OUT_ATTACK' as const,
+  };
+  const directCounterTactic = {
+    ...derbyHome.primaryTactic,
+    instructions: {
+      ...derbyHome.primaryTactic.instructions,
+      passingDirectness: 'More Direct' as const,
+      whenPossessionWon: 'Counter' as const,
+    },
+  };
+  assert.equal(evaluateTacticalCounterMatchup(directCounterTactic, allOutAttackShift).xgMultiplier, 1.15);
+
+  // =========================================================================
+  // PHASE 4: PLAYER SWAP / PART-EXCHANGE DEALS & TRANSFER BIDDING WARS
+  // =========================================================================
+  const myClubId = world.controlledClubId;
+  const myClub = world.clubs[myClubId];
+  const swapCandidate = [...(playersByClub.get(myClubId) || [])]
+    .sort((a, b) => a.marketValue - b.marketValue)
+    .find(
+      (p) => p.positions[0] !== 'GK' && p.marketValue >= 2_000_000 && !p.loanedFromClubId
+    )!;
+  assert.ok(swapCandidate, 'Controlled club must have an eligible outfield player for part-exchange');
+
+  // Pick a non-marquee target (CA < 155) for clean immediate Cash + Swap test
+  const swapTarget = allPlayers.find(
+    (p) =>
+      p.clubId !== myClubId &&
+      p.currentAbility >= 135 &&
+      p.currentAbility <= 154 &&
+      p.potentialAbility < 166 &&
+      p.askingPrice > swapCandidate.marketValue
+  )!;
+  assert.ok(swapTarget, 'Must find a valid non-marquee target for swap test');
+  const swapTargetClubId = swapTarget.clubId;
+
+  const swapVal = evaluateSwapPlayerValuation(world, swapCandidate.id, swapTargetClubId);
+  assert.ok(
+    swapVal.multiplier >= 0.85 && swapVal.multiplier <= 1.15,
+    `Swap valuation multiplier (${swapVal.multiplier}) must be within 0.85..1.15`
+  );
+  assert.equal(swapVal.valuation, Math.round(swapCandidate.marketValue * swapVal.multiplier));
+
+  const richWorld = {
+    ...world,
+    clubs: {
+      ...world.clubs,
+      [myClubId]: {
+        ...myClub,
+        finances: {
+          ...myClub.finances,
+          transferBudget: 400_000_000,
+          balance: 600_000_000,
+        },
+      },
+    },
+  };
+  const netCashNeeded = Math.max(0, swapTarget.askingPrice - swapVal.valuation);
+  const swapDealRes = submitAndEvaluateTransferOffer(richWorld, {
+    playerId: swapTarget.id,
+    offerType: 'Transfer',
+    upfrontFee: netCashNeeded,
+    installmentsFee: 0,
+    sellOnPercentage: 0,
+    proposedWagePerWeek: Math.round(swapTarget.wagePerWeek * 1.15),
+    proposedContractYears: 4,
+    proposedSquadStatus: 'Regular Starter',
+    signingBonus: 100_000,
+    swapPlayerId: swapCandidate.id,
+  });
+  assert.equal(swapDealRes.outcome, 'COMPLETED', `Swap deal must complete cleanly: ${swapDealRes.message}`);
+  assert.equal(
+    swapDealRes.nextState.players[swapTarget.id].clubId,
+    myClubId,
+    'Target player must atomically move to buying club'
+  );
+  assert.equal(
+    swapDealRes.nextState.players[swapCandidate.id].clubId,
+    swapTargetClubId,
+    'Part-exchange swap player must atomically move to selling club'
+  );
+  assert.ok(
+    swapDealRes.nextState.inbox[0]?.title.includes('swap deal'),
+    'Completed swap deal must publish swap deal news headline'
+  );
+
+  // Verify Bidding War triggers on an unlisted Marquee Star (CA >= 158) and resolves with sweetenBiddingWar: true
+  const marqueeStar = allPlayers.find(
+    (p) => p.clubId !== myClubId && !p.transferListed && p.currentAbility >= 158
+  )!;
+  assert.ok(marqueeStar, 'Must find a marquee star (CA >= 158) for Bidding War test');
+  const bwDetect = detectTransferBiddingWar(richWorld, marqueeStar.id, myClubId);
+  assert.ok(bwDetect && bwDetect.isBiddingWar && bwDetect.requiredWageBoostPct === 15);
+
+  const firstBid = submitAndEvaluateTransferOffer(richWorld, {
+    playerId: marqueeStar.id,
+    offerType: 'Transfer',
+    upfrontFee: marqueeStar.askingPrice,
+    installmentsFee: 0,
+    sellOnPercentage: 0,
+    proposedWagePerWeek: Math.round(marqueeStar.wagePerWeek * 1.15),
+    proposedContractYears: 5,
+    proposedSquadStatus: 'Star Player',
+    signingBonus: 250_000,
+  });
+  assert.equal(
+    firstBid.outcome,
+    'BIDDING_WAR',
+    'Initial bid for a marquee star must trigger a Transfer Bidding War against an AI giant'
+  );
+  assert.ok(firstBid.biddingWar?.rivalClubName, 'Bidding war must identify competing AI giant club');
+
+  const sweetenedBid = submitAndEvaluateTransferOffer(firstBid.nextState, {
+    playerId: marqueeStar.id,
+    offerType: 'Transfer',
+    upfrontFee: marqueeStar.askingPrice,
+    installmentsFee: 0,
+    sellOnPercentage: 0,
+    proposedWagePerWeek: Math.round(marqueeStar.wagePerWeek * 1.15),
+    proposedContractYears: 5,
+    proposedSquadStatus: 'Star Player',
+    signingBonus: 250_000,
+    sweetenBiddingWar: true,
+  });
+  assert.equal(
+    sweetenedBid.outcome,
+    'COMPLETED',
+    'Sweetening contract offer (+15%) must win the Bidding War and complete the signing'
+  );
+  assert.equal(
+    sweetenedBid.nextState.players[marqueeStar.id].clubId,
+    myClubId,
+    'Marquee star must join buying club after winning the Bidding War'
+  );
+  assert.ok(
+    sweetenedBid.nextState.players[marqueeStar.id].wagePerWeek >
+      Math.round(marqueeStar.wagePerWeek * 1.15),
+    'Winning a Bidding War must apply the +15% sweetened wage boost'
+  );
+});
+
 
 
 

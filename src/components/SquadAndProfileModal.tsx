@@ -1428,6 +1428,8 @@ interface PlayerProfileModalProps {
     signingBonus: number;
     loanOptionToBuyFee?: number;
     buyBackClauseFee?: number;
+    swapPlayerId?: string | null;
+    sweetenBiddingWar?: boolean;
   }) => void;
   onUpdateIndividualTraining: (
     playerId: string,

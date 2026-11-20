@@ -2987,6 +2987,7 @@ export const TransfersView: React.FC<{
             <div className="space-y-2">
               {world.transferOffers.map((off) => {
                 const p = world.players[off.playerId];
+                const swapP = off.swapPlayerId ? world.players[off.swapPlayerId] : null;
                 const sellClub = world.clubs[off.sellingClubId];
                 const buyClub = world.clubs[off.buyingClubId];
                 return (
@@ -2995,11 +2996,24 @@ export const TransfersView: React.FC<{
                     className="flex flex-wrap items-center justify-between p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs"
                   >
                     <div>
-                      <div className="font-semibold text-white flex items-center gap-1.5">
+                      <div className="font-semibold text-white flex flex-wrap items-center gap-1.5">
                         {p && <NationalityFlag code={p.nationalityCode} size="xs" />}
                         <span>
                           {p?.firstName} {p?.lastName} ({sellClub?.name} → {buyClub?.name})
                         </span>
+                        {swapP && (
+                          <span className="px-1.5 py-0.5 rounded bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-mono">
+                            🔄 + {swapP.firstName} {swapP.lastName}
+                            {off.swapValuation
+                              ? ` (€${(off.swapValuation / 1_000_000).toFixed(1)}M)`
+                              : ''}
+                          </span>
+                        )}
+                        {off.biddingWarClubName && (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10px] font-mono">
+                            ⚔️ vs {off.biddingWarClubName}
+                          </span>
+                        )}
                       </div>
                       <div className="text-slate-400 font-mono tabular-nums">
                         {off.offerType} · {tr('Upfront', 'เงินต้น')} €{(off.upfrontFee / 1_000_000).toFixed(2)}M + {tr('Installments', 'ผ่อน')} €{(off.installmentsFee / 1_000_000).toFixed(2)}M · {tr('Wage', 'ค่าเหนื่อย')} €{off.proposedWagePerWeek.toLocaleString()}/w

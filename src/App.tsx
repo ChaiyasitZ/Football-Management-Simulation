@@ -1017,10 +1017,13 @@ function TouchlineShell() {
     signingBonus: number;
     loanOptionToBuyFee?: number;
     buyBackClauseFee?: number;
+    swapPlayerId?: string | null;
+    sweetenBiddingWar?: boolean;
   }) => {
     const res = submitAndEvaluateTransferOffer(world, params);
     setWorld(res.nextState);
     showToast(res.message);
+    return res;
   };
 
   const handleUpdateIndividualTraining = (

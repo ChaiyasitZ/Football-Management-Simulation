@@ -1979,6 +1979,7 @@ export const FIFA_TO_FLAGCDN_ISO: Record<string, NationalityFlagMeta> = {
   CUR: { iso: 'cw', en: 'Curaçao', th: 'คูราเซา' },
   HAI: { iso: 'ht', en: 'Haiti', th: 'เฮติ' },
   DOM: { iso: 'do', en: 'Dominican Republic', th: 'โดมินิกัน' },
+  SLV: { iso: 'sv', en: 'El Salvador', th: 'เอลซัลวาดอร์' },
 
   // Africa
   MAR: { iso: 'ma', en: 'Morocco', th: 'โมร็อกโก' },

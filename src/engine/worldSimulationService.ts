@@ -50,7 +50,7 @@ import {
   updateDoc,
   where,
 } from '../firebase';
-import { LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConfig';
+import { getDerbyRivalryForClubs, LEAGUES_CONFIG, NATIONALITY_POOLS } from './leaguesConfig';
 import {
   recomputeLeagueStandings,
   checkAndAdvanceDomesticCup,
@@ -306,6 +306,8 @@ export function applyMatchResultToWorld(
     }
   }
 
+  const derbyRivalry = result.derbyRivalry || getDerbyRivalryForClubs(homeClub, awayClub);
+
   // Update players who participated (pre-compute staff bonus ONCE per club instead of 22x per match!)
   const participatedIds = new Set(Object.keys(result.playerRatings));
   const homeStaffBonus = getClubStaffBonuses(
@@ -356,7 +358,17 @@ export function applyMatchResultToWorld(
     );
     const preMatchFitness = p.fitness;
     const newFitness = Math.max(38, p.fitness - staminaDrain);
-    const moraleShift = teamWon ? 4 : teamDrew ? 0 : -4;
+    const moraleShift = derbyRivalry
+      ? teamWon
+        ? 8
+        : teamDrew
+          ? 0
+          : -8
+      : teamWon
+        ? 4
+        : teamDrew
+          ? 0
+          : -4;
     const newMorale = Math.max(25, Math.min(100, p.morale + moraleShift));
 
     // Muscle injury risk if started with Condition < 70% (1-3 weeks / 7-21 days)
@@ -668,17 +680,25 @@ export function applyMatchResultToWorld(
     updatedManager.careerStats.goalsAgainst += oppGoals;
 
     let confDelta = 0;
+    let supporterDelta = 0;
     if (myGoals > oppGoals) {
       updatedManager.careerStats.won += 1;
-      confDelta = 3;
+      confDelta = derbyRivalry ? 6 : 3;
+      supporterDelta = derbyRivalry ? 10 : 3;
     } else if (myGoals === oppGoals) {
       updatedManager.careerStats.drawn += 1;
       confDelta = 0;
+      supporterDelta = 0;
     } else {
       updatedManager.careerStats.lost += 1;
-      confDelta = -3;
+      confDelta = derbyRivalry ? -6 : -3;
+      supporterDelta = derbyRivalry ? -8 : -3;
     }
 
+    myClub.supporterConfidence = Math.max(
+      15,
+      Math.min(100, (myClub.supporterConfidence ?? 72) + supporterDelta)
+    );
     myClub.boardExpectations = {
       ...myClub.boardExpectations,
       confidence: {
@@ -688,6 +708,14 @@ export function applyMatchResultToWorld(
           15,
           Math.min(100, myClub.boardExpectations.confidence.leaguePerformance + confDelta)
         ),
+        squadAtmosphere: Math.max(
+          15,
+          Math.min(
+            100,
+            myClub.boardExpectations.confidence.squadAtmosphere +
+              (derbyRivalry ? (myGoals > oppGoals ? 6 : myGoals < oppGoals ? -6 : 0) : 0)
+          )
+        ),
       },
     };
 
@@ -696,17 +724,38 @@ export function applyMatchResultToWorld(
       ? `${motmPlayer.firstName} ${motmPlayer.lastName}`
       : trText('Star Performer', 'ผู้เล่นยอดเยี่ยม');
 
+    const derbyTitlePrefixEn = derbyRivalry
+      ? myGoals > oppGoals
+        ? `🔥 DERBY VICTORY (${derbyRivalry.nameEn}): `
+        : myGoals < oppGoals
+          ? `🔥 DERBY HEARTBREAK (${derbyRivalry.nameEn}): `
+          : `🔥 FIERCE DERBY DRAW (${derbyRivalry.nameEn}): `
+      : 'Post-Match Report: ';
+    const derbyTitlePrefixTh = derbyRivalry
+      ? myGoals > oppGoals
+        ? `🔥 คว้าชัยศึกดาร์บี้ (${derbyRivalry.nameTh}): `
+        : myGoals < oppGoals
+          ? `🔥 พ่ายศึกดาร์บี้ (${derbyRivalry.nameTh}): `
+          : `🔥 เสมอเดือดศึกดาร์บี้ (${derbyRivalry.nameTh}): `
+      : 'สรุปผลหลังเกม: ';
+    const derbyImpactNoteEn = derbyRivalry
+      ? ` Fierce rivalry derby atmosphere doubled the squad morale swing (${myGoals > oppGoals ? '+8' : myGoals < oppGoals ? '-8' : '0'}) and supporter confidence (${supporterDelta >= 0 ? `+${supporterDelta}` : supporterDelta})!`
+      : '';
+    const derbyImpactNoteTh = derbyRivalry
+      ? ` บรรยากาศศึกดาร์บี้แมตช์ส่งผลต่อขวัญกำลังใจคูณสอง (${myGoals > oppGoals ? '+8' : myGoals < oppGoals ? '-8' : '0'}) และความเชื่อมั่นแฟนบอล (${supporterDelta >= 0 ? `+${supporterDelta}` : supporterDelta})!`
+      : '';
+
     updatedInbox.unshift({
       id: `news_mrep_${fixtureId}`,
       gameDate: state.gameDate,
       category: 'Match Report',
       title: trText(
-        `Post-Match Report: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`,
-        `สรุปผลหลังเกม: ${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`
+        `${derbyTitlePrefixEn}${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`,
+        `${derbyTitlePrefixTh}${homeClub.name} ${result.homeGoals} - ${result.awayGoals} ${awayClub.name}`
       ),
       body: trText(
-        `Matchday ${existingFixture.matchday} finished ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, Possession: ${result.homeStats.possession}% - ${result.awayStats.possession}%). Man of the Match: ${motmName}. Please address the post-match press conference below.`,
-        `เกมนัดที่ ${existingFixture.matchday} จบลงด้วยสกอร์ ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, ครองบอล ${result.homeStats.possession}% - ${result.awayStats.possession}%) โดย Man of the Match ได้แก่ ${motmName}`
+        `Matchday ${existingFixture.matchday} finished ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, Possession: ${result.homeStats.possession}% - ${result.awayStats.possession}%). Man of the Match: ${motmName}.${derbyImpactNoteEn} Please address the post-match press conference below.`,
+        `เกมนัดที่ ${existingFixture.matchday} จบลงด้วยสกอร์ ${homeClub.name} ${result.homeGoals}-${result.awayGoals} ${awayClub.name} (xG: ${result.homeStats.xG.toFixed(2)} - ${result.awayStats.xG.toFixed(2)}, ครองบอล ${result.homeStats.possession}% - ${result.awayStats.possession}%) โดย Man of the Match ได้แก่ ${motmName}${derbyImpactNoteTh}`
       ),
       isRead: false,
       isImportant: true,
@@ -2124,8 +2173,125 @@ export function buildScoutReportForPlayer(
 }
 
 /**
+ * Stage 14 Phase 4: Evaluates how much an AI selling club values a player offered in part-exchange (85%–115% of marketValue).
+ */
+export function evaluateSwapPlayerValuation(
+  state: WorldState,
+  swapPlayerId: string,
+  sellingClubId: string
+): {
+  valuation: number;
+  multiplier: number;
+  positionalNeed: boolean;
+  reasonEn: string;
+  reasonTh: string;
+} {
+  const swapPlayer = state.players[swapPlayerId];
+  const sellingClub = state.clubs[sellingClubId];
+  if (!swapPlayer || !sellingClub) {
+    return {
+      valuation: 0,
+      multiplier: 0.85,
+      positionalNeed: false,
+      reasonEn: 'Invalid swap player',
+      reasonTh: 'ไม่พบนักเตะสำหรับแลกตัว',
+    };
+  }
+
+  const pos = swapPlayer.positions[0];
+  const sellingPlayersAtPos = Object.values(state.players).filter(
+    (p) => p.clubId === sellingClubId && p.positions.includes(pos)
+  );
+  const bestExistingCa = sellingPlayersAtPos.reduce(
+    (max, p) => Math.max(max, p.currentAbility),
+    0
+  );
+
+  let multiplier = 0.98;
+  let positionalNeed = false;
+  let reasonEn = `Fair Part-Exchange (98%): ${sellingClub.shortName} view ${swapPlayer.lastName} as a solid squad option.`;
+  let reasonTh = `ประเมินราคาตามตลาด (98%): ${sellingClub.shortName} มองว่า ${swapPlayer.lastName} ช่วยเสริมขุมกำลังได้`;
+
+  if (sellingPlayersAtPos.length <= 1 || swapPlayer.currentAbility >= bestExistingCa + 3) {
+    multiplier = 1.15;
+    positionalNeed = true;
+    reasonEn = `Positional Need (+15%): ${sellingClub.shortName} actively need a ${pos} upgrade!`;
+    reasonTh = `ตำแหน่งขาดแคลน (+15%): ${sellingClub.shortName} กำลังต้องการผู้เล่นตำแหน่ง ${pos} พอดี!`;
+  } else if (sellingPlayersAtPos.length >= 4 && swapPlayer.currentAbility < bestExistingCa - 6) {
+    multiplier = 0.85;
+    reasonEn = `Overstocked (-15%): ${sellingClub.shortName} already have strong depth at ${pos}.`;
+    reasonTh = `ตำแหน่งล้นทีม (-15%): ${sellingClub.shortName} มีตัวเลือกตำแหน่ง ${pos} เยอะอยู่แล้ว`;
+  }
+
+  return {
+    valuation: Math.round(swapPlayer.marketValue * multiplier),
+    multiplier,
+    positionalNeed,
+    reasonEn,
+    reasonTh,
+  };
+}
+
+/**
+ * Stage 14 Phase 4: Detects if a marquee star (CA >= 152) or elite wonderkid (PA >= 165 & age <= 21)
+ * attracts a competing AI giant in a Transfer Bidding War.
+ */
+export function detectTransferBiddingWar(
+  state: WorldState,
+  targetPlayerId: string,
+  buyingClubId: string
+): {
+  isBiddingWar: boolean;
+  rivalClubId: string;
+  rivalClubName: string;
+  rivalShortName: string;
+  rivalBidFee: number;
+  requiredWageBoostPct: number;
+} | null {
+  const player = state.players[targetPlayerId];
+  if (!player || player.transferListed) return null;
+
+  const currentYear = parseInt(state.gameDate.slice(0, 4), 10) || 2026;
+  const birthYear = parseInt(player.dateOfBirth.slice(0, 4), 10) || 2002;
+  const age = currentYear - birthYear;
+  const isMarqueeOrWonderkid =
+    player.currentAbility >= 156 || (player.potentialAbility >= 168 && age <= 21);
+
+  if (!isMarqueeOrWonderkid) return null;
+
+  const richRivals = Object.values(state.clubs)
+    .filter(
+      (c) =>
+        c.id !== buyingClubId &&
+        c.id !== player.clubId &&
+        c.reputation >= 84 &&
+        c.finances.transferBudget >= Math.min(35_000_000, Math.round(player.marketValue * 0.45))
+    )
+    .sort((a, b) => b.reputation - a.reputation);
+
+  if (richRivals.length === 0) return null;
+
+  // Deterministic rival selection from player ID hash
+  let hash = 0;
+  for (let i = 0; i < player.id.length; i++) {
+    hash = (hash * 31 + player.id.charCodeAt(i)) >>> 0;
+  }
+  const topPool = richRivals.slice(0, Math.min(8, richRivals.length));
+  const rival = topPool[hash % topPool.length];
+
+  return {
+    isBiddingWar: true,
+    rivalClubId: rival.id,
+    rivalClubName: rival.name,
+    rivalShortName: rival.shortName,
+    rivalBidFee: Math.round(Math.max(player.askingPrice, player.marketValue) * 1.05),
+    requiredWageBoostPct: 15,
+  };
+}
+
+/**
  * Evaluates and executes a Transfer or Loan Offer from the user's club to an AI club,
- * including Club valuation check + Player/Agent contract check + atomic squad & budget update.
+ * including Club valuation check + Player Swap Part-Exchange + Bidding Wars + Player/Agent contract check + atomic squad & budget update.
  */
 export function submitAndEvaluateTransferOffer(
   state: WorldState,
@@ -2141,8 +2307,21 @@ export function submitAndEvaluateTransferOffer(
     signingBonus: number;
     loanOptionToBuyFee?: number;
     buyBackClauseFee?: number;
+    swapPlayerId?: string | null;
+    sweetenBiddingWar?: boolean;
   }
-): { nextState: WorldState; outcome: 'COMPLETED' | 'COUNTERED' | 'REJECTED'; message: string } {
+): {
+  nextState: WorldState;
+  outcome: 'COMPLETED' | 'COUNTERED' | 'REJECTED' | 'BIDDING_WAR';
+  message: string;
+  biddingWar?: {
+    rivalClubId: string;
+    rivalClubName: string;
+    rivalShortName: string;
+    rivalBidFee: number;
+    requiredWageBoostPct: number;
+  };
+} {
   const player = state.players[params.playerId];
   if (!player) {
     return {
@@ -2177,6 +2356,50 @@ export function submitAndEvaluateTransferOffer(
     };
   }
 
+  // Validate optional Part-Exchange Swap Player
+  let swapPlayer: Player | null = null;
+  let swapValuation = 0;
+  if (params.offerType === 'Transfer' && params.swapPlayerId) {
+    const candidate = state.players[params.swapPlayerId];
+    if (!candidate || candidate.clubId !== buyingClub.id || candidate.loanedFromClubId) {
+      return {
+        nextState: state,
+        outcome: 'REJECTED',
+        message: trText(
+          'Selected part-exchange player is not eligible for a swap deal.',
+          'นักเตะที่เลือกแลกตัวไม่สามารถใช้ในดีลแลกเปลี่ยนได้'
+        ),
+      };
+    }
+    const buyingClubSquad = Object.values(state.players).filter((p) => p.clubId === buyingClub.id);
+    if (buyingClubSquad.length <= 15) {
+      return {
+        nextState: state,
+        outcome: 'REJECTED',
+        message: trText(
+          'Cannot include a swap player: your squad is already at minimum depth (15 players).',
+          'ไม่สามารถแนบนักเตะแลกตัวได้ เนื่องจากขนาดทีมของคุณอยู่ที่ขั้นต่ำแล้ว (15 คน)'
+        ),
+      };
+    }
+    if (
+      candidate.positions[0] === 'GK' &&
+      buyingClubSquad.filter((p) => p.positions[0] === 'GK').length <= 1 &&
+      player.positions[0] !== 'GK'
+    ) {
+      return {
+        nextState: state,
+        outcome: 'REJECTED',
+        message: trText(
+          'Cannot swap away your only goalkeeper unless signing a replacement GK.',
+          'ไม่สามารถแลกตัวผู้รักษาประตูคนสุดท้ายของทีมได้'
+        ),
+      };
+    }
+    swapPlayer = candidate;
+    swapValuation = evaluateSwapPlayerValuation(state, swapPlayer.id, sellingClub.id).valuation;
+  }
+
   const totalCostUpfront = params.upfrontFee + params.signingBonus;
   if (totalCostUpfront > buyingClub.finances.transferBudget) {
     return {
@@ -2189,11 +2412,12 @@ export function submitAndEvaluateTransferOffer(
     };
   }
 
-  // Evaluate Club valuation
+  // Evaluate Club valuation (Cash + Installments + Sell-On + Part-Exchange Swap Valuation)
   const effectiveOfferValue =
     params.upfrontFee +
     params.installmentsFee * 0.85 +
-    (params.sellOnPercentage / 100) * player.marketValue * 0.5;
+    (params.sellOnPercentage / 100) * player.marketValue * 0.5 +
+    swapValuation;
 
   const requiredValue =
     params.offerType === 'Loan'
@@ -2203,7 +2427,10 @@ export function submitAndEvaluateTransferOffer(
         : Math.round(player.askingPrice * 0.92);
 
   const offerId = `off_${Date.now()}_${player.id}`;
-  const agentFee = Math.round(params.proposedWagePerWeek * 2.5);
+  const effectiveProposedWage = params.sweetenBiddingWar
+    ? Math.round(params.proposedWagePerWeek * 1.15)
+    : params.proposedWagePerWeek;
+  const agentFee = Math.round(effectiveProposedWage * 2.5);
 
   if (effectiveOfferValue < requiredValue * 0.78) {
     const rejectedOffer: TransferOffer = {
@@ -2216,7 +2443,9 @@ export function submitAndEvaluateTransferOffer(
       upfrontFee: params.upfrontFee,
       installmentsFee: params.installmentsFee,
       sellOnPercentage: params.sellOnPercentage,
-      proposedWagePerWeek: params.proposedWagePerWeek,
+      swapPlayerId: swapPlayer?.id || null,
+      swapValuation: swapValuation || undefined,
+      proposedWagePerWeek: effectiveProposedWage,
       proposedContractYears: params.proposedContractYears,
       proposedSquadStatus: params.proposedSquadStatus,
       signingBonus: params.signingBonus,
@@ -2252,13 +2481,15 @@ export function submitAndEvaluateTransferOffer(
       upfrontFee: params.upfrontFee,
       installmentsFee: params.installmentsFee,
       sellOnPercentage: params.sellOnPercentage,
-      proposedWagePerWeek: params.proposedWagePerWeek,
+      swapPlayerId: swapPlayer?.id || null,
+      swapValuation: swapValuation || undefined,
+      proposedWagePerWeek: effectiveProposedWage,
       proposedContractYears: params.proposedContractYears,
       proposedSquadStatus: params.proposedSquadStatus,
       signingBonus: params.signingBonus,
       agentFee,
       status: 'CounterOffer',
-      counterAmount: requiredValue,
+      counterAmount: Math.max(0, requiredValue - swapValuation),
     };
 
     return {
@@ -2268,8 +2499,8 @@ export function submitAndEvaluateTransferOffer(
       },
       outcome: 'COUNTERED',
       message: trText(
-        `${sellingClub.name} submitted a counter-offer of €${(requiredValue / 1_000_000).toFixed(2)}M.`,
-        `${sellingClub.name} ยื่นข้อเสนอต่อรองที่ €${(requiredValue / 1_000_000).toFixed(2)}M`
+        `${sellingClub.name} submitted a counter-offer of €${(requiredValue / 1_000_000).toFixed(2)}M total package${swapPlayer ? ` (or €${(Math.max(0, requiredValue - swapValuation) / 1_000_000).toFixed(2)}M + ${swapPlayer.lastName})` : ''}.`,
+        `${sellingClub.name} ยื่นข้อเสนอต่อรองมูลค่ารวม €${(requiredValue / 1_000_000).toFixed(2)}M${swapPlayer ? ` (หรือเงินสด €${(Math.max(0, requiredValue - swapValuation) / 1_000_000).toFixed(2)}M + ${swapPlayer.lastName})` : ''}`
       ),
     };
   }
@@ -2277,7 +2508,7 @@ export function submitAndEvaluateTransferOffer(
   // Check Player Wage expectation (UEFA Pro license grants +15% negotiation patience / -10% minimum wage threshold)
   const badgeMod = getCoachingLicenseModifiers(state.manager.coachingBadge);
   const minWageAccepted = Math.round(player.wagePerWeek * 0.92 * badgeMod.wageDemandMultiplier);
-  if (params.proposedWagePerWeek < minWageAccepted) {
+  if (effectiveProposedWage < minWageAccepted) {
     return {
       nextState: state,
       outcome: 'REJECTED',
@@ -2288,20 +2519,69 @@ export function submitAndEvaluateTransferOffer(
     };
   }
 
+  // Stage 14 Phase 4: Transfer Bidding War for Marquee Stars / Elite Wonderkids
+  const biddingWar =
+    params.offerType === 'Transfer'
+      ? detectTransferBiddingWar(state, player.id, buyingClub.id)
+      : null;
+
+  if (biddingWar && !params.sweetenBiddingWar) {
+    const biddingOffer: TransferOffer = {
+      id: offerId,
+      date: state.gameDate,
+      playerId: player.id,
+      buyingClubId: buyingClub.id,
+      sellingClubId: sellingClub.id,
+      offerType: params.offerType,
+      upfrontFee: params.upfrontFee,
+      installmentsFee: params.installmentsFee,
+      sellOnPercentage: params.sellOnPercentage,
+      swapPlayerId: swapPlayer?.id || null,
+      swapValuation: swapValuation || undefined,
+      biddingWarClubId: biddingWar.rivalClubId,
+      biddingWarClubName: biddingWar.rivalClubName,
+      proposedWagePerWeek: params.proposedWagePerWeek,
+      proposedContractYears: params.proposedContractYears,
+      proposedSquadStatus: params.proposedSquadStatus,
+      signingBonus: params.signingBonus,
+      agentFee,
+      status: 'ClubAccepted',
+    };
+
+    return {
+      nextState: {
+        ...state,
+        transferOffers: [biddingOffer, ...state.transferOffers],
+      },
+      outcome: 'BIDDING_WAR',
+      biddingWar,
+      message: trText(
+        `⚔️ BIDDING WAR: ${biddingWar.rivalClubName} have matched your bid for ${player.firstName} ${player.lastName}! Sweeten your contract offer by +${biddingWar.requiredWageBoostPct}% to win the signing.`,
+        `⚔️ ศึกแย่งตัวนักเตะ: ${biddingWar.rivalClubName} ยื่นข้อเสนอเทียบเท่าเพื่อปาดหน้าคว้า ${player.firstName} ${player.lastName}! เพิ่มข้อเสนอค่าเหนื่อยอีก +${biddingWar.requiredWageBoostPct}% เพื่อปิดดีลทันที`
+      ),
+    };
+  }
+
   // Complete Transfer Atomically!
   const totalDeducted = params.upfrontFee + params.signingBonus + agentFee;
   buyingClub.finances = {
     ...buyingClub.finances,
     balance: buyingClub.finances.balance - totalDeducted,
     transferBudget: buyingClub.finances.transferBudget - totalDeducted,
-    wageUsedPerWeek: buyingClub.finances.wageUsedPerWeek + params.proposedWagePerWeek,
+    wageUsedPerWeek: Math.max(
+      0,
+      buyingClub.finances.wageUsedPerWeek + effectiveProposedWage - (swapPlayer?.wagePerWeek || 0)
+    ),
   };
 
   sellingClub.finances = {
     ...sellingClub.finances,
     balance: sellingClub.finances.balance + params.upfrontFee,
     transferBudget: sellingClub.finances.transferBudget + Math.round(params.upfrontFee * 0.8),
-    wageUsedPerWeek: Math.max(0, sellingClub.finances.wageUsedPerWeek - player.wagePerWeek),
+    wageUsedPerWeek: Math.max(
+      0,
+      sellingClub.finances.wageUsedPerWeek - player.wagePerWeek + (swapPlayer?.wagePerWeek || 0)
+    ),
   };
 
   const endYear = parseInt(state.gameDate.slice(0, 4), 10) + params.proposedContractYears;
@@ -2313,7 +2593,7 @@ export function submitAndEvaluateTransferOffer(
       params.offerType === 'Loan'
         ? params.loanOptionToBuyFee || Math.round(player.marketValue * 1.15)
         : null,
-    wagePerWeek: params.proposedWagePerWeek,
+    wagePerWeek: effectiveProposedWage,
     contractEndDate: `${endYear}-06-30`,
     squadStatus: params.proposedSquadStatus,
     morale: Math.min(100, player.morale + 8),
@@ -2324,19 +2604,41 @@ export function submitAndEvaluateTransferOffer(
         date: state.gameDate,
         fromClubId: sellingClub.id,
         toClubId: buyingClub.id,
-        fee: params.upfrontFee + params.installmentsFee,
+        fee: params.upfrontFee + params.installmentsFee + swapValuation,
         type: params.offerType,
       },
       ...player.transferHistory,
     ],
   };
 
-  const updatedPlayers = {
+  const updatedPlayers: Record<string, Player> = {
     ...state.players,
     [updatedPlayer.id]: updatedPlayer,
   };
 
-  // Re-pick selling club lineup so it never keeps a transferred player in its XI
+  // Atomically move part-exchange swap player to the selling club
+  if (swapPlayer) {
+    updatedPlayers[swapPlayer.id] = {
+      ...swapPlayer,
+      clubId: sellingClub.id,
+      loanedFromClubId: null,
+      transferListed: false,
+      loanListed: false,
+      morale: Math.max(55, swapPlayer.morale - 4),
+      transferHistory: [
+        {
+          date: state.gameDate,
+          fromClubId: buyingClub.id,
+          toClubId: sellingClub.id,
+          fee: swapValuation,
+          type: 'Transfer',
+        },
+        ...swapPlayer.transferHistory,
+      ],
+    };
+  }
+
+  // Re-pick selling club lineup so it integrates swapPlayer & removes departed player
   const sellingClubPlayers = Object.values(updatedPlayers).filter((p) => p.clubId === sellingClub.id);
   sellingClub.primaryTactic = autoPickLineup(
     sellingClub.primaryTactic.formation,
@@ -2346,8 +2648,29 @@ export function submitAndEvaluateTransferOffer(
     sellingClub.primaryTactic.name
   );
 
-  // Add new player to buying club bench if space available
-  if (
+  // Update buying club lineup cleanly if swapPlayer left the XI or bench
+  if (swapPlayer) {
+    const swapWasInLineup = buyingClub.primaryTactic.lineup.some((s) => s.playerId === swapPlayer!.id);
+    const cleanedBench = buyingClub.primaryTactic.benchPlayerIds.filter((id) => id !== swapPlayer!.id);
+    if (swapWasInLineup) {
+      const buyingClubPlayers = Object.values(updatedPlayers).filter((p) => p.clubId === buyingClub.id);
+      buyingClub.primaryTactic = autoPickLineup(
+        buyingClub.primaryTactic.formation,
+        buyingClubPlayers,
+        buyingClub.primaryTactic.instructions,
+        buyingClub.primaryTactic.id,
+        buyingClub.primaryTactic.name
+      );
+    } else {
+      buyingClub.primaryTactic = {
+        ...buyingClub.primaryTactic,
+        benchPlayerIds:
+          cleanedBench.length < 9 && !cleanedBench.includes(updatedPlayer.id)
+            ? [...cleanedBench, updatedPlayer.id]
+            : cleanedBench,
+      };
+    }
+  } else if (
     !buyingClub.primaryTactic.lineup.some((s) => s.playerId === updatedPlayer.id) &&
     !buyingClub.primaryTactic.benchPlayerIds.includes(updatedPlayer.id) &&
     buyingClub.primaryTactic.benchPlayerIds.length < 9
@@ -2368,7 +2691,11 @@ export function submitAndEvaluateTransferOffer(
     upfrontFee: params.upfrontFee,
     installmentsFee: params.installmentsFee,
     sellOnPercentage: params.sellOnPercentage,
-    proposedWagePerWeek: params.proposedWagePerWeek,
+    swapPlayerId: swapPlayer?.id || null,
+    swapValuation: swapValuation || undefined,
+    biddingWarClubId: biddingWar?.rivalClubId || null,
+    biddingWarClubName: biddingWar?.rivalClubName || null,
+    proposedWagePerWeek: effectiveProposedWage,
     proposedContractYears: params.proposedContractYears,
     proposedSquadStatus: params.proposedSquadStatus,
     signingBonus: params.signingBonus,
@@ -2378,6 +2705,21 @@ export function submitAndEvaluateTransferOffer(
     buyBackClauseFee: params.buyBackClauseFee,
   };
 
+  const swapNoteEn = swapPlayer
+    ? ` (+ ${swapPlayer.firstName} ${swapPlayer.lastName} in €${(swapValuation / 1_000_000).toFixed(1)}M part-exchange)`
+    : '';
+  const swapNoteTh = swapPlayer
+    ? ` (+ แนบ ${swapPlayer.firstName} ${swapPlayer.lastName} แลกตัวมูลค่า €${(swapValuation / 1_000_000).toFixed(1)}M)`
+    : '';
+  const biddingNoteEn =
+    biddingWar && params.sweetenBiddingWar
+      ? ` after winning a dramatic bidding war against ${biddingWar.rivalClubName}`
+      : '';
+  const biddingNoteTh =
+    biddingWar && params.sweetenBiddingWar
+      ? ` หลังปาดหน้าเอาชนะ ${biddingWar.rivalClubName} ในศึกแย่งตัวสุดเดือด`
+      : '';
+
   const tx: FinanceTransaction = {
     id: `tx_trf_${offerId}`,
     date: state.gameDate,
@@ -2385,8 +2727,8 @@ export function submitAndEvaluateTransferOffer(
     category: 'Player Purchase',
     amount: -totalDeducted,
     description: trText(
-      `Signed ${player.firstName} ${player.lastName} from ${sellingClub.name} (${params.offerType === 'Loan' ? 'Loan' : 'Permanent'})`,
-      `คว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} (${params.offerType === 'Loan' ? 'ยืมตัว' : 'ซื้อขาด'})`
+      `Signed ${player.firstName} ${player.lastName} from ${sellingClub.name} (${params.offerType === 'Loan' ? 'Loan' : swapPlayer ? 'Cash + Swap' : 'Permanent'})${swapNoteEn}`,
+      `คว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} (${params.offerType === 'Loan' ? 'ยืมตัว' : swapPlayer ? 'เงินสด + แลกตัว' : 'ซื้อขาด'})${swapNoteTh}`
     ),
     balanceAfter: buyingClub.finances.balance,
   };
@@ -2396,12 +2738,12 @@ export function submitAndEvaluateTransferOffer(
     gameDate: state.gameDate,
     category: 'Transfer',
     title: trText(
-      `OFFICIAL: ${buyingClub.name} complete signing of ${player.firstName} ${player.lastName}!`,
-      `OFFICIAL: ${buyingClub.name} คว้าตัว ${player.firstName} ${player.lastName} ร่วมทัพ!`
+      `OFFICIAL: ${buyingClub.name} sign ${player.firstName} ${player.lastName}${swapPlayer ? ` in swap deal for ${swapPlayer.lastName}` : ''}!`,
+      `OFFICIAL: ${buyingClub.name} คว้าตัว ${player.firstName} ${player.lastName}${swapPlayer ? ` พ่วงดีลสลับขั้ว ${swapPlayer.lastName}` : ''} ร่วมทัพ!`
     ),
     body: trText(
-      `${buyingClub.name} have completed the signing of ${player.firstName} ${player.lastName} from ${sellingClub.name} for a total package of €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M on a contract until ${endYear} worth €${params.proposedWagePerWeek.toLocaleString()}/wk.`,
-      `${buyingClub.name} บรรลุข้อตกลงคว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name} ด้วยมูลค่ารวม €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M พร้อมสัญญาถึงปี ${endYear} รับค่าเหนื่อย €${params.proposedWagePerWeek.toLocaleString()}/สัปดาห์`
+      `${buyingClub.name} have completed the signing of ${player.firstName} ${player.lastName} from ${sellingClub.name}${biddingNoteEn} for €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M${swapNoteEn} on a contract until ${endYear} worth €${effectiveProposedWage.toLocaleString()}/wk.`,
+      `${buyingClub.name} บรรลุข้อตกลงคว้าตัว ${player.firstName} ${player.lastName} จาก ${sellingClub.name}${biddingNoteTh} ด้วยค่าตัว €${((params.upfrontFee + params.installmentsFee) / 1_000_000).toFixed(2)}M${swapNoteTh} พร้อมสัญญาถึงปี ${endYear} รับค่าเหนื่อย €${effectiveProposedWage.toLocaleString()}/สัปดาห์`
     ),
     isRead: false,
     isImportant: true,
@@ -2424,8 +2766,8 @@ export function submitAndEvaluateTransferOffer(
     },
     outcome: 'COMPLETED',
     message: trText(
-      `Successfully signed ${player.firstName} ${player.lastName} for ${buyingClub.name}!`,
-      `คว้าตัว ${player.firstName} ${player.lastName} ร่วมทีม ${buyingClub.name} สำเร็จ!`
+      `Successfully signed ${player.firstName} ${player.lastName} for ${buyingClub.name}${swapNoteEn}!`,
+      `คว้าตัว ${player.firstName} ${player.lastName} ร่วมทีม ${buyingClub.name}${swapNoteTh} สำเร็จ!`
     ),
   };
 }

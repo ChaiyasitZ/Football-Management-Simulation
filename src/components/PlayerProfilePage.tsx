@@ -13,7 +13,10 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Player, PlayerRole, WorldState } from '../types/game';
-import { getAgeAtDate } from '../engine/worldSimulationService';
+import {
+  evaluateSwapPlayerValuation,
+  getAgeAtDate,
+} from '../engine/worldSimulationService';
 import {
   computePlayerPolygon8Axes,
   derivePlayerTraitsFromAttributes,
@@ -48,7 +51,21 @@ export interface PlayerProfilePageProps {
     signingBonus: number;
     loanOptionToBuyFee?: number;
     buyBackClauseFee?: number;
-  }) => void;
+    swapPlayerId?: string | null;
+    sweetenBiddingWar?: boolean;
+  }) =>
+    | {
+        outcome: 'COMPLETED' | 'COUNTERED' | 'REJECTED' | 'BIDDING_WAR';
+        message: string;
+        biddingWar?: {
+          rivalClubId: string;
+          rivalClubName: string;
+          rivalShortName: string;
+          rivalBidFee: number;
+          requiredWageBoostPct: number;
+        };
+      }
+    | void;
   onUpdateIndividualTraining: (
     playerId: string,
     focus: Player['individualTraining']['attributeFocus'],
@@ -146,6 +163,14 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   const [buyBackClauseFee, setBuyBackClauseFee] = useState<number>(
     Math.round(player.marketValue * 1.6)
   );
+  const [swapPlayerId, setSwapPlayerId] = useState<string>('');
+  const [biddingWarState, setBiddingWarState] = useState<{
+    rivalClubId: string;
+    rivalClubName: string;
+    rivalShortName: string;
+    rivalBidFee: number;
+    requiredWageBoostPct: number;
+  } | null>(null);
   const [negotiationPatience, setNegotiationPatience] = useState<number>(100);
   const [counterOfferState, setCounterOfferState] = useState<{
     demandedUpfrontFee: number;
@@ -162,9 +187,28 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
     setProposedWage(Math.round(player.wagePerWeek * 1.15));
     setSigningBonus(Math.round(player.wagePerWeek * 3));
     setProposedStatus(player.squadStatus);
+    setSwapPlayerId('');
+    setBiddingWarState(null);
     setNegotiationPatience(100);
     setCounterOfferState(null);
   }, [player.id]);
+
+  const mySwapEligiblePlayers = React.useMemo(
+    () =>
+      Object.values(world.players)
+        .filter((p) => p.clubId === world.controlledClubId && !p.loanedFromClubId)
+        .sort((a, b) => b.marketValue - a.marketValue),
+    [world.players, world.controlledClubId]
+  );
+
+  const selectedSwapPlayer = swapPlayerId ? world.players[swapPlayerId] : null;
+  const swapEval = React.useMemo(
+    () =>
+      selectedSwapPlayer && !isMyPlayer
+        ? evaluateSwapPlayerValuation(world, selectedSwapPlayer.id, player.clubId)
+        : null,
+    [world, selectedSwapPlayer, isMyPlayer, player.clubId]
+  );
 
   const scoutReport = world.scoutReports[player.id];
   const isShortlisted = world.shortlistPlayerIds.includes(player.id);
@@ -1565,6 +1609,81 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                             className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded text-white font-mono"
                           />
                         </div>
+
+                        {/* Stage 14 Phase 4: Player Swap / Part-Exchange Selector */}
+                        <div className="col-span-2 pt-2 border-t border-slate-800 space-y-2">
+                          <label
+                            htmlFor="swap-player-select"
+                            className="block text-sky-300 font-semibold"
+                          >
+                            🔄 {tr(
+                              'Include Player in Part-Exchange (Optional)',
+                              'แนบนักเตะในทีมไปแลกตัว (Part-Exchange)'
+                            )}
+                          </label>
+                          <select
+                            id="swap-player-select"
+                            data-testid="swap-player-select"
+                            value={swapPlayerId}
+                            onChange={(e) => {
+                              const nextId = e.target.value;
+                              setSwapPlayerId(nextId);
+                              if (nextId) {
+                                const val = evaluateSwapPlayerValuation(
+                                  world,
+                                  nextId,
+                                  player.clubId
+                                ).valuation;
+                                const basePrice = player.askingPrice || player.marketValue;
+                                setUpfrontFee(Math.max(0, basePrice - val));
+                              } else {
+                                setUpfrontFee(player.askingPrice || player.marketValue);
+                              }
+                            }}
+                            className="w-full px-3 py-2 bg-slate-950 border border-sky-500/40 rounded-lg text-white text-xs"
+                          >
+                            <option value="">
+                              {tr('— Cash Only (No Swap Player) —', '— จ่ายเงินสดล้วน (ไม่แนบนักเตะแลกตัว) —')}
+                            </option>
+                            {mySwapEligiblePlayers.map((sp) => (
+                              <option key={sp.id} value={sp.id}>
+                                {sp.firstName} {sp.lastName} ({sp.positions[0]} · CA {sp.currentAbility} · €
+                                {(sp.marketValue / 1_000_000).toFixed(1)}M)
+                              </option>
+                            ))}
+                          </select>
+
+                          {selectedSwapPlayer && swapEval && (
+                            <div
+                              data-testid="swap-valuation-preview"
+                              className={`p-2.5 rounded-lg border text-[11px] flex items-center justify-between gap-3 ${
+                                swapEval.positionalNeed
+                                  ? 'bg-emerald-950/50 border-emerald-500/50 text-emerald-200'
+                                  : 'bg-slate-950 border-slate-800 text-slate-300'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-semibold">
+                                  {tr(swapEval.reasonEn, swapEval.reasonTh)}
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {tr(
+                                    'Cash fee automatically adjusted to reflect part-exchange valuation.',
+                                    'ปรับลดเงินสดก้อนแรกให้อัตโนมัติตามมูลค่าประเมินของนักเตะแลกตัว'
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right font-mono shrink-0">
+                                <div className="font-bold text-emerald-400">
+                                  -€{(swapEval.valuation / 1_000_000).toFixed(2)}M
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  {Math.round(swapEval.multiplier * 100)}% {tr('of value', 'ของมูลค่า')}
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ) : (
                       <div>
@@ -1662,16 +1781,29 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                 </div>
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 font-mono">
                   {!isMyPlayer && (
-                    <div className="flex justify-between">
-                      <span className="font-sans text-slate-400">
-                        {tr('Total Package Fee:', 'มูลค่าดีลรวม:')}
-                      </span>
-                      <span className="text-white font-bold">
-                        {offerType === 'Loan'
-                          ? tr('Loan Deal', 'สัญญายืมตัว')
-                          : `€${((upfrontFee + installmentsFee) / 1_000_000).toFixed(2)}M`}
-                      </span>
-                    </div>
+                    <>
+                      <div className="flex justify-between">
+                        <span className="font-sans text-slate-400">
+                          {tr('Cash Package Fee:', 'ค่าตัวเงินสดรวม:')}
+                        </span>
+                        <span className="text-white font-bold">
+                          {offerType === 'Loan'
+                            ? tr('Loan Deal', 'สัญญายืมตัว')
+                            : `€${((upfrontFee + installmentsFee) / 1_000_000).toFixed(2)}M`}
+                        </span>
+                      </div>
+                      {offerType === 'Transfer' && selectedSwapPlayer && swapEval && (
+                        <div className="flex justify-between text-sky-300">
+                          <span className="font-sans">
+                            🔄 {tr('Part-Exchange Player:', 'นักเตะแลกตัว:')} {selectedSwapPlayer.firstName}{' '}
+                            {selectedSwapPlayer.lastName}
+                          </span>
+                          <span className="font-bold">
+                            +€{(swapEval.valuation / 1_000_000).toFixed(2)}M ({Math.round(swapEval.multiplier * 100)}%)
+                          </span>
+                        </div>
+                      )}
+                    </>
                   )}
                   <div className="flex justify-between">
                     <span className="font-sans text-slate-400">
@@ -1696,6 +1828,76 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     </span>
                   </div>
                 </div>
+
+                {/* Stage 14 Phase 4: Transfer Bidding War Alert */}
+                {biddingWarState && (
+                  <div
+                    data-testid="bidding-war-alert"
+                    className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-500/60 space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="font-display font-bold text-rose-300 text-xs uppercase tracking-wider leading-snug">
+                        ⚔️ {tr(
+                          `BIDDING WAR: ${biddingWarState.rivalClubName} have matched your bid!`,
+                          `ศึกแย่งตัวนักเตะ: ${biddingWarState.rivalClubName} ยื่นข้อเสนอปาดหน้าแล้ว!`
+                        )}
+                      </span>
+                      <span className="text-[11px] font-mono text-amber-300 shrink-0 whitespace-nowrap px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/30">
+                        +{biddingWarState.requiredWageBoostPct}% {tr('Wage Required', 'ค่าเหนื่อยเพื่อปิดดีล')}
+                      </span>
+                    </div>
+                    <p className="text-slate-200 leading-relaxed text-[11px]">
+                      {tr(
+                        `${biddingWarState.rivalClubName} entered the race with a rival package of €${(biddingWarState.rivalBidFee / 1_000_000).toFixed(1)}M. Sweeten your contract offer by +${biddingWarState.requiredWageBoostPct}% (€${Math.round(proposedWage * 1.15).toLocaleString()}/wk) to immediately win the player's signature!`,
+                        `${biddingWarState.rivalClubName} กระโดดร่วมวงยื่นข้อเสนอ €${(biddingWarState.rivalBidFee / 1_000_000).toFixed(1)}M แย่งตัว! กดเพิ่มค่าเหนื่อยอีก +${biddingWarState.requiredWageBoostPct}% (€${Math.round(proposedWage * 1.15).toLocaleString()}/สัปดาห์) เพื่อปาดหน้าปิดดีลทันที`
+                      )}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        type="button"
+                        data-testid="sweeten-contract-btn"
+                        onClick={() => {
+                          const res = onMakeTransferOffer({
+                            playerId: player.id,
+                            offerType,
+                            upfrontFee,
+                            installmentsFee,
+                            sellOnPercentage: sellOnPct,
+                            proposedWagePerWeek: proposedWage,
+                            proposedContractYears: proposedYears,
+                            proposedSquadStatus: proposedStatus,
+                            signingBonus,
+                            loanOptionToBuyFee,
+                            buyBackClauseFee,
+                            swapPlayerId: swapPlayerId || null,
+                            sweetenBiddingWar: true,
+                          });
+                          if (!res || res.outcome === 'COMPLETED') {
+                            setBiddingWarState(null);
+                            setCounterOfferState(null);
+                            setStepperOpen(false);
+                          }
+                        }}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[11px] cursor-pointer"
+                      >
+                        ⚡ {tr(
+                          `Sweeten Contract Offer (+${biddingWarState.requiredWageBoostPct}%) & Sign`,
+                          `เพิ่มค่าเหนื่อย (+${biddingWarState.requiredWageBoostPct}%) ปิดดีลทันที`
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBiddingWarState(null);
+                          setStepperOpen(false);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] cursor-pointer"
+                      >
+                        {tr('Withdraw Bid', 'ถอนตัวจากดีล')}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Interactive Counter-Offer Round Card */}
                 {counterOfferState && (
@@ -1730,7 +1932,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                               counterOfferState.demandedBonus
                             );
                           } else {
-                            onMakeTransferOffer({
+                            const res = onMakeTransferOffer({
                               playerId: player.id,
                               offerType,
                               upfrontFee: counterOfferState.demandedUpfrontFee,
@@ -1742,7 +1944,13 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                               signingBonus: counterOfferState.demandedBonus,
                               loanOptionToBuyFee,
                               buyBackClauseFee,
+                              swapPlayerId: swapPlayerId || null,
                             });
+                            if (res && res.outcome === 'BIDDING_WAR' && res.biddingWar) {
+                              setCounterOfferState(null);
+                              setBiddingWarState(res.biddingWar);
+                              return;
+                            }
                           }
                           setCounterOfferState(null);
                           setStepperOpen(false);
@@ -1817,7 +2025,9 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                       player.askingPrice ||
                       Math.round(player.marketValue * (player.transferListed ? 0.92 : 1.12));
                     const targetWage = Math.round(player.wagePerWeek * 1.12);
-                    const totalOfferedFee = upfrontFee + Math.round(installmentsFee * 0.85);
+                    const swapValAmt = offerType === 'Transfer' && swapEval ? swapEval.valuation : 0;
+                    const totalOfferedFee =
+                      upfrontFee + Math.round(installmentsFee * 0.85) + swapValAmt;
 
                     const feeShortfall =
                       !isMyPlayer &&
@@ -1828,7 +2038,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     if ((feeShortfall || wageShortfall) && negotiationPatience > 30 && !counterOfferState) {
                       const demandedUpfront = Math.max(
                         upfrontFee,
-                        Math.round(targetValuation - installmentsFee * 0.85)
+                        Math.max(0, Math.round(targetValuation - installmentsFee * 0.85 - swapValAmt))
                       );
                       const demandedWageVal = Math.max(proposedWage, targetWage);
                       const demandedBonusVal = Math.max(
@@ -1842,10 +2052,10 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                         demandedBonus: demandedBonusVal,
                         messageEn: isMyPlayer
                           ? `${player.lastName}'s agent insists on €${demandedWageVal.toLocaleString()}/wk and a €${demandedBonusVal.toLocaleString()} signing bonus to sign immediately.`
-                          : `${playerClub?.shortName || 'Selling club'} & ${player.lastName}'s agent counter with €${(demandedUpfront / 1_000_000).toFixed(2)}M upfront and €${demandedWageVal.toLocaleString()}/wk wage.`,
+                          : `${playerClub?.shortName || 'Selling club'} & ${player.lastName}'s agent counter with €${(demandedUpfront / 1_000_000).toFixed(2)}M upfront${selectedSwapPlayer ? ` + ${selectedSwapPlayer.lastName}` : ''} and €${demandedWageVal.toLocaleString()}/wk wage.`,
                         messageTh: isMyPlayer
                           ? `เอเย่นต์ของ ${player.lastName} ยื่นคำขาดขอค่าเหนื่อย €${demandedWageVal.toLocaleString()}/สัปดาห์ พร้อมโบนัส €${demandedBonusVal.toLocaleString()} เพื่อปิดดีลทันที`
-                          : `${playerClub?.shortName || 'สโมสรต้นสังกัด'} และเอเย่นต์ยื่นข้อเสนอสวนกลับที่ค่าตัวก้อนแรก €${(demandedUpfront / 1_000_000).toFixed(2)}M และค่าเหนื่อย €${demandedWageVal.toLocaleString()}/สัปดาห์`,
+                          : `${playerClub?.shortName || 'สโมสรต้นสังกัด'} และเอเย่นต์ยื่นข้อเสนอสวนกลับที่ค่าตัวก้อนแรก €${(demandedUpfront / 1_000_000).toFixed(2)}M${selectedSwapPlayer ? ` + ${selectedSwapPlayer.lastName}` : ''} และค่าเหนื่อย €${demandedWageVal.toLocaleString()}/สัปดาห์`,
                       });
                       return;
                     }
@@ -1853,7 +2063,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                     if (isMyPlayer) {
                       onRenewContract(player.id, proposedWage, proposedYears, signingBonus);
                     } else {
-                      onMakeTransferOffer({
+                      const res = onMakeTransferOffer({
                         playerId: player.id,
                         offerType,
                         upfrontFee,
@@ -1865,9 +2075,15 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                         signingBonus,
                         loanOptionToBuyFee,
                         buyBackClauseFee,
+                        swapPlayerId: swapPlayerId || null,
                       });
+                      if (res && res.outcome === 'BIDDING_WAR' && res.biddingWar) {
+                        setBiddingWarState(res.biddingWar);
+                        return;
+                      }
                     }
                     setCounterOfferState(null);
+                    setBiddingWarState(null);
                     setStepperOpen(false);
                   }}
                   className="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold cursor-pointer"

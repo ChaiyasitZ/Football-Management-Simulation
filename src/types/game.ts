@@ -677,6 +677,28 @@ export interface MatchTeamStats {
   bigChances: number;
 }
 
+export interface DerbyRivalry {
+  id: string;
+  clubShortA: string;
+  clubShortB: string;
+  nameEn: string;
+  nameTh: string;
+  intensity: 'FIERCE' | 'HISTORIC';
+}
+
+export interface LiveAiTacticalShift {
+  minute: number;
+  teamId: string;
+  clubShortName: string;
+  managerName: string;
+  newFormation: FormationId;
+  mode: 'ALL_OUT_ATTACK' | 'LOW_BLOCK_COUNTER';
+  descriptionEn: string;
+  descriptionTh: string;
+  recommendedCounterEn: string;
+  recommendedCounterTh: string;
+}
+
 export interface MatchResult {
   homeGoals: number;
   awayGoals: number;
@@ -692,6 +714,14 @@ export interface MatchResult {
   penaltyShootout?: { homePenalties: number; awayPenalties: number };
   weather?: WeatherCondition;
   pitchCondition?: PitchCondition;
+  derbyRivalry?: DerbyRivalry | null;
+  aiTacticalShifts?: LiveAiTacticalShift[];
+  tacticalCounterBonus?: {
+    teamId: string;
+    labelEn: string;
+    labelTh: string;
+    xgMultiplier: number;
+  } | null;
 }
 
 export interface Fixture {
@@ -737,6 +767,9 @@ export interface TransferOffer {
   installmentsFee: number;
   sellOnPercentage: number;
   swapPlayerId?: string | null;
+  swapValuation?: number;
+  biddingWarClubId?: string | null;
+  biddingWarClubName?: string | null;
   proposedWagePerWeek: number;
   proposedContractYears: number;
   proposedSquadStatus: Player['squadStatus'];
