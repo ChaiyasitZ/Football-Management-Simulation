@@ -23,6 +23,7 @@ import {
   getCompetitionSilverwareMeta,
 } from '../components/SilverwareModals';
 import {
+  computeMatchPassingNetwork,
   computeSetPieceThreatScore,
   reconcileMatchResultEventsAndStats,
   simulateMatch,
@@ -49,11 +50,13 @@ import {
   createCustomPlayerInWorld,
   dehydrateWorldStateToCareerMap,
   dispatchSouthAmericaWonderkidScout,
+  evaluateAiManagerJobSecurity,
   evaluateClubFFPStatus,
   evaluateSquadMedicalRisk,
   exerciseBuyBackClause,
   expandClubStadium,
   exportWorldDatabaseJson,
+  FREE_AGENT_MANAGERS_POOL,
   generateAnnualYouthIntake,
   getClubAllTimeRecords,
   getClubStaffBonuses,
@@ -3055,6 +3058,284 @@ test('Stage 12: Universal Nationality Flags, Authentic HG-C/HG-N/U21/Non-EU Rule
   const reEvaluated = evaluateSquadRegistration(updatedBarcaPlayers, barca.countryId, barca.leagueId, world.gameDate);
   assert.equal(reEvaluated.isCompliant, true, 'autoRegisterSquadIds must produce a compliant La Liga squad');
 });
+
+test('26. Stage 13 Complete Suite: 18 Remaining Leagues 2025/26 DB (394/394), League Rules, AI Manager Carousel & Opta xG Shot Map / Pass Network', () => {
+  // =========================================================================
+  // PHASE 1: ALL 23 LEAGUES REGISTRATION RULES & 394/394 CLUB AUTHENTIC DATA
+  // =========================================================================
+  const allLeagueIds = Object.keys(LEAGUES_CONFIG) as (keyof typeof LEAGUES_CONFIG)[];
+  assert.equal(allLeagueIds.length, 23, 'Must have all 23 leagues in LEAGUES_CONFIG');
+  for (const lId of allLeagueIds) {
+    assert.ok(LEAGUES_CONFIG[lId].registrationRules, `League ${lId} must define registrationRules`);
+  }
+
+  let totalClubs = 0;
+  const allManagerNames = new Set<string>();
+  const templateByShort = new Map<string, (typeof CLUB_TEMPLATES)[keyof typeof CLUB_TEMPLATES][number]>();
+
+  for (const lId of allLeagueIds) {
+    for (const tpl of CLUB_TEMPLATES[lId]) {
+      totalClubs++;
+      assert.ok(tpl.preferredFormation, `${tpl.name} (${lId}) must define preferredFormation`);
+      assert.ok(tpl.secondaryFormation, `${tpl.name} (${lId}) must define secondaryFormation`);
+      assert.ok(tpl.tacticalPreset, `${tpl.name} (${lId}) must define tacticalPreset`);
+      assert.ok(
+        typeof tpl.transferBudgetEur === 'number' && tpl.transferBudgetEur >= 400_000,
+        `${tpl.name} (${lId}) must define realistic transferBudgetEur`
+      );
+      assert.ok(
+        typeof tpl.wageBudgetEur === 'number' && tpl.wageBudgetEur >= 30_000,
+        `${tpl.name} (${lId}) must define realistic wageBudgetEur`
+      );
+      const normMgr = tpl.managerName.trim().toLowerCase();
+      assert.ok(!allManagerNames.has(normMgr), `Duplicate manager detected across 394 clubs: ${tpl.managerName}`);
+      allManagerNames.add(normMgr);
+      templateByShort.set(tpl.shortName, tpl);
+    }
+  }
+  assert.equal(totalClubs, 394, 'CLUB_TEMPLATES must contain all 394 clubs across 23 leagues');
+
+  // Verify marquee clubs across the 18 remaining leagues
+  assert.equal(templateByShort.get('SLB')?.preferredFormation, '4-2-3-1');
+  assert.equal(templateByShort.get('SCP')?.preferredFormation, '3-4-3');
+  assert.equal(templateByShort.get('PSV')?.tacticalPreset, 'GEGENPRESS_HIGH_LINE');
+  assert.equal(templateByShort.get('GAL')?.preferredFormation, '4-2-3-1');
+  assert.equal(templateByShort.get('FEN')?.preferredFormation, '4-2-3-1');
+  assert.equal(templateByShort.get('CELT')?.tacticalPreset, 'CONTROL_POSSESSION');
+  assert.equal(templateByShort.get('HIL')?.managerName, 'Simone Inzaghi');
+  assert.equal(templateByShort.get('HIL')?.preferredFormation, '3-5-2');
+  assert.equal(templateByShort.get('NAS')?.managerName, 'Jorge Jesus');
+  assert.equal(templateByShort.get('MIA')?.preferredFormation, '4-3-3');
+  assert.equal(templateByShort.get('FLA')?.tacticalPreset, 'GEGENPRESS_HIGH_LINE');
+  assert.equal(templateByShort.get('VIS')?.preferredFormation, '4-3-3');
+
+  // Verify 100% registration compliance across all 394 generated clubs
+  const world = createInitialWorldState(202613);
+  const allClubs = Object.values(world.clubs);
+  assert.equal(allClubs.length, 394);
+  const playersByClub = new Map<string, (typeof world.players)[string][]>();
+  for (const p of Object.values(world.players)) {
+    const arr = playersByClub.get(p.clubId) || [];
+    arr.push(p);
+    playersByClub.set(p.clubId, arr);
+  }
+
+  for (const c of allClubs) {
+    const squad = playersByClub.get(c.id) || [];
+    const summary = evaluateSquadRegistration(squad, c.countryId, c.leagueId, world.gameDate);
+    assert.equal(
+      summary.isCompliant,
+      true,
+      `${c.name} (${c.leagueId}) must start 100% registration-compliant; issues: ${summary.issues.map((i) => i.en).join('; ')}`
+    );
+  }
+
+  // Verify league-specific registration mechanics across the 18 leagues
+  const samplePlayer = Object.values(world.players)[0];
+  const braPlayer = {
+    ...samplePlayer,
+    id: 'test_bra_equal',
+    nationalityCode: 'BRA',
+    homegrownStatus: 'NONE' as const,
+    dateOfBirth: '1999-05-01',
+  };
+  const senPlayer = {
+    ...samplePlayer,
+    id: 'test_sen_l2',
+    nationalityCode: 'SEN',
+    homegrownStatus: 'NONE' as const,
+    dateOfBirth: '1999-05-01',
+  };
+  const argPlayer = {
+    ...samplePlayer,
+    id: 'test_arg_foreign',
+    nationalityCode: 'ARG',
+    homegrownStatus: 'NONE' as const,
+    dateOfBirth: '2002-04-01', // Age 23 on 2025-07-15
+  };
+  const age20Player = {
+    ...samplePlayer,
+    id: 'test_u20_bra',
+    nationalityCode: 'BRA',
+    dateOfBirth: '2005-04-01', // Age 20 on 2025-07-15
+  };
+
+  assert.equal(LEAGUES_CONFIG.POR_LP.registrationRules?.brazilEqualRights, true, 'Liga Portugal must enable Brazilian Equal Rights Statute');
+  assert.equal(isPlayerNonEuForLeague(braPlayer, 'POR_LP'), false, 'Brazilian player must enjoy Equal Rights Statute in Liga Portugal');
+  assert.equal(isPlayerNonEuForLeague(argPlayer, 'ESP_SD'), true, 'Non-EU player counts toward Segunda División Non-EU cap');
+  assert.equal(isPlayerNonEuForLeague(argPlayer, 'GRE_SL'), true, 'Non-EU player counts toward Greek Super League Non-EU cap');
+  assert.equal(isPlayerNonEuForLeague(senPlayer, 'FRA_L2'), false, 'Senegalese player must be Cotonou-exempt in Ligue 2');
+  assert.equal(isPlayerNonEuForLeague(argPlayer, 'FRA_L2'), true, 'Argentine non-HG player counts as Non-EU in Ligue 2');
+  assert.equal(isPlayerNonEuForLeague(argPlayer, 'KSA_SPL'), true, 'Foreign player must count toward KSA_SPL foreigner cap');
+  assert.equal(isPlayerNonEuForLeague(argPlayer, 'JPN_J1'), true, 'Foreign player must count toward JPN_J1 foreigner cap');
+  assert.equal(isPlayerU21Exempt(argPlayer, '2025-07-15', 'ITA_SB', 'ITA'), true, 'Age 23 player must be exempt in Serie B (U23)');
+  assert.equal(isPlayerU21Exempt(argPlayer, '2025-07-15', 'USA_MLS', 'USA'), false, 'Age 23 player must NOT be exempt in MLS (U22)');
+  assert.equal(isPlayerU21Exempt(age20Player, '2025-07-15', 'BRA_SA', 'BRA'), true, 'Age 20 player must be exempt in Brasileirão (U20)');
+  assert.equal(LEAGUES_CONFIG.KSA_SPL.registrationRules?.maxNonEu, 10);
+  assert.equal(LEAGUES_CONFIG.KSA_SPL.registrationRules?.minHomegrownTotal, 15);
+  assert.equal(LEAGUES_CONFIG.JPN_J1.registrationRules?.maxNonEu, 5);
+  assert.equal(LEAGUES_CONFIG.JPN_J1.registrationRules?.minClubTrained, 4);
+  assert.equal(LEAGUES_CONFIG.FRA_L2.registrationRules?.maxNonEu, 2);
+
+  // =========================================================================
+  // PHASE 2: 100% GLOBAL NATIONALITY FLAG RESOLUTION COVERAGE
+  // =========================================================================
+  const globalCodes = [
+    'SAU', 'JPN', 'USA', 'BRA', 'TUR', 'GRE', 'AUT', 'SUI', 'SCO', 'BEL',
+    'NED', 'POR', 'MEX', 'COL', 'URU', 'NGA', 'MAR', 'SEN', 'KOR', 'AUS', 'IRN',
+  ];
+  for (const code of globalCodes) {
+    const info = resolveNationalityFlagInfo(code);
+    assert.ok(info.pngUrl && info.pngUrl.startsWith('https://flagcdn.com/'), `${code} must resolve to a valid flagcdn pngUrl`);
+    assert.ok(info.svgUrl && info.svgUrl.startsWith('https://flagcdn.com/'), `${code} must resolve to a valid flagcdn svgUrl`);
+  }
+
+  // =========================================================================
+  // PHASE 3: DYNAMIC AI MANAGER CAROUSEL & TACTICAL IDENTITY SHIFT
+  // =========================================================================
+  assert.ok(FREE_AGENT_MANAGERS_POOL.length >= 12, 'FREE_AGENT_MANAGERS_POOL must contain >= 12 free-agent managers');
+  const poolNameSet = new Set(FREE_AGENT_MANAGERS_POOL.map((m) => m.name.trim().toLowerCase()));
+  for (const employed of allManagerNames) {
+    assert.ok(!poolNameSet.has(employed), `Free-agent pool must not overlap with employed manager ${employed}`);
+  }
+
+  // Pick a top-tier AI club and simulate severe underperformance after MD12
+  const aiVictim = allClubs.find(
+    (c) => c.id !== world.controlledClubId && c.leagueId === 'ENG_PL' && c.boardExpectations.targetLeaguePosition <= 6
+  )!;
+  const oldManagerName = aiVictim.aiManager.name;
+  const engTable = world.standings.ENG_PL;
+  const victimRow = engTable.find((r) => r.clubId === aiVictim.id)!;
+  const otherRows = engTable.filter((r) => r.clubId !== aiVictim.id);
+  const crisisStandings = [
+    ...otherRows.map((r, idx) => ({
+      ...r,
+      played: 12,
+      won: Math.max(1, 10 - Math.floor(idx / 2)),
+      drawn: 2,
+      lost: Math.min(10, Math.floor(idx / 2)),
+      points: Math.max(12, 32 - idx),
+      form: ['W', 'W', 'D', 'W', 'W'] as ('W' | 'D' | 'L')[],
+    })),
+    {
+      ...victimRow,
+      played: 12,
+      won: 1,
+      drawn: 2,
+      lost: 9,
+      points: 5,
+      form: ['L', 'L', 'L', 'D', 'L'] as ('W' | 'D' | 'L')[],
+    },
+  ];
+
+  const crisisWorld = {
+    ...world,
+    gameDate: '2025-11-17',
+    clubs: {
+      ...world.clubs,
+      [aiVictim.id]: {
+        ...aiVictim,
+        aiManager: {
+          ...aiVictim.aiManager,
+          jobSecurity: 24,
+        },
+      },
+    },
+    standings: {
+      ...world.standings,
+      ENG_PL: crisisStandings,
+    },
+  };
+
+  const securityEval = evaluateAiManagerJobSecurity(
+    crisisWorld.clubs[aiVictim.id],
+    20,
+    aiVictim.boardExpectations.targetLeaguePosition,
+    12
+  );
+  assert.equal(securityEval.shouldSack, true, 'Underperforming AI manager at #20 after MD12 must trigger sacking');
+  assert.ok(securityEval.nextSecurity < 22, 'Job security must drop below 22 threshold');
+
+  const carouselRes = triggerAIManagerialCarouselCheck(crisisWorld);
+  assert.ok(carouselRes.sackedCount >= 1, 'triggerAIManagerialCarouselCheck must sack at least 1 crisis AI manager');
+
+  const updatedVictim = carouselRes.nextState.clubs[aiVictim.id];
+  assert.notEqual(updatedVictim.aiManager.name, oldManagerName, 'Crisis club must appoint a new manager');
+  const hiredProfile = FREE_AGENT_MANAGERS_POOL.find((m) => m.name === updatedVictim.aiManager.name);
+  assert.ok(hiredProfile, 'Newly appointed manager must come from FREE_AGENT_MANAGERS_POOL');
+  assert.equal(
+    updatedVictim.primaryTactic.formation,
+    hiredProfile!.preferredFormation,
+    'Appointed manager must immediately shift club primary formation to their tactical identity'
+  );
+  assert.equal(
+    updatedVictim.aiManager.style,
+    hiredProfile!.style,
+    'Appointed manager must update club AI tactical style'
+  );
+
+  // Confirm 0 duplicate managers across all 394 clubs after appointment
+  const postCarouselManagers = Object.values(carouselRes.nextState.clubs).map((c) =>
+    c.aiManager.name.trim().toLowerCase()
+  );
+  assert.equal(
+    new Set(postCarouselManagers).size,
+    postCarouselManagers.length,
+    'Zero duplicate manager names allowed across all 394 clubs after AI carousel appointment'
+  );
+
+  // Confirm Inbox news item emitted
+  assert.ok(
+    carouselRes.nextState.inbox.some((n) => n.title.includes('MANAGERIAL SACKING & APPOINTMENT')),
+    'AI manager sacking & appointment must publish a breaking news item to Inbox'
+  );
+
+  // =========================================================================
+  // PHASE 4: OPTA-STYLE xG SHOT MAP & PASSING NETWORK COMPUTATION
+  // =========================================================================
+  const firstFixture = world.fixtures.find((f) => f.competitionId === 'ENG_PL')!;
+  const homeClub = world.clubs[firstFixture.homeClubId];
+  const awayClub = world.clubs[firstFixture.awayClubId];
+  const simRes = simulateMatch(firstFixture, homeClub, awayClub, world.players, 13013);
+
+  const shotEvents = simRes.events.filter(
+    (e) =>
+      e.eventType === 'Goal' ||
+      e.eventType === 'Shot' ||
+      e.eventType === 'ShotOnTarget' ||
+      e.eventType === 'BlockedShot' ||
+      e.eventType === 'Save' ||
+      e.eventType === 'PenaltyMissed'
+  );
+  assert.ok(shotEvents.length >= 4, 'Simulated match must emit shot events for the xG Shot Map');
+  for (const se of shotEvents) {
+    const xg = se.shotXg ?? se.xGDelta ?? 0;
+    const sx = se.shotX ?? se.pitchX;
+    assert.ok(typeof xg === 'number' && xg >= 0 && xg <= 1.2, 'Every shot event must carry valid xG');
+    assert.ok(typeof sx === 'number' && sx >= 0 && sx <= 100, 'Every shot event must carry valid X coordinate');
+  }
+
+  const passNet = computeMatchPassingNetwork(firstFixture, homeClub, awayClub, world.players, simRes);
+  assert.equal(passNet.home.nodes.length, 11, 'Home passing network must contain all 11 starters');
+  assert.equal(passNet.away.nodes.length, 11, 'Away passing network must contain all 11 starters');
+  assert.ok(passNet.home.edges.length >= 10, `Home passing network must contain >= 10 weighted pass links (got ${passNet.home.edges.length})`);
+  assert.ok(passNet.away.edges.length >= 10, `Away passing network must contain >= 10 weighted pass links (got ${passNet.away.edges.length})`);
+
+  for (const side of [passNet.home, passNet.away]) {
+    assert.ok(side.possession > 0 && side.possession < 100, 'Team passing network must compute valid possession');
+    assert.ok(side.passAccuracy >= 50 && side.passAccuracy <= 100, 'Team passing network must compute valid passAccuracy');
+    for (const node of side.nodes) {
+      assert.ok(node.x >= 0 && node.x <= 100, `Node ${node.lastName} x (${node.x}) must be within 0..100`);
+      assert.ok(node.y >= 0 && node.y <= 100, `Node ${node.lastName} y (${node.y}) must be within 0..100`);
+      assert.ok(node.touches > 0, `Node ${node.lastName} touches must be > 0`);
+    }
+    for (const edge of side.edges) {
+      assert.ok(edge.passCount > 0, 'Every passing network edge must have passCount > 0');
+      assert.ok(edge.strength >= 0.2 && edge.strength <= 1.0, 'Edge strength must be normalized');
+    }
+  }
+});
+
 
 
 

@@ -2244,9 +2244,12 @@ export const TransfersView: React.FC<{
                     <div className="flex items-center gap-2.5 min-w-0">
                       <PlayerAvatar player={p} club={c} size="sm" />
                       <div className="truncate">
-                        <div className="font-semibold text-white truncate">
-                          {p.firstName} {p.lastName}{' '}
-                          <span className="font-mono text-emerald-400">
+                        <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                          <NationalityFlag code={p.nationalityCode} size="xs" />
+                          <span className="truncate">
+                            {p.firstName} {p.lastName}
+                          </span>
+                          <span className="font-mono text-emerald-400 shrink-0">
                             ({p.positions[0]} · CA {(p.currentAbility / 10).toFixed(1)})
                           </span>
                         </div>
@@ -2317,9 +2320,12 @@ export const TransfersView: React.FC<{
                     <div className="flex items-center gap-2.5 min-w-0">
                       <PlayerAvatar player={p} club={c} size="sm" />
                       <div className="truncate">
-                        <div className="font-semibold text-white truncate">
-                          {p.firstName} {p.lastName}{' '}
-                          <span className="font-mono text-emerald-400">
+                        <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                          <NationalityFlag code={p.nationalityCode} size="xs" />
+                          <span className="truncate">
+                            {p.firstName} {p.lastName}
+                          </span>
+                          <span className="font-mono text-emerald-400 shrink-0">
                             ({p.positions[0]} · CA {(p.currentAbility / 10).toFixed(1)})
                           </span>
                         </div>
@@ -2377,8 +2383,11 @@ export const TransfersView: React.FC<{
                       <div className="flex items-center gap-3">
                         <PlayerAvatar player={p} club={club} size="md" />
                         <div>
-                          <div className="text-sm font-bold text-white">
-                            {p.firstName} {p.lastName}{' '}
+                          <div className="text-sm font-bold text-white flex items-center gap-1.5">
+                            <NationalityFlag code={p.nationalityCode} size="xs" />
+                            <span>
+                              {p.firstName} {p.lastName}
+                            </span>
                             <span className="text-xs font-mono text-emerald-400">
                               ({p.positions.join('/')} · CA {(p.currentAbility / 10).toFixed(1)})
                             </span>
@@ -2486,9 +2495,12 @@ export const TransfersView: React.FC<{
                       <div className="flex items-center gap-2.5 min-w-0">
                         <PlayerAvatar player={p} club={curClub} size="sm" />
                         <div className="truncate">
-                          <div className="font-bold text-white truncate">
-                            {p.firstName} {p.lastName}{' '}
-                            <span className="font-mono text-emerald-400">
+                          <div className="font-bold text-white truncate flex items-center gap-1.5">
+                            <NationalityFlag code={p.nationalityCode} size="xs" />
+                            <span className="truncate">
+                              {p.firstName} {p.lastName}
+                            </span>
+                            <span className="font-mono text-emerald-400 shrink-0">
                               (CA {(p.currentAbility / 10).toFixed(1)})
                             </span>
                           </div>
@@ -2983,8 +2995,11 @@ export const TransfersView: React.FC<{
                     className="flex flex-wrap items-center justify-between p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs"
                   >
                     <div>
-                      <div className="font-semibold text-white">
-                        {p?.firstName} {p?.lastName} ({sellClub?.name} → {buyClub?.name})
+                      <div className="font-semibold text-white flex items-center gap-1.5">
+                        {p && <NationalityFlag code={p.nationalityCode} size="xs" />}
+                        <span>
+                          {p?.firstName} {p?.lastName} ({sellClub?.name} → {buyClub?.name})
+                        </span>
                       </div>
                       <div className="text-slate-400 font-mono tabular-nums">
                         {off.offerType} · {tr('Upfront', 'เงินต้น')} €{(off.upfrontFee / 1_000_000).toFixed(2)}M + {tr('Installments', 'ผ่อน')} €{(off.installmentsFee / 1_000_000).toFixed(2)}M · {tr('Wage', 'ค่าเหนื่อย')} €{off.proposedWagePerWeek.toLocaleString()}/w
@@ -3041,6 +3056,7 @@ export const TransfersView: React.FC<{
                     <td className="py-2 px-3 font-medium text-white">
                       <div className="flex items-center gap-2">
                         <PlayerAvatar player={p} club={c} size="sm" />
+                        <NationalityFlag code={p.nationalityCode} size="xs" />
                         <span>
                           {p.firstName} {p.lastName}
                         </span>
@@ -5242,6 +5258,7 @@ export const CompetitionsAndScheduleView: React.FC<{
                           <div className="flex items-center gap-2 truncate text-left">
                             <span className="font-mono text-slate-500">{idx + 1}.</span>
                             <PlayerAvatar player={p} club={world.clubs[p.clubId]} size="xs" />
+                            <NationalityFlag code={p.nationalityCode} size="xs" />
                             <span className="text-white font-medium truncate">
                               {p.firstName} {p.lastName}
                             </span>
@@ -6141,52 +6158,64 @@ export const ClubStaffYouthWorldView: React.FC<{
                       <div className="text-[11px] font-mono font-bold text-amber-300 uppercase">
                         🏆 {tr("Ballon d'Or Top 5 Tracker", "5 ตัวเต็ง Ballon d'Or")}
                       </div>
-                      {liveRace.ballonDorTop5.map((c) => (
-                        <button
-                          key={c.playerId}
-                          type="button"
-                          onClick={() => onSelectPlayer(c.playerId)}
-                          className="w-full p-2.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between gap-2 text-left cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-semibold text-white truncate">
-                              #{c.rank} {c.playerName}
+                      {liveRace.ballonDorTop5.map((c) => {
+                        const natCode = world.players[c.playerId]?.nationalityCode;
+                        return (
+                          <button
+                            key={c.playerId}
+                            type="button"
+                            onClick={() => onSelectPlayer(c.playerId)}
+                            className="w-full p-2.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between gap-2 text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                                <span>#{c.rank}</span>
+                                {natCode && <NationalityFlag code={natCode} size="xs" />}
+                                <span className="truncate">{c.playerName}</span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                {c.clubName} · {c.goals}G / {c.assists}A · Rat {c.averageRating}
+                              </div>
                             </div>
-                            <div className="text-[10px] text-slate-400 truncate">
-                              {c.clubName} · {c.goals}G / {c.assists}A · Rat {c.averageRating}
-                            </div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 font-mono text-[10px] font-bold shrink-0">
-                            {c.powerScore} pts
-                          </span>
-                        </button>
-                      ))}
+                            <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 font-mono text-[10px] font-bold shrink-0">
+                              {c.powerScore} pts
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
 
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-mono font-bold text-sky-300 uppercase">
                         ★ {tr('Golden Boy (U21) Top 5', '5 ตัวเต็งดาวรุ่ง Golden Boy (U21)')}
                       </div>
-                      {liveRace.goldenBoyTop5.map((c) => (
-                        <button
-                          key={c.playerId}
-                          type="button"
-                          onClick={() => onSelectPlayer(c.playerId)}
-                          className="w-full p-2.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between gap-2 text-left cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-semibold text-white truncate">
-                              #{c.rank} {c.playerName} ({c.age})
+                      {liveRace.goldenBoyTop5.map((c) => {
+                        const natCode = world.players[c.playerId]?.nationalityCode;
+                        return (
+                          <button
+                            key={c.playerId}
+                            type="button"
+                            onClick={() => onSelectPlayer(c.playerId)}
+                            className="w-full p-2.5 rounded-lg bg-slate-950 hover:bg-slate-800/80 border border-slate-800 flex items-center justify-between gap-2 text-left cursor-pointer"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold text-white truncate flex items-center gap-1.5">
+                                <span>#{c.rank}</span>
+                                {natCode && <NationalityFlag code={natCode} size="xs" />}
+                                <span className="truncate">
+                                  {c.playerName} ({c.age})
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                {c.clubName} · CA {(c.ca / 10).toFixed(1)} · {c.goals}G/{c.assists}A
+                              </div>
                             </div>
-                            <div className="text-[10px] text-slate-400 truncate">
-                              {c.clubName} · CA {(c.ca / 10).toFixed(1)} · {c.goals}G/{c.assists}A
-                            </div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono text-[10px] font-bold shrink-0">
-                            {c.powerScore} pts
-                          </span>
-                        </button>
-                      ))}
+                            <span className="px-2 py-0.5 rounded bg-sky-500/15 text-sky-300 font-mono text-[10px] font-bold shrink-0">
+                              {c.powerScore} pts
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 </div>
@@ -6336,8 +6365,12 @@ export const ClubStaffYouthWorldView: React.FC<{
                 >
                   <div>
                     <div className="font-semibold text-white">{s.name}</div>
-                    <div className="text-slate-400">
-                      {s.role} · {tr(`Age ${s.age}`, `อายุ ${s.age}`)} · {s.nationality}
+                    <div className="text-slate-400 flex items-center gap-1.5 mt-0.5">
+                      <span>
+                        {s.role} · {tr(`Age ${s.age}`, `อายุ ${s.age}`)}
+                      </span>
+                      <span>·</span>
+                      <NationalityFlag code={s.nationality} size="xs" showCode />
                     </div>
                   </div>
                   <div className="text-right font-mono tabular-nums text-xs text-slate-300">
@@ -6361,8 +6394,12 @@ export const ClubStaffYouthWorldView: React.FC<{
                 >
                   <div>
                     <div className="font-semibold text-white">{s.name}</div>
-                    <div className="text-slate-400">
-                      {s.role} · Judging {s.attributes.judgingAbility}/{s.attributes.judgingPotential}
+                    <div className="text-slate-400 flex items-center gap-1.5 mt-0.5">
+                      <span>
+                        {s.role} · Judging {s.attributes.judgingAbility}/{s.attributes.judgingPotential}
+                      </span>
+                      <span>·</span>
+                      <NationalityFlag code={s.nationality} size="xs" showCode />
                     </div>
                   </div>
                   <button

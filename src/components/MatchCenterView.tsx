@@ -12,13 +12,14 @@ import {
   WorldState,
 } from '../types/game';
 import {
+  computeMatchPassingNetwork,
   reconcileMatchResultEventsAndStats,
   simulateMatch,
 } from '../engine/matchEngine';
 import { computeTacticalPhaseCoordinates } from '../engine/tacticsEngine';
 import { soundService } from '../engine/soundService';
 import { ClubBadge } from './ClubBadge';
-import { CompetitionBadge, TrophyArtwork } from './TrophyAndKitVisuals';
+import { CompetitionBadge, NationalityFlag, TrophyArtwork } from './TrophyAndKitVisuals';
 import { useLanguage } from '../i18n/LanguageContext';
 
 export type MatchTileType =
@@ -162,6 +163,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
   } | null>(null);
   const [activeFlankPopoverSlotIdx, setActiveFlankPopoverSlotIdx] = useState<number | null>(null);
   const [easedOffPlayerIds, setEasedOffPlayerIds] = useState<string[]>([]);
+  const [showXgPassModal, setShowXgPassModal] = useState<boolean>(false);
+  const [xgPassTeamSide, setXgPassTeamSide] = useState<'home' | 'away'>('home');
+  const [selectedShotDetail, setSelectedShotDetail] = useState<MatchEvent | null>(null);
 
   // 5 Swappable Analytics Tiles persisted in localStorage
   const [tiles, setTiles] = useState<
@@ -1091,14 +1095,15 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 className="absolute inset-x-1.5 bottom-1.5 z-20 rounded-xl bg-slate-950/95 border border-emerald-500/60 p-2.5 shadow-2xl space-y-2 text-[11px]"
               >
                 <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-1.5">
-                  <div className="truncate">
+                  <div className="truncate flex items-center gap-1.5">
+                    <NationalityFlag code={popPlayer.nationalityCode} size="xs" />
                     <span className="font-mono font-bold text-emerald-400">
                       #{popPlayer.shirtNumber || activeFlankPopoverSlotIdx + 1}
-                    </span>{' '}
-                    <span className="font-bold text-white">
+                    </span>
+                    <span className="font-bold text-white truncate">
                       {popPlayer.firstName} {popPlayer.lastName}
-                    </span>{' '}
-                    <span className="text-[10px] font-mono text-slate-400">
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400 shrink-0">
                       ({popCond}% · {hasYellow ? '🟨 Booked' : 'Clean'})
                     </span>
                   </div>
@@ -1454,41 +1459,25 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           })()}
 
           {activeType === 'PASS_MAP' && (() => {
-            const targetClub = tileTeamFilter === 'away' ? awayClub : homeClub;
-            const isAwayMap = targetClub.id === awayClub.id;
-            const coords = computeTacticalPhaseCoordinates(targetClub.primaryTactic, 'in_possession');
-            const edges: [number, number, number][] = [
-              [0, 2, 1.4],
-              [0, 3, 1.4],
-              [2, 1, 1.6],
-              [3, 4, 1.6],
-              [2, 5, 2.1],
-              [3, 6, 2.2],
-              [5, 6, 2.5],
-              [6, 7, 2.3],
-              [5, 8, 1.8],
-              [7, 9, 1.8],
-              [6, 10, 2.0],
-              [8, 10, 1.5],
-              [9, 10, 1.5],
-            ];
+            const network = targetFixture
+              ? computeMatchPassingNetwork(targetFixture, homeClub, awayClub, world.players, simResult)
+              : null;
+            const isAwayMap = tileTeamFilter === 'away';
+            const teamNet = network ? (isAwayMap ? network.away : network.home) : null;
+            const targetClub = isAwayMap ? awayClub : homeClub;
             return (
               <div className="h-full flex flex-col justify-between">
                 <svg viewBox="0 0 120 72" className="w-full h-full max-h-32 rounded border border-slate-800 bg-slate-950">
                   <rect x="3" y="3" width="114" height="66" fill="none" stroke="#1e293b" strokeWidth="0.8" />
                   <line x1="60" y1="3" x2="60" y2="69" stroke="#1e293b" strokeWidth="0.8" />
-                  {edges.map(([a, b, w], idx) => {
-                    const ca = coords[a];
-                    const cb = coords[b];
-                    if (!ca || !cb) return null;
-                    const x1 = isAwayMap
-                      ? 112 - ((100 - ca.y) / 100) * 98
-                      : 8 + ((100 - ca.y) / 100) * 98;
-                    const y1 = 6 + (ca.x / 100) * 60;
-                    const x2 = isAwayMap
-                      ? 112 - ((100 - cb.y) / 100) * 98
-                      : 8 + ((100 - cb.y) / 100) * 98;
-                    const y2 = 6 + (cb.x / 100) * 60;
+                  {teamNet?.edges.map((edge, idx) => {
+                    const na = teamNet.nodes[edge.fromSlot];
+                    const nb = teamNet.nodes[edge.toSlot];
+                    if (!na || !nb) return null;
+                    const x1 = 4 + (na.x / 100) * 112;
+                    const y1 = 4 + (na.y / 100) * 64;
+                    const x2 = 4 + (nb.x / 100) * 112;
+                    const y2 = 4 + (nb.y / 100) * 64;
                     return (
                       <line
                         key={idx}
@@ -1497,38 +1486,34 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         x2={x2}
                         y2={y2}
                         stroke={isAwayMap ? '#38bdf8' : '#10b981'}
-                        strokeOpacity="0.65"
-                        strokeWidth={w * 0.8}
+                        strokeOpacity={0.35 + edge.strength * 0.55}
+                        strokeWidth={0.6 + edge.strength * 1.9}
                       />
                     );
                   })}
-                  {coords.map((c, i) => {
-                    const slot = targetClub.primaryTactic.lineup[i];
-                    const p = slot?.playerId ? world.players[slot.playerId] : null;
-                    const num = p?.shirtNumber || i + 1;
-                    const cx = isAwayMap
-                      ? 112 - ((100 - c.y) / 100) * 98
-                      : 8 + ((100 - c.y) / 100) * 98;
-                    const cy = 6 + (c.x / 100) * 60;
+                  {teamNet?.nodes.map((node) => {
+                    const cx = 4 + (node.x / 100) * 112;
+                    const cy = 4 + (node.y / 100) * 64;
+                    const r = Math.max(2.6, Math.min(4.2, 2.3 + (node.touches / 75) * 1.6));
                     return (
-                      <g key={i}>
+                      <g key={node.slotIndex}>
                         <circle
                           cx={cx}
                           cy={cy}
-                          r="3.2"
+                          r={r}
                           fill={targetClub.primaryColor}
                           stroke="#fff"
                           strokeWidth="0.6"
                         />
                         <text
                           x={cx}
-                          y={cy + 1}
+                          y={cy + 0.9}
                           textAnchor="middle"
-                          fontSize="2.5"
+                          fontSize="2.4"
                           fill="#fff"
                           fontWeight="bold"
                         >
-                          {num}
+                          {node.shirtNumber}
                         </text>
                       </g>
                     );
@@ -1541,6 +1526,16 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       {simResult ? simResult.homeStats.passAccuracy : 86}%
                     </strong>
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setXgPassTeamSide(isAwayMap ? 'away' : 'home');
+                      setShowXgPassModal(true);
+                    }}
+                    className="text-amber-300 hover:text-amber-200 underline cursor-pointer"
+                  >
+                    {tr('Opta View ↗', 'ขยายดู Opta ↗')}
+                  </button>
                   <span>
                     {awayClub.shortName} Pass %:{' '}
                     <strong className="text-sky-400">
@@ -1661,6 +1656,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                     const cx = Math.max(4, Math.min(96, rawX));
                     const cy = Math.max(5, Math.min(55, (rawY / 100) * 60));
                     const radius = Math.max(1.8, Math.min(4.8, 1.4 + xgVal * 5.2));
+                    const isSaved = ev.eventType === 'Save';
                     return (
                       <circle
                         key={ev.id}
@@ -1668,29 +1664,34 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                         cy={cy}
                         r={radius}
                         onClick={() => setActiveShotTooltip(ev)}
+                        onMouseEnter={() => setActiveShotTooltip(ev)}
                         className="cursor-pointer"
                         fill={
                           isGoal
-                            ? isHomeShot
-                              ? '#10b981'
-                              : '#38bdf8'
-                            : isHomeShot
-                              ? 'rgba(16,185,129,0.3)'
-                              : 'rgba(56,189,248,0.3)'
+                            ? '#facc15'
+                            : isSaved
+                              ? 'rgba(56, 189, 248, 0.72)'
+                              : 'rgba(148, 163, 184, 0.42)'
                         }
-                        stroke={isGoal ? '#ffffff' : isHomeShot ? '#10b981' : '#38bdf8'}
+                        stroke={isGoal ? '#ffffff' : isSaved ? '#38bdf8' : '#94a3b8'}
                         strokeWidth={isGoal ? '0.9' : '0.6'}
                       />
                     );
                   })}
                 </svg>
                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mt-1">
-                  <span>
+                  <span className="truncate">
                     {activeShotTooltip
-                      ? `${activeShotTooltip.minute}' ${activeShotTooltip.playerName || ''} (${activeShotTooltip.eventType})`
-                      : tr('Click shot circle for xG details', 'คลิกจุดยิงเพื่อดูค่า xG')}
+                      ? `${activeShotTooltip.minute}' ${activeShotTooltip.playerName || ''} · ${(activeShotTooltip.shotXg ?? activeShotTooltip.xGDelta ?? 0.1).toFixed(2)} xG`
+                      : tr('Hover/click shot circle for xG', 'ชี้/คลิกจุดยิงเพื่อดูค่า xG')}
                   </span>
-                  <span className="text-emerald-400">{shotEvents.length} shots</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowXgPassModal(true)}
+                    className="text-amber-300 hover:text-amber-200 underline cursor-pointer shrink-0 ml-1"
+                  >
+                    {shotEvents.length} {tr('shots ↗', 'ลูกยิง ↗')}
+                  </button>
                 </div>
               </div>
             );
@@ -2171,6 +2172,17 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
             {tr('Instant Result', 'จำลองผลทันที')}
           </button>
 
+          {currentMinute >= 45 && simResult && (
+            <button
+              type="button"
+              data-testid="open-xg-pass-network-btn"
+              onClick={() => setShowXgPassModal(true)}
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/50 font-semibold text-xs rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+            >
+              {tr('🎯 xG Shot Map & Pass Network', '🎯 แผนผัง xG & การต่อบอล')}
+            </button>
+          )}
+
           {currentMinute >= maxMatchMinute &&
             nextScheduledFixture &&
             nextScheduledFixture.id !== targetFixture?.id && (
@@ -2486,6 +2498,14 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 </span>
               </button>
             )}
+            <button
+              type="button"
+              data-testid="postmatch-xg-pass-network-btn"
+              onClick={() => setShowXgPassModal(true)}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/50 text-xs font-semibold cursor-pointer transition-colors"
+            >
+              {tr('🎯 xG Shot Map & Pass Network', '🎯 แผนผังจุดยิง xG & เครือข่ายการต่อบอล')}
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
@@ -3539,8 +3559,9 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                   }}
                   className="w-full px-3 py-2 rounded-xl bg-slate-950 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/40 flex items-center justify-between text-left cursor-pointer"
                 >
-                  <div>
-                    <span className="font-mono text-emerald-400 font-bold mr-2">
+                  <div className="flex items-center gap-2">
+                    <NationalityFlag code={bPlayer.nationalityCode} size="xs" />
+                    <span className="font-mono text-emerald-400 font-bold">
                       {bPlayer.positions.join('/')}
                     </span>
                     <span className="font-semibold text-white">
@@ -3556,6 +3577,360 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* STAGE 13 PHASE 4: INTERACTIVE OPTA-STYLE xG SHOT MAP & PASSING NETWORK ANALYSIS MODAL */}
+      {showXgPassModal && targetFixture && simResult && (() => {
+        const passNet = computeMatchPassingNetwork(
+          targetFixture,
+          homeClub,
+          awayClub,
+          world.players,
+          simResult
+        );
+        const activeTeamNet = xgPassTeamSide === 'home' ? passNet.home : passNet.away;
+        const shotEvents = visibleEvents.filter(
+          (e) =>
+            e.eventType === 'Goal' ||
+            e.eventType === 'Save' ||
+            e.eventType === 'BlockedShot' ||
+            e.eventType === 'Shot' ||
+            e.eventType === 'PenaltyMissed' ||
+            e.eventType === 'FreeKick'
+        );
+        const activeShot = selectedShotDetail || shotEvents[0] || null;
+
+        return (
+          <div
+            data-testid="xg-shotmap-passnetwork-modal"
+            className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowXgPassModal(false)}
+          >
+            <div
+              className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl bg-slate-900 border border-amber-500/40 shadow-2xl p-5 space-y-4 text-xs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-3">
+                  <ClubBadge club={homeClub} size="sm" />
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-widest text-amber-400">
+                      {tr('OPTA MATCH ANALYTICS STUDIO', 'ศูนย์วิเคราะห์ข้อมูลหลังเกมระดับ Opta')}
+                    </div>
+                    <h3 className="text-base font-display font-bold text-white">
+                      🎯 {tr('xG Shot Map & Average Position Pass Network', 'แผนผังจุดยิง xG & เครือข่ายการต่อบอลเฉลี่ย')} — {homeClub.shortName} {visibleHomeGoals} : {visibleAwayGoals} {awayClub.shortName}
+                    </h3>
+                  </div>
+                  <ClubBadge club={awayClub} size="sm" />
+                </div>
+                <button
+                  type="button"
+                  data-testid="close-xg-pass-modal-btn"
+                  onClick={() => setShowXgPassModal(false)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold cursor-pointer"
+                >
+                  ✕ {tr('Close', 'ปิด')}
+                </button>
+              </div>
+
+              {/* Dual Opta Panels */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* 1. Interactive 2D xG Shot Map */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-amber-300">
+                        🎯 {tr('Interactive 2D xG Shot Map', 'แผนผังจุดยิงประตู xG 2 มิติ')}
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        {tr(
+                          'Circle size scales with xG quality (0.04 → 0.85). Hover or click any shot.',
+                          'ขนาดวงกลมแปรผันตามค่า xG (0.04 → 0.85) ชี้หรือคลิกที่จุดยิงเพื่อดูรายละเอียด'
+                        )}
+                      </p>
+                    </div>
+                    <div className="text-right font-mono text-[11px] shrink-0 whitespace-nowrap">
+                      <div className="text-emerald-400 font-bold">
+                        {homeClub.shortName} {simResult.homeStats.xG.toFixed(2)} xG
+                      </div>
+                      <div className="text-sky-400 font-bold">
+                        {awayClub.shortName} {simResult.awayStats.xG.toFixed(2)} xG
+                      </div>
+                    </div>
+                  </div>
+
+                  <svg
+                    viewBox="0 0 100 62"
+                    data-testid="opta-xg-shotmap-svg"
+                    className="w-full h-auto rounded-lg border border-slate-800 bg-[#0b3d2b]"
+                  >
+                    <rect x="2" y="2" width="96" height="58" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                    <line x1="50" y1="2" x2="50" y2="60" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" />
+                    <circle cx="50" cy="31" r="8" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" />
+                    <rect x="2" y="14" width="15" height="34" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                    <rect x="83" y="14" width="15" height="34" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                    <rect x="2" y="22" width="5.5" height="18" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.4" />
+                    <rect x="92.5" y="22" width="5.5" height="18" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="0.4" />
+                    <text x="26" y="7" textAnchor="middle" fontSize="2.5" fill="rgba(255,255,255,0.55)" fontFamily="monospace">
+                      ← {awayClub.shortName} ATTACK
+                    </text>
+                    <text x="74" y="7" textAnchor="middle" fontSize="2.5" fill="rgba(255,255,255,0.55)" fontFamily="monospace">
+                      {homeClub.shortName} ATTACK →
+                    </text>
+
+                    {shotEvents.map((ev) => {
+                      const isGoal = ev.eventType === 'Goal';
+                      const isSaved = ev.eventType === 'Save';
+                      const shooterClubId =
+                        ev.eventType === 'Save'
+                          ? ev.teamId === homeClub.id
+                            ? awayClub.id
+                            : homeClub.id
+                          : ev.teamId;
+                      const isHomeShot = shooterClubId === homeClub.id;
+                      const xgVal = ev.shotXg ?? ev.xGDelta ?? 0.12;
+                      const rawX = ev.shotX ?? ev.pitchX ?? (isHomeShot ? 86 : 14);
+                      const rawY = ev.shotY ?? ev.pitchY ?? 50;
+                      const cx = Math.max(4, Math.min(96, rawX));
+                      const cy = Math.max(5, Math.min(57, (rawY / 100) * 62));
+                      const r = Math.max(1.7, Math.min(4.6, 1.3 + xgVal * 4.4));
+                      const isSelected = activeShot?.id === ev.id;
+                      return (
+                        <circle
+                          key={ev.id}
+                          cx={cx}
+                          cy={cy}
+                          r={isSelected ? r + 0.6 : r}
+                          onMouseEnter={() => setSelectedShotDetail(ev)}
+                          onClick={() => setSelectedShotDetail(ev)}
+                          className="cursor-pointer transition-all"
+                          fill={
+                            isGoal
+                              ? '#facc15'
+                              : isSaved
+                                ? 'rgba(56, 189, 248, 0.78)'
+                                : 'rgba(148, 163, 184, 0.45)'
+                          }
+                          stroke={isSelected ? '#10b981' : isGoal ? '#ffffff' : isSaved ? '#e0f2fe' : '#cbd5e1'}
+                          strokeWidth={isSelected ? '1.0' : isGoal ? '0.8' : '0.45'}
+                        />
+                      );
+                    })}
+                  </svg>
+
+                  {/* Shot Legend & Hover Inspector */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center gap-3 font-mono">
+                      <span className="flex items-center gap-1 text-amber-300">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400 border border-white inline-block" />
+                        {tr('Goal ⚽', 'ประตู ⚽')}
+                      </span>
+                      <span className="flex items-center gap-1 text-sky-300">
+                        <span className="w-2.5 h-2.5 rounded-full bg-sky-400/80 border border-sky-200 inline-block" />
+                        {tr('Saved', 'ติดเซฟ')}
+                      </span>
+                      <span className="flex items-center gap-1 text-slate-400">
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-400/50 border border-slate-300 inline-block" />
+                        {tr('Missed / Blocked', 'หลุดกรอบ / ติดบล็อก')}
+                      </span>
+                    </div>
+                    <span className="font-mono text-slate-400">
+                      {shotEvents.length} {tr('Total Shots Logged', 'จังหวะยิงทั้งหมด')}
+                    </span>
+                  </div>
+
+                  <div
+                    data-testid="opta-shot-inspector-card"
+                    className="p-3 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-between gap-2"
+                  >
+                    {activeShot ? (
+                      <>
+                        <div className="min-w-0">
+                          <div className="font-bold text-white flex items-center gap-1.5">
+                            <span className="font-mono text-emerald-400">{activeShot.minute}&apos;</span>
+                            {activeShot.playerId && world.players[activeShot.playerId] && (
+                              <NationalityFlag
+                                code={world.players[activeShot.playerId].nationalityCode}
+                                size="xs"
+                              />
+                            )}
+                            <span className="truncate">
+                              {activeShot.playerName || tr('Shot Attempt', 'จังหวะยิง')}
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-amber-300">
+                              {activeShot.eventType}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                            {activeShot.text}
+                          </div>
+                        </div>
+                        <div className="text-right font-mono shrink-0">
+                          <div className="text-sm font-bold text-amber-400">
+                            {(activeShot.shotXg ?? activeShot.xGDelta ?? 0.12).toFixed(2)} xG
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-slate-400">
+                        {tr('No shot events recorded yet.', 'ยังไม่มีเหตุการณ์การยิงประตู')}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Average Tactical Position & Passing Network */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-sm font-bold text-emerald-400">
+                        🕸️ {tr('Average Position & Passing Network', 'ตำแหน่งยืนเฉลี่ย & เครือข่ายการต่อบอล')}
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        {tr(
+                          'Node size = Touches · Line thickness = Pass combinations between teammates.',
+                          'ขนาดโหนด = สัมผัสบอล · ความหนาเส้น = ปริมาณการส่งบอลระหว่างเพื่อนร่วมทีม'
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5 shrink-0">
+                      <button
+                        type="button"
+                        data-testid="passnet-switch-home"
+                        onClick={() => setXgPassTeamSide('home')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold cursor-pointer ${
+                          xgPassTeamSide === 'home'
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {homeClub.shortName}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="passnet-switch-away"
+                        onClick={() => setXgPassTeamSide('away')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-mono font-bold cursor-pointer ${
+                          xgPassTeamSide === 'away'
+                            ? 'bg-sky-500 text-slate-950'
+                            : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        {awayClub.shortName}
+                      </button>
+                    </div>
+                  </div>
+
+                  <svg
+                    viewBox="0 0 100 62"
+                    data-testid="opta-pass-network-svg"
+                    className="w-full h-auto rounded-lg border border-slate-800 bg-[#0b3d2b]"
+                  >
+                    <rect x="2" y="2" width="96" height="58" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.5" />
+                    <line x1="50" y1="2" x2="50" y2="60" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" />
+                    <circle cx="50" cy="31" r="8" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" />
+                    <rect x="2" y="14" width="15" height="34" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" />
+                    <rect x="83" y="14" width="15" height="34" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.5" />
+
+                    {/* Weighted Passing Connections */}
+                    {activeTeamNet.edges.map((edge, idx) => {
+                      const a = activeTeamNet.nodes[edge.fromSlot];
+                      const b = activeTeamNet.nodes[edge.toSlot];
+                      if (!a || !b) return null;
+                      const x1 = 4 + (a.x / 100) * 92;
+                      const y1 = 4 + (a.y / 100) * 54;
+                      const x2 = 4 + (b.x / 100) * 92;
+                      const y2 = 4 + (b.y / 100) * 54;
+                      return (
+                        <line
+                          key={idx}
+                          x1={x1}
+                          y1={y1}
+                          x2={x2}
+                          y2={y2}
+                          stroke={xgPassTeamSide === 'home' ? '#34d399' : '#38bdf8'}
+                          strokeOpacity={0.35 + edge.strength * 0.55}
+                          strokeWidth={0.5 + edge.strength * 1.9}
+                          strokeLinecap="round"
+                        />
+                      );
+                    })}
+
+                    {/* 11 Average Position Nodes */}
+                    {activeTeamNet.nodes.map((node) => {
+                      const cx = 4 + (node.x / 100) * 92;
+                      const cy = 4 + (node.y / 100) * 54;
+                      const r = Math.max(2.4, Math.min(3.8, 2.0 + (node.touches / 80) * 1.6));
+                      return (
+                        <g key={node.slotIndex}>
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={r}
+                            fill={activeTeamNet.primaryColor}
+                            stroke="#ffffff"
+                            strokeWidth="0.55"
+                          />
+                          <text
+                            x={cx}
+                            y={cy + 0.8}
+                            textAnchor="middle"
+                            fontSize="2.1"
+                            fill="#ffffff"
+                            fontWeight="bold"
+                          >
+                            {node.shirtNumber}
+                          </text>
+                          <text
+                            x={cx}
+                            y={cy + r + 2.4}
+                            textAnchor="middle"
+                            fontSize="1.95"
+                            fill="#f8fafc"
+                            fontWeight="600"
+                            stroke="#062117"
+                            strokeWidth="0.95"
+                            paintOrder="stroke"
+                          >
+                            {node.lastName.slice(0, 9)}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+
+                  {/* Top Passing Combinations Summary */}
+                  <div className="p-3 rounded-lg bg-slate-900 border border-slate-800 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-slate-300 font-bold">
+                        {activeTeamNet.clubName} ({activeTeamNet.formation})
+                      </span>
+                      <span className="text-emerald-400">
+                        Poss {activeTeamNet.possession}% · Pass Acc {activeTeamNet.passAccuracy}%
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeTeamNet.edges.slice(0, 4).map((edge, idx) => {
+                        const a = activeTeamNet.nodes[edge.fromSlot];
+                        const b = activeTeamNet.nodes[edge.toSlot];
+                        return (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[10px] font-mono text-slate-300"
+                          >
+                            {a?.lastName} ↔ {b?.lastName}:{' '}
+                            <strong className="text-amber-300">{edge.passCount}</strong>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Quick Substitution Bench Picker Popover when a starter is clicked */}
       {selectedSubOutId && liveSubstitutions.length < maxSubs && currentMinute < maxMatchMinute && (
@@ -3575,6 +3950,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                 onClick={() => handleMakeSubstitution(selectedSubOutId, bPlayer.id)}
                 className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-emerald-500/20 border border-slate-800 hover:border-emerald-500/40 text-xs text-slate-200 cursor-pointer flex items-center gap-1.5"
               >
+                <NationalityFlag code={bPlayer.nationalityCode} size="xs" />
                 <strong className="text-emerald-400 font-mono">{bPlayer.positions[0]}</strong>
                 <span>{bPlayer.lastName}</span>
                 <span className="font-mono text-slate-400">({bPlayer.fitness}%)</span>
@@ -3699,6 +4075,7 @@ export const MatchCenterView: React.FC<MatchCenterViewProps> = ({
                       : 'bg-slate-900/90 hover:bg-slate-800 border-slate-800 text-slate-200'
                   }`}
                 >
+                  <NationalityFlag code={p.nationalityCode} size="xs" />
                   <span className="text-slate-400 font-bold">{p.positions[0]}</span>
                   <span className="font-sans truncate max-w-[68px]">
                     {wasSubbedIn ? '🔄' : ''}

@@ -602,6 +602,8 @@ export interface LeagueRegistrationRules {
   maxNonEu?: number | null;
   u21ExemptMaxAge: number;
   cotonouExempt?: boolean;
+  foreignRuleMode?: 'NON_EU' | 'FOREIGNER';
+  brazilEqualRights?: boolean;
 }
 
 export type MatchEventType =

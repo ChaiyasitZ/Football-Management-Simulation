@@ -940,7 +940,7 @@ const COUNTRY_ID_TO_NATIONALITY_CODES: Record<string, string[]> = {
   AUT: ['AUT'],
   SUI: ['SUI'],
   GRE: ['GRE'],
-  KSA: ['KSA'],
+  KSA: ['KSA', 'SAU'],
   USA: ['USA', 'CAN'],
   BRA: ['BRA'],
   JPN: ['JPN'],
@@ -1062,23 +1062,45 @@ export function isPlayerU21Exempt(
 }
 
 /**
- * Checks whether a player consumes a Non-EU foreigner slot under league rules (e.g. La Liga max 3, Ligue 1 max 4 w/ Cotonou exemption)
+ * Checks whether a player consumes a Non-EU or Foreigner slot under authentic 23-league rules:
+ * - European Non-EU caps: La Liga (3), Segunda (2), Serie B (2), Ligue 1 (4 Cotonou), Ligue 2 (2 Cotonou), Austria (7), Switzerland (8), Greece (5)
+ * - Domestic Foreigner caps: Süper Lig (14), Saudi Pro League (10), MLS (10), Brasileirão (9), J1 League (5)
+ * - Liga Portugal: Brazilian (BRA) players enjoy equal rights (Estatuto de Igualdade)
  */
 export function isPlayerNonEuForLeague(player: Player, leagueId?: LeagueId): boolean {
   if (!leagueId) return false;
-  const rules = LEAGUES_CONFIG[leagueId]?.registrationRules;
+  const leagueCfg = LEAGUES_CONFIG[leagueId];
+  const rules = leagueCfg?.registrationRules;
   if (!rules || rules.maxNonEu == null) return false;
 
   const code = player.nationalityCode.toUpperCase();
+
+  // Domestic Foreigner-Cap leagues (TUR_SL, KSA_SPL, USA_MLS, BRA_SA, JPN_J1)
+  if (rules.foreignRuleMode === 'FOREIGNER') {
+    const domesticCodes = COUNTRY_ID_TO_NATIONALITY_CODES[leagueCfg.countryId] || [
+      leagueCfg.countryId,
+    ];
+    if (domesticCodes.includes(code)) return false;
+    if (player.homegrownStatus === 'HGC' || player.homegrownStatus === 'HGN') {
+      return false;
+    }
+    return true;
+  }
+
+  // Liga Portugal Brazilian equal rights (Estatuto de Igualdade)
+  if (rules.brazilEqualRights && code === 'BRA') {
+    return false;
+  }
+
   if (EU_EEA_NATIONALITY_CODES.has(code)) return false;
 
-  // Ligue 1 Cotonou / ACP exemption (African & Caribbean nationalities exempt)
+  // Ligue 1 & Ligue 2 Cotonou / ACP exemption (African & Caribbean nationalities exempt)
   if (rules.cotonouExempt && COTONOU_ACP_NATIONALITY_CODES.has(code)) {
     return false;
   }
 
-  // La Liga dual-EU / 2-year Ibero-American residency passport exemptions
-  if (leagueId === 'ESP_LL') {
+  // Spain (La Liga & Segunda) dual-EU / 2-year Ibero-American residency passport exemptions
+  if (leagueId === 'ESP_LL' || leagueId === 'ESP_SD') {
     const fullKey = normalizePlayerNameKey(player.firstName, player.lastName);
     const lastKey = player.lastName
       .normalize('NFD')
@@ -1105,8 +1127,8 @@ export interface SquadRegistrationSummary {
   minClubTrainedQuota: number;
   maxNonEu: number | null;
   u21ExemptMaxAge: number;
-  registeredCount: number; // Senior slots consumed (excludes U21/U22 exempt)
-  totalEligibleCount: number; // Senior registered + U21/U22 exempt
+  registeredCount: number; // Senior slots consumed (excludes U21/U22/U23/U20 exempt)
+  totalEligibleCount: number; // Senior registered + youth exempt
   u21ExemptCount: number;
   homegrownRegisteredCount: number; // HGC + HGN among eligible/registered players
   hgcRegisteredCount: number;
@@ -1119,12 +1141,7 @@ export interface SquadRegistrationSummary {
 }
 
 /**
- * Evaluates authentic league Squad Registration rules:
- * - Premier League: Max 25 Senior (>21), Min 8 HG, Unlimited U21
- * - La Liga: Max 25 Senior, Min 4 HG, Max 3 Non-EU, Unlimited U21
- * - Bundesliga: Max 30 Senior, Min 8 HG (incl. 4 HG-C), Unlimited U21
- * - Serie A: Max 25 Senior (>22), Min 8 HG (4 HG-C + 4 HG-N), Unlimited U22
- * - Ligue 1: Max 25 Senior, Min 6 HG, Max 4 Non-EU (Cotonou/African Exempt), Unlimited U21
+ * Evaluates authentic 23-league Squad Registration rules (Top 5 + 18 World & Challenger Leagues)
  */
 export function evaluateSquadRegistration(
   clubPlayers: Player[],
@@ -1207,9 +1224,14 @@ export function evaluateSquadRegistration(
   }
 
   if (maxNonEu !== null && nonEuRegisteredCount > maxNonEu) {
+    const isForeignerMode = rules.foreignRuleMode === 'FOREIGNER';
     issues.push({
-      en: `Non-EU player cap exceeded: ${nonEuRegisteredCount}/${maxNonEu} Non-EU senior players registered.`,
-      th: `ลงทะเบียนนักเตะนอกสหภาพยุโรป (Non-EU) เกินกำหนด (${nonEuRegisteredCount}/${maxNonEu} คนสูงสุด)`,
+      en: isForeignerMode
+        ? `Foreign player cap exceeded: ${nonEuRegisteredCount}/${maxNonEu} foreign senior players registered.`
+        : `Non-EU player cap exceeded: ${nonEuRegisteredCount}/${maxNonEu} Non-EU senior players registered.`,
+      th: isForeignerMode
+        ? `ลงทะเบียนนักเตะต่างชาติเกินกำหนด (${nonEuRegisteredCount}/${maxNonEu} คนสูงสุด)`
+        : `ลงทะเบียนนักเตะนอกสหภาพยุโรป (Non-EU) เกินกำหนด (${nonEuRegisteredCount}/${maxNonEu} คนสูงสุด)`,
     });
   }
 

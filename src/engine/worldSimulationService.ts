@@ -4,6 +4,7 @@ import {
   FanSocialPost,
   FinanceTransaction,
   Fixture,
+  FormationId,
   HallOfFameEntry,
   LeagueId,
   LeagueStanding,
@@ -26,6 +27,7 @@ import {
   ScoutReport,
   SeasonAwardRecord,
   StaffMember,
+  TacticalPresetId,
   TransferOffer,
   TrophyHistoryRecord,
   UefaCompetitionId,
@@ -68,7 +70,7 @@ import {
 } from './leagueEngine';
 import { simulateMatch } from './matchEngine';
 import { SeededRNG } from './random';
-import { autoPickLineup, ROLES_BY_POSITION } from './tacticsEngine';
+import { autoPickLineup, buildAuthenticTeamInstructions, ROLES_BY_POSITION } from './tacticsEngine';
 import {
   buildUefaFourPots,
   checkAndAdvanceUefaKnockoutPhase,
@@ -1974,8 +1976,19 @@ export function advanceWorldOneDay(state: WorldState): {
     nextState = triggerFifaInternationalBreak(nextState).nextState;
   }
 
-  // Checkpoint 15: Monthly AI Managerial Carousel & Sackings on the 1st of the month
-  if (nextDate.endsWith('-01') && !nextDate.endsWith('-06-01')) {
+  // Stage 13 Phase 3: Weekly Monday AI Managerial Carousel Check after Matchday 10 (plus 1st of month)
+  const dayOfWeekUtc = new Date(`${nextDate}T00:00:00Z`).getUTCDay();
+  const maxPlayedInUserLeague = Math.max(
+    0,
+    ...(nextState.standings[nextState.clubs[nextState.controlledClubId]?.leagueId || 'ENG_PL'] || []).map(
+      (r) => r.played
+    )
+  );
+  const isWeeklyMondayPostMd10 = dayOfWeekUtc === 1 && maxPlayedInUserLeague >= 10;
+  if (
+    !nextDate.endsWith('-06-01') &&
+    (nextDate.endsWith('-01') || isWeeklyMondayPostMd10)
+  ) {
     nextState = triggerAIManagerialCarouselCheck(nextState).nextState;
   }
 
@@ -6321,22 +6334,178 @@ export function evaluateClubFFPStatus(
 }
 
 /**
- * Checkpoint 15: AI Managerial Carousel (Monthly Sackings) & Pre-Match Rivalry Mind Games
+ * Stage 13 Phase 3: Dynamic AI Managerial Carousel (Weekly/Monthly Sackings + Tactical Identity Shift)
  */
-const REPLACEMENT_MANAGERS_POOL = [
-  'Zinedine Zidane',
-  'Julian Nagelsmann',
-  'Xavi Hernandez',
-  'Roberto De Zerbi',
-  'Massimiliano Allegri',
-  'Thomas Tuchel',
-  'Mauricio Pochettino',
-  'Gareth Southgate',
-  'Ruben Amorim',
-  'Edin Terzic',
-  'Sergio Conceicao',
-  'Joachim Low',
+export interface FreeAgentManagerProfile {
+  name: string;
+  nationalityCode: string;
+  reputation: number;
+  style: Club['aiManager']['style'];
+  preferredFormation: FormationId;
+  secondaryFormation: FormationId;
+  tacticalPreset: TacticalPresetId;
+}
+
+export const FREE_AGENT_MANAGERS_POOL: FreeAgentManagerProfile[] = [
+  {
+    name: 'Jürgen Klopp',
+    nationalityCode: 'GER',
+    reputation: 96,
+    style: 'Attacking Manager',
+    preferredFormation: '4-3-3',
+    secondaryFormation: '4-2-3-1',
+    tacticalPreset: 'GEGENPRESS_HIGH_LINE',
+  },
+  {
+    name: 'Zinedine Zidane',
+    nationalityCode: 'FRA',
+    reputation: 94,
+    style: 'Attacking Manager',
+    preferredFormation: '4-3-3',
+    secondaryFormation: '4-3-1-2',
+    tacticalPreset: 'CONTROL_POSSESSION',
+  },
+  {
+    name: 'Xavi Hernández',
+    nationalityCode: 'ESP',
+    reputation: 88,
+    style: 'Possession-focused Manager',
+    preferredFormation: '4-3-3',
+    secondaryFormation: '4-2-3-1',
+    tacticalPreset: 'VERTICAL_TIKI_TAKA',
+  },
+  {
+    name: 'Rafael Benítez',
+    nationalityCode: 'ESP',
+    reputation: 85,
+    style: 'Pragmatic Manager',
+    preferredFormation: '4-2-3-1',
+    secondaryFormation: '4-4-2',
+    tacticalPreset: 'COMPACT_MID_BLOCK',
+  },
+  {
+    name: 'Mauricio Pochettino',
+    nationalityCode: 'ARG',
+    reputation: 87,
+    style: 'Youth Developer',
+    preferredFormation: '4-2-3-1',
+    secondaryFormation: '3-4-3',
+    tacticalPreset: 'HIGH_INTENSITY_DIRECT',
+  },
+  {
+    name: 'Gareth Southgate',
+    nationalityCode: 'ENG',
+    reputation: 84,
+    style: 'Defensive Manager',
+    preferredFormation: '5-3-2',
+    secondaryFormation: '4-2-3-1',
+    tacticalPreset: 'COMPACT_MID_BLOCK',
+  },
+  {
+    name: 'Joachim Löw',
+    nationalityCode: 'GER',
+    reputation: 86,
+    style: 'Possession-focused Manager',
+    preferredFormation: '4-2-3-1',
+    secondaryFormation: '4-3-3',
+    tacticalPreset: 'CONTROL_POSSESSION',
+  },
+  {
+    name: 'Sérgio Conceição',
+    nationalityCode: 'POR',
+    reputation: 84,
+    style: 'Pragmatic Manager',
+    preferredFormation: '4-4-2',
+    secondaryFormation: '4-2-3-1',
+    tacticalPreset: 'HIGH_INTENSITY_DIRECT',
+  },
+  {
+    name: 'Edin Terzić',
+    nationalityCode: 'GER',
+    reputation: 82,
+    style: 'Counter-attacking Manager',
+    preferredFormation: '4-2-3-1',
+    secondaryFormation: '4-3-3',
+    tacticalPreset: 'FLUID_COUNTER_ATTACK',
+  },
+  {
+    name: 'Roger Schmidt',
+    nationalityCode: 'GER',
+    reputation: 81,
+    style: 'Attacking Manager',
+    preferredFormation: '4-2-3-1',
+    secondaryFormation: '4-4-2',
+    tacticalPreset: 'GEGENPRESS_HIGH_LINE',
+  },
+  {
+    name: 'Thiago Motta',
+    nationalityCode: 'ITA',
+    reputation: 82,
+    style: 'Possession-focused Manager',
+    preferredFormation: '4-2-3-1',
+    secondaryFormation: '4-3-3',
+    tacticalPreset: 'CONTROL_POSSESSION',
+  },
+  {
+    name: 'Ange Postecoglou',
+    nationalityCode: 'AUS',
+    reputation: 82,
+    style: 'Attacking Manager',
+    preferredFormation: '4-3-3',
+    secondaryFormation: '4-2-3-1',
+    tacticalPreset: 'GEGENPRESS_HIGH_LINE',
+  },
+  {
+    name: 'Roberto Mancini',
+    nationalityCode: 'ITA',
+    reputation: 86,
+    style: 'Possession-focused Manager',
+    preferredFormation: '4-3-3',
+    secondaryFormation: '3-5-2',
+    tacticalPreset: 'VERTICAL_TIKI_TAKA',
+  },
+  {
+    name: 'Luciano Spalletti',
+    nationalityCode: 'ITA',
+    reputation: 87,
+    style: 'Attacking Manager',
+    preferredFormation: '4-3-3',
+    secondaryFormation: '3-5-2',
+    tacticalPreset: 'WING_BACK_OVERLOAD',
+  },
 ];
+
+const REPLACEMENT_MANAGERS_POOL = FREE_AGENT_MANAGERS_POOL.map((m) => m.name);
+
+export function evaluateAiManagerJobSecurity(
+  club: Club,
+  leagueRank: number,
+  expectedRank: number,
+  played: number
+): { nextSecurity: number; shouldSack: boolean; underperformance: number } {
+  const currentSecurity = club.aiManager.jobSecurity ?? 70;
+  const underperformance = leagueRank - expectedRank;
+  if (played < 4) {
+    return { nextSecurity: currentSecurity, shouldSack: false, underperformance };
+  }
+  if (underperformance >= 6) {
+    const drop = played >= 10 ? 28 + Math.min(14, (underperformance - 6) * 3) : 28;
+    const nextSecurity = Math.max(8, currentSecurity - drop);
+    return {
+      nextSecurity,
+      shouldSack: nextSecurity < 22 || (nextSecurity <= 35 && currentSecurity <= 50),
+      underperformance,
+    };
+  }
+  if (underperformance <= -2) {
+    return {
+      nextSecurity: Math.min(98, currentSecurity + 4),
+      shouldSack: false,
+      underperformance,
+    };
+  }
+  return { nextSecurity: currentSecurity, shouldSack: currentSecurity < 22, underperformance };
+}
 
 export function triggerAIManagerialCarouselCheck(
   state: WorldState
@@ -6344,6 +6513,24 @@ export function triggerAIManagerialCarouselCheck(
   const updatedClubs = { ...state.clubs };
   const nextInbox = [...state.inbox];
   let sackedCount = 0;
+
+  // Build active manager registry so replacements NEVER duplicate an already-employed manager
+  const employedNames = new Set(
+    Object.values(updatedClubs).map((c) => c.aiManager.name.toLowerCase())
+  );
+
+  // Pre-group players by clubId only if a sacking occurs (lazy cache)
+  let playersByClubCache: Record<string, Player[]> | null = null;
+  const getClubPlayers = (clubId: string): Player[] => {
+    if (!playersByClubCache) {
+      playersByClubCache = {};
+      for (const p of Object.values(state.players)) {
+        if (!playersByClubCache[p.clubId]) playersByClubCache[p.clubId] = [];
+        playersByClubCache[p.clubId].push(p);
+      }
+    }
+    return playersByClubCache[clubId] || [];
+  };
 
   for (const league of Object.values(LEAGUES_CONFIG)) {
     const table = state.standings[league.id] || [];
@@ -6355,42 +6542,105 @@ export function triggerAIManagerialCarouselCheck(
 
       const rank = idx + 1;
       const expectedRank = club.boardExpectations.targetLeaguePosition;
-      const underperformance = rank - expectedRank;
+      const { nextSecurity, shouldSack, underperformance } = evaluateAiManagerJobSecurity(
+        club,
+        rank,
+        expectedRank,
+        row.played
+      );
 
-      if (underperformance >= 6) {
-        const nextSecurity = Math.max(15, (club.aiManager.jobSecurity || 70) - 28);
-        if (nextSecurity <= 35 && sackedCount < 2) {
+      if (underperformance >= 6 || (club.aiManager.jobSecurity ?? 70) < 22) {
+        if (shouldSack && sackedCount < 2) {
           const oldManagerName = club.aiManager.name;
-          const newManagerName =
-            REPLACEMENT_MANAGERS_POOL.find((n) => n !== oldManagerName) || 'Zinedine Zidane';
+          const oldFormation = club.primaryTactic.formation;
+          // Pick best available free-agent manager closest to club reputation and NOT currently employed
+          const availablePool = FREE_AGENT_MANAGERS_POOL.filter(
+            (m) =>
+              m.name.toLowerCase() !== oldManagerName.toLowerCase() &&
+              !employedNames.has(m.name.toLowerCase())
+          ).sort(
+            (a, b) =>
+              Math.abs(a.reputation - club.reputation) - Math.abs(b.reputation - club.reputation)
+          );
+
+          const selectedMgr: FreeAgentManagerProfile =
+            availablePool[0] || {
+              name: REPLACEMENT_MANAGERS_POOL.find((n) => !employedNames.has(n.toLowerCase())) || 'Zinedine Zidane',
+              nationalityCode: 'FRA',
+              reputation: Math.max(76, club.reputation),
+              style: 'Attacking',
+              preferredFormation: club.primaryTactic.formation === '4-3-3' ? '4-2-3-1' : '4-3-3',
+              secondaryFormation: '3-5-2',
+              tacticalPreset: 'CONTROL_POSSESSION',
+            };
+
+          employedNames.delete(oldManagerName.toLowerCase());
+          employedNames.add(selectedMgr.name.toLowerCase());
+
+          // Immediately shift club's tactical identity (formation + team instructions + starting XI)
+          const clubPlayers = getClubPlayers(club.id);
+          const nextInstructions = buildAuthenticTeamInstructions(selectedMgr.tacticalPreset);
+          const nextPrimaryTactic =
+            clubPlayers.length >= 11
+              ? autoPickLineup(
+                  selectedMgr.preferredFormation,
+                  clubPlayers,
+                  nextInstructions,
+                  club.primaryTactic.id,
+                  `${selectedMgr.preferredFormation} (${selectedMgr.style})`
+                )
+              : {
+                  ...club.primaryTactic,
+                  formation: selectedMgr.preferredFormation,
+                  instructions: nextInstructions,
+                };
+          const nextSecondaryTactic =
+            clubPlayers.length >= 11
+              ? autoPickLineup(
+                  selectedMgr.secondaryFormation,
+                  clubPlayers,
+                  nextInstructions,
+                  club.secondaryTactic.id,
+                  `${selectedMgr.secondaryFormation} Plan B`
+                )
+              : {
+                  ...club.secondaryTactic,
+                  formation: selectedMgr.secondaryFormation,
+                  instructions: nextInstructions,
+                };
+
           updatedClubs[club.id] = {
             ...club,
             aiManager: {
               ...club.aiManager,
-              name: newManagerName,
+              name: selectedMgr.name,
+              style: selectedMgr.style,
               jobSecurity: 78,
             },
+            primaryTactic: nextPrimaryTactic,
+            secondaryTactic: nextSecondaryTactic,
             boardExpectations: {
               ...club.boardExpectations,
               confidence: {
                 ...club.boardExpectations.confidence,
-                overall: 52,
+                overall: 58,
               },
             },
           };
           sackedCount++;
 
+          const presetLabel = selectedMgr.tacticalPreset.replace(/_/g, ' ');
           nextInbox.unshift({
             id: `news_ai_sacked_${state.gameDate}_${club.id}`,
             gameDate: state.gameDate,
             category: 'Media',
             title: trText(
-              `Managerial Sacking: ${club.name} Part Ways with ${oldManagerName}, Appoint ${newManagerName}!`,
-              `เก้าอี้กุนซือร้อน! ${club.name} สั่งปลด ${oldManagerName} และแต่งตั้ง ${newManagerName} คุมทัพแทน!`
+              `📰 MANAGERIAL SACKING & APPOINTMENT: ${club.name} Sack ${oldManagerName}, Appoint ${selectedMgr.name}!`,
+              `📰 ปลดฟ้าผ่า & ตั้งกุนซือใหม่! ${club.name} สั่งปลด ${oldManagerName} ตั้ง ${selectedMgr.name} คุมทัพ!`
             ),
             body: trText(
-              `With ${club.name} sitting #${rank} in ${league.name} (Target: Top ${expectedRank}), the Board of Directors has sacked ${oldManagerName} and appointed ${newManagerName} with immediate effect.`,
-              `หลังจากผลงานของ ${club.name} ร่วงลงไปอยู่อันดับ #${rank} ในศึก ${league.name} (เป้าหมาย: ท็อป ${expectedRank}) บอร์ดบริหารจึงมีมติปลด ${oldManagerName} และแต่งตั้ง ${newManagerName} เข้ามารับเผือกร้อนทันที`
+              `With ${club.name} sitting #${rank} in ${league.name} (Target: Top ${expectedRank}), the Board of Directors has parted ways with ${oldManagerName} and appointed ${selectedMgr.name}. Tactical Shift: ${club.shortName} immediately switch from ${oldFormation} to ${selectedMgr.preferredFormation} (${presetLabel} · ${selectedMgr.style}).`,
+              `หลังจากผลงานของ ${club.name} ร่วงลงไปอยู่อันดับ #${rank} ในศึก ${league.name} (เป้าหมาย: ท็อป ${expectedRank}) บอร์ดบริหารจึงมีมติปลด ${oldManagerName} และแต่งตั้ง ${selectedMgr.name} เข้ามากู้วิกฤตทันที พร้อมเปลี่ยนระบบการเล่นจาก ${oldFormation} เป็น ${selectedMgr.preferredFormation} (${presetLabel} · สไตล์ ${selectedMgr.style})`
             ),
             isRead: false,
             relatedClubId: club.id,

@@ -17,6 +17,7 @@ import {
 import { SeededRNG } from './random';
 import {
   calculatePositionFit,
+  computeTacticalPhaseCoordinates,
   evaluateAttributeSynergy,
   evaluateRoleSuitability,
 } from './tacticsEngine';
@@ -1973,3 +1974,205 @@ export function reconcileMatchResultEventsAndStats(
     events: reconciledEvents,
   };
 }
+
+export interface PassingNetworkNode {
+  slotIndex: number;
+  playerId: string;
+  name: string;
+  lastName: string;
+  shirtNumber: number;
+  position: string;
+  nationalityCode: string;
+  /** Pitch horizontal coordinate (0..100, Home attacks Left->Right, Away attacks Right->Left) */
+  x: number;
+  /** Pitch vertical coordinate (0..100, top touchline to bottom touchline) */
+  y: number;
+  touches: number;
+  rating: number;
+}
+
+export interface PassingNetworkEdge {
+  fromSlot: number;
+  toSlot: number;
+  fromPlayerId: string;
+  toPlayerId: string;
+  passCount: number;
+  strength: number; // Normalized 0.25..1.0 for stroke thickness
+}
+
+export interface TeamPassingNetwork {
+  clubId: string;
+  clubName: string;
+  shortName: string;
+  primaryColor: string;
+  formation: string;
+  possession: number;
+  passAccuracy: number;
+  nodes: PassingNetworkNode[];
+  edges: PassingNetworkEdge[];
+}
+
+export interface MatchPassingNetworkResult {
+  home: TeamPassingNetwork;
+  away: TeamPassingNetwork;
+}
+
+/**
+ * Computes deterministic Opta-style Average Tactical Positions & Passing Network
+ * for all 11 starters of both Home and Away teams from match tactics, player attributes, and match events.
+ */
+export function computeMatchPassingNetwork(
+  fixture: Fixture,
+  homeClub: Club,
+  awayClub: Club,
+  players: Record<string, Player>,
+  explicitResult?: MatchResult | null
+): MatchPassingNetworkResult {
+  const result = explicitResult || fixture.result || null;
+  const events = result?.events || [];
+
+  const buildForClub = (club: Club, isAway: boolean): TeamPassingNetwork => {
+    const stats = isAway ? result?.awayStats : result?.homeStats;
+    const possession = stats?.possession ?? 50;
+    const passAccuracy = stats?.passAccuracy ?? 84;
+    const phaseCoords = computeTacticalPhaseCoordinates(club.primaryTactic, 'in_possession');
+    const instructions = club.primaryTactic.instructions;
+
+    // Mentality & possession push average height up/down the pitch
+    const mentalityShift =
+      instructions.mentality === 'Very Attacking'
+        ? 6
+        : instructions.mentality === 'Attacking'
+          ? 4
+          : instructions.mentality === 'Positive'
+            ? 2
+            : instructions.mentality === 'Defensive'
+              ? -4
+              : instructions.mentality === 'Very Defensive'
+                ? -6
+                : 0;
+    const possShift = (possession - 50) * 0.16;
+
+    // Event involvement bonus per playerId
+    const eventTouches: Record<string, number> = {};
+    const pairBonus: Record<string, number> = {};
+    for (const ev of events) {
+      if (ev.teamId !== club.id) continue;
+      if (ev.playerId) {
+        eventTouches[ev.playerId] = (eventTouches[ev.playerId] || 0) + 4;
+      }
+      if (ev.secondaryPlayerId) {
+        eventTouches[ev.secondaryPlayerId] = (eventTouches[ev.secondaryPlayerId] || 0) + 3;
+      }
+      if (ev.playerId && ev.secondaryPlayerId && ev.playerId !== ev.secondaryPlayerId) {
+        const key = [ev.playerId, ev.secondaryPlayerId].sort().join('__');
+        pairBonus[key] = (pairBonus[key] || 0) + (ev.eventType === 'Goal' ? 9 : 4);
+      }
+    }
+
+    const nodes: PassingNetworkNode[] = phaseCoords.slice(0, 11).map((coord, idx) => {
+      const slot = club.primaryTactic.lineup[idx];
+      const p = slot?.playerId ? players[slot.playerId] : undefined;
+      const baseAttackDepth = 100 - coord.y; // 0 = own goal, 100 = opp goal
+      const isGk = idx === 0 || slot?.position === 'GK';
+      const shiftedDepth = isGk
+        ? Math.max(7, Math.min(18, baseAttackDepth + (possession > 55 ? 2 : 0)))
+        : Math.max(16, Math.min(90, baseAttackDepth * 0.88 + 6 + mentalityShift + possShift));
+
+      const x = Number((isAway ? 100 - shiftedDepth : shiftedDepth).toFixed(1));
+      const y = Number((isAway ? 100 - coord.x : coord.x).toFixed(1));
+
+      const passingAttr = p?.attributes.technical.passing ?? 13;
+      const visionAttr = p?.attributes.mental.vision ?? 13;
+      const baseTouches = isGk
+        ? 26
+        : slot?.position === 'DM' || slot?.position === 'MC'
+          ? 56
+          : slot?.position === 'DC' || slot?.position === 'DL' || slot?.position === 'DR'
+            ? 48
+            : 38;
+      const touches = Math.round(
+        baseTouches * (possession / 50) +
+          (passingAttr + visionAttr - 24) * 1.1 +
+          (eventTouches[p?.id || ''] || 0)
+      );
+
+      return {
+        slotIndex: idx,
+        playerId: p?.id || `${club.id}_slot_${idx}`,
+        name: p ? `${p.firstName} ${p.lastName}` : `Player #${idx + 1}`,
+        lastName: p?.lastName || `#${idx + 1}`,
+        shirtNumber: p?.shirtNumber || idx + 1,
+        position: slot?.position || p?.positions[0] || 'MC',
+        nationalityCode: p?.nationalityCode || club.countryId,
+        x,
+        y,
+        touches: Math.max(15, touches),
+        rating: Number((result?.playerRatings[p?.id || ''] ?? 6.8).toFixed(1)),
+      };
+    });
+
+    // Build weighted passing links between tactically proximate teammates
+    const directnessScale =
+      instructions.passingDirectness === 'Much Shorter' || instructions.passingDirectness === 'Shorter'
+        ? 1.18
+        : instructions.passingDirectness === 'More Direct' ||
+            instructions.passingDirectness === 'Much More Direct'
+          ? 0.84
+          : 1.0;
+
+    const rawEdges: { fromSlot: number; toSlot: number; passCount: number }[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i];
+        const b = nodes[j];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        // GK connects mainly to center backs / fullbacks
+        if (i === 0 && dist > 36) continue;
+        if (dist > 44) continue;
+
+        const pairKey = [a.playerId, b.playerId].sort().join('__');
+        const evBoost = pairBonus[pairKey] || 0;
+        const proximityFactor = Math.max(0.15, (46 - dist) / 46);
+        const passCount = Math.round(
+          (6 + proximityFactor * 16) * (possession / 50) * directnessScale + evBoost
+        );
+        if (passCount >= 7) {
+          rawEdges.push({ fromSlot: i, toSlot: j, passCount });
+        }
+      }
+    }
+
+    // Keep top 18 cleanest passing links so the Opta network stays crisp and legible
+    rawEdges.sort((a, b) => b.passCount - a.passCount);
+    const topEdges = rawEdges.slice(0, 18);
+    const maxPass = Math.max(12, ...topEdges.map((e) => e.passCount));
+
+    const edges: PassingNetworkEdge[] = topEdges.map((e) => ({
+      fromSlot: e.fromSlot,
+      toSlot: e.toSlot,
+      fromPlayerId: nodes[e.fromSlot].playerId,
+      toPlayerId: nodes[e.toSlot].playerId,
+      passCount: e.passCount,
+      strength: Number(Math.max(0.28, Math.min(1, e.passCount / maxPass)).toFixed(2)),
+    }));
+
+    return {
+      clubId: club.id,
+      clubName: club.name,
+      shortName: club.shortName,
+      primaryColor: club.primaryColor,
+      formation: club.primaryTactic.formation,
+      possession,
+      passAccuracy,
+      nodes,
+      edges,
+    };
+  };
+
+  return {
+    home: buildForClub(homeClub, false),
+    away: buildForClub(awayClub, true),
+  };
+}
+
