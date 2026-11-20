@@ -4835,11 +4835,15 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
 
     const isTracked = shortlistSet.has(id) || Boolean(compacted.scoutReports[id]);
     const inUserLeague = pLeagueId === userLeagueId;
-    const hasCareerArchive = Boolean(p.careerSeasonHistory && p.careerSeasonHistory.length > 0);
+    const baseArchiveLen = basePlayer.careerSeasonHistory?.length || 0;
+    const curArchiveLen = p.careerSeasonHistory?.length || 0;
+    const hasCareerArchiveChanged =
+      curArchiveLen !== baseArchiveLen ||
+      (curArchiveLen > 0 && p.careerSeasonHistory![0]?.season !== basePlayer.careerSeasonHistory?.[0]?.season);
     const hasNotableChange =
       p.stats.goals > 0 ||
       p.stats.assists > 0 ||
-      hasCareerArchive ||
+      hasCareerArchiveChanged ||
       p.currentAbility !== basePlayer.currentAbility ||
       p.injuryStatus.isInjured !== basePlayer.injuryStatus.isInjured ||
       p.transferListed !== basePlayer.transferListed ||
@@ -4853,7 +4857,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     if (
       !inUserLeague &&
       !isTracked &&
-      !hasCareerArchive &&
+      !hasCareerArchiveChanged &&
       p.stats.goals < 2 &&
       p.stats.assists < 2 &&
       !p.transferListed &&
@@ -4866,7 +4870,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     const priority =
       (isTracked ? 1000 : 0) +
       (inUserLeague ? 500 : 0) +
-      (hasCareerArchive ? 250 : 0) +
+      (hasCareerArchiveChanged ? 250 : 0) +
       p.stats.goals * 15 +
       p.stats.assists * 10 +
       (p.transferListed ? 25 : 0);
@@ -4895,7 +4899,9 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
         askingPrice: p.askingPrice,
         loanedFromClubId: p.loanedFromClubId,
         loanOptionToBuyFee: p.loanOptionToBuyFee,
-        careerSeasonHistory: p.careerSeasonHistory ? p.careerSeasonHistory.slice(0, 12) : undefined,
+        careerSeasonHistory: hasCareerArchiveChanged && p.careerSeasonHistory
+          ? p.careerSeasonHistory.slice(0, 12)
+          : undefined,
       },
     });
   }
@@ -5005,6 +5011,17 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     ...(cs.staff || {}),
   };
 
+  const mergeBaselineCareerHistory = (
+    savedHistory: PlayerCareerSeasonRecord[] | undefined,
+    baseHistory: PlayerCareerSeasonRecord[] | undefined
+  ): PlayerCareerSeasonRecord[] | undefined => {
+    if (!savedHistory || savedHistory.length === 0) return baseHistory;
+    if (!baseHistory || baseHistory.length === 0) return savedHistory;
+    const savedSeasons = new Set(savedHistory.map((h) => h.season));
+    const missingBase = baseHistory.filter((b) => !savedSeasons.has(b.season));
+    return missingBase.length > 0 ? [...savedHistory, ...missingBase] : savedHistory;
+  };
+
   const rehydratedPlayers: Record<string, Player> = { ...baseline.players };
   for (const [id, diff] of Object.entries(cs.playerDiffs || {})) {
     const existing = rehydratedPlayers[id];
@@ -5012,11 +5029,22 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
       rehydratedPlayers[id] = {
         ...existing,
         ...diff,
+        careerSeasonHistory: mergeBaselineCareerHistory(
+          diff.careerSeasonHistory,
+          existing.careerSeasonHistory
+        ),
       };
     }
   }
   for (const [id, fullPlayer] of Object.entries(cs.modifiedPlayers || {})) {
-    rehydratedPlayers[id] = fullPlayer;
+    const baseExisting = baseline.players[id];
+    rehydratedPlayers[id] = {
+      ...fullPlayer,
+      careerSeasonHistory: mergeBaselineCareerHistory(
+        fullPlayer.careerSeasonHistory,
+        baseExisting?.careerSeasonHistory
+      ),
+    };
   }
 
   const rehydratedUefaPots: Record<UefaCompetitionId, string[][]> = {
@@ -5137,8 +5165,33 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     transactions: cs.transactions || [],
     inbox: cs.inbox || [],
     mentoringGroups: cs.mentoringGroups || baseline.mentoringGroups || [],
-    trophyHistory: cs.trophyHistory || baseline.trophyHistory || [],
-    seasonAwardsHistory: cs.seasonAwardsHistory || baseline.seasonAwardsHistory || [],
+    trophyHistory: (() => {
+      const savedTrophies = cs.trophyHistory || [];
+      const baseTrophies = baseline.trophyHistory || [];
+      if (savedTrophies.length === 0) return baseTrophies;
+      const saved2425 = savedTrophies.filter((t) => t.season === '2024/25');
+      const hasStale2425 =
+        saved2425.some((t) => t.id === 'trp_2425_ucl' && t.winnerClubId === 'club_esp_ll_1') ||
+        (saved2425.length > 0 && saved2425.length < 10);
+      if (hasStale2425) {
+        const userPlayedTrophies = savedTrophies.filter((t) => t.season !== '2024/25');
+        return [...userPlayedTrophies, ...baseTrophies];
+      }
+      return savedTrophies;
+    })(),
+    seasonAwardsHistory: (() => {
+      const savedAwards = cs.seasonAwardsHistory || [];
+      const baseAwards = baseline.seasonAwardsHistory || [];
+      if (savedAwards.length === 0) return baseAwards;
+      const base2425 = baseAwards.find((a) => a.season === '2024/25');
+      const hasStale2425 = savedAwards.some(
+        (a) => a.season === '2024/25' && a.managerOfTheSeason?.managerName === 'Carlo Ancelotti'
+      );
+      if (hasStale2425 && base2425) {
+        return savedAwards.map((a) => (a.season === '2024/25' ? base2425 : a));
+      }
+      return savedAwards;
+    })(),
     controlledNationalTeamCode:
       cs.controlledNationalTeamCode !== undefined
         ? cs.controlledNationalTeamCode
@@ -7544,11 +7597,11 @@ const LEGENDARY_MANAGERS_HOF: Omit<HallOfFameEntry, 'rank'>[] = [
   {
     managerName: 'Carlo Ancelotti',
     nationality: 'ITA',
-    clubsSummary: 'AC Milan, Chelsea, PSG, Bayern, Real Madrid',
-    clubName: 'Real Madrid',
-    majorTrophies: 30,
+    clubsSummary: 'AC Milan, Chelsea, PSG, Bayern, Real Madrid, Brazil',
+    clubName: 'Brazil / Real Madrid',
+    majorTrophies: 31,
     winRatePct: 62,
-    points: 4190,
+    points: 4250,
   },
   {
     managerName: 'José Mourinho',
@@ -7567,6 +7620,15 @@ const LEGENDARY_MANAGERS_HOF: Omit<HallOfFameEntry, 'rank'>[] = [
     majorTrophies: 21,
     winRatePct: 58,
     points: 2940,
+  },
+  {
+    managerName: 'Luis Enrique',
+    nationality: 'ESP',
+    clubsSummary: 'Barcelona, Spain, Paris Saint-Germain (2x Treble)',
+    clubName: 'Paris Saint-Germain',
+    majorTrophies: 17,
+    winRatePct: 68,
+    points: 2790,
   },
   {
     managerName: 'Jürgen Klopp',
@@ -10960,62 +11022,143 @@ export function getClubAllTimeRecords(
     }
   }
 
-  // 2. Top Goalscorer
-  const sortedByGoals = [...clubPlayers].sort(
-    (a, b) => b.stats.goals - a.stats.goals || b.currentAbility - a.currentAbility
-  );
+  // 2. Top Goalscorer (combines current season + archived club career records such as 2024/25)
+  const getClubCareerGoalSummary = (p: Player) => {
+    const clubHistory = (p.careerSeasonHistory || []).filter((h) => h.clubId === club.id);
+    const histGoals = clubHistory.reduce((s, h) => s + h.goals, 0);
+    const histApps = clubHistory.reduce((s, h) => s + h.appearances, 0);
+    return {
+      goals: p.stats.goals + histGoals,
+      appearances: p.stats.appearances + histApps,
+    };
+  };
+
+  const sortedByGoals = [...clubPlayers].sort((a, b) => {
+    const sa = getClubCareerGoalSummary(a);
+    const sb = getClubCareerGoalSummary(b);
+    return sb.goals - sa.goals || b.currentAbility - a.currentAbility;
+  });
   const topScorerPlayer = sortedByGoals[0];
-  const topGoalscorer = topScorerPlayer
-    ? {
-        playerId: topScorerPlayer.id,
-        playerName: `${topScorerPlayer.firstName} ${topScorerPlayer.lastName}`,
-        goals: Math.max(topScorerPlayer.stats.goals, Math.round(topScorerPlayer.currentAbility / 12)),
-        appearances: Math.max(1, topScorerPlayer.stats.appearances),
-      }
-    : {
-        playerId: '',
-        playerName: 'Club Legend',
-        goals: 18,
-        appearances: 34,
-      };
+  const topScorerSummary = topScorerPlayer ? getClubCareerGoalSummary(topScorerPlayer) : null;
+  const topGoalscorer =
+    topScorerPlayer && topScorerSummary
+      ? {
+          playerId: topScorerPlayer.id,
+          playerName: `${topScorerPlayer.firstName} ${topScorerPlayer.lastName}`,
+          goals:
+            topScorerSummary.goals > 0
+              ? topScorerSummary.goals
+              : Math.round(topScorerPlayer.currentAbility / 12),
+          appearances: Math.max(1, topScorerSummary.appearances),
+        }
+      : {
+          playerId: '',
+          playerName: 'Club Legend',
+          goals: 18,
+          appearances: 34,
+        };
 
-  // 3. Highest Rated Player
-  const sortedByRating = [...clubPlayers].sort(
-    (a, b) => b.stats.averageRating - a.stats.averageRating || b.currentAbility - a.currentAbility
-  );
+  // 3. Highest Rated Player (considers current season & 2024/25 club career rating)
+  const getClubCareerRatingSummary = (p: Player) => {
+    if (p.stats.appearances > 0 && p.stats.averageRating > 0) {
+      return { rating: p.stats.averageRating, appearances: p.stats.appearances };
+    }
+    const clubHistory = (p.careerSeasonHistory || []).filter(
+      (h) => h.clubId === club.id && h.appearances > 0
+    );
+    if (clubHistory.length > 0) {
+      const best = [...clubHistory].sort((a, b) => b.averageRating - a.averageRating)[0];
+      return { rating: best.averageRating, appearances: best.appearances };
+    }
+    return { rating: 0, appearances: 0 };
+  };
+
+  const sortedByRating = [...clubPlayers].sort((a, b) => {
+    const ra = getClubCareerRatingSummary(a);
+    const rb = getClubCareerRatingSummary(b);
+    return rb.rating - ra.rating || b.currentAbility - a.currentAbility;
+  });
   const topRatedPlayer = sortedByRating[0];
-  const highestRatedPlayer = topRatedPlayer
-    ? {
-        playerId: topRatedPlayer.id,
-        playerName: `${topRatedPlayer.firstName} ${topRatedPlayer.lastName}`,
-        averageRating: Number((topRatedPlayer.stats.averageRating || 7.25).toFixed(2)),
-        appearances: Math.max(1, topRatedPlayer.stats.appearances),
+  const topRatedSummary = topRatedPlayer ? getClubCareerRatingSummary(topRatedPlayer) : null;
+  const highestRatedPlayer =
+    topRatedPlayer && topRatedSummary
+      ? {
+          playerId: topRatedPlayer.id,
+          playerName: `${topRatedPlayer.firstName} ${topRatedPlayer.lastName}`,
+          averageRating: Number((topRatedSummary.rating || 7.25).toFixed(2)),
+          appearances: Math.max(1, topRatedSummary.appearances),
+        }
+      : {
+          playerId: '',
+          playerName: 'Club Captain',
+          averageRating: 7.45,
+          appearances: 30,
+        };
+
+  // 4. Record Signing & Record Sale from completed TransferOffers AND verified player transferHistory
+  interface TransferFeeEntry {
+    playerName: string;
+    fee: number;
+    counterpartClubName: string;
+  }
+
+  const signingEntries: TransferFeeEntry[] = [];
+  const saleEntries: TransferFeeEntry[] = [];
+
+  for (const o of state.transferOffers) {
+    if (o.status !== 'Completed' || o.offerType !== 'Transfer') continue;
+    const totalFee = o.upfrontFee + o.installmentsFee;
+    if (totalFee <= 0) continue;
+    const pl = state.players[o.playerId];
+    const pName = pl ? `${pl.firstName} ${pl.lastName}` : 'Marquee Transfer';
+    if (o.buyingClubId === club.id) {
+      signingEntries.push({
+        playerName: pName,
+        fee: totalFee,
+        counterpartClubName: state.clubs[o.sellingClubId]?.name || 'European Club',
+      });
+    }
+    if (o.sellingClubId === club.id) {
+      saleEntries.push({
+        playerName: pName,
+        fee: totalFee,
+        counterpartClubName: state.clubs[o.buyingClubId]?.name || 'European Club',
+      });
+    }
+  }
+
+  for (const pl of Object.values(state.players)) {
+    if (!pl.transferHistory || pl.transferHistory.length === 0) continue;
+    const pName = `${pl.firstName} ${pl.lastName}`;
+    for (const tr of pl.transferHistory) {
+      if (tr.type !== 'Transfer' || tr.fee <= 0) continue;
+      if (tr.toClubId === club.id) {
+        signingEntries.push({
+          playerName: pName,
+          fee: tr.fee,
+          counterpartClubName: state.clubs[tr.fromClubId]?.name || 'European Club',
+        });
       }
-    : {
-        playerId: '',
-        playerName: 'Club Captain',
-        averageRating: 7.45,
-        appearances: 30,
-      };
+      if (tr.fromClubId === club.id) {
+        saleEntries.push({
+          playerName: pName,
+          fee: tr.fee,
+          counterpartClubName: state.clubs[tr.toClubId]?.name || 'European Club',
+        });
+      }
+    }
+  }
 
-  // 4. Record Signing & Record Sale from completed TransferOffers (with realistic club fallback)
-  const completedSignings = state.transferOffers
-    .filter((o) => o.buyingClubId === club.id && o.status === 'Completed' && o.offerType === 'Transfer')
-    .sort((a, b) => b.upfrontFee + b.installmentsFee - (a.upfrontFee + a.installmentsFee));
-
-  const completedSales = state.transferOffers
-    .filter((o) => o.sellingClubId === club.id && o.status === 'Completed' && o.offerType === 'Transfer')
-    .sort((a, b) => b.upfrontFee + b.installmentsFee - (a.upfrontFee + a.installmentsFee));
+  signingEntries.sort((a, b) => b.fee - a.fee);
+  saleEntries.sort((a, b) => b.fee - a.fee);
 
   const mostValuablePlayer = [...clubPlayers].sort((a, b) => b.marketValue - a.marketValue)[0];
 
-  const recordSigning = completedSignings[0]
+  const recordSigning = signingEntries[0]
     ? {
-        playerName: state.players[completedSignings[0].playerId]
-          ? `${state.players[completedSignings[0].playerId].firstName} ${state.players[completedSignings[0].playerId].lastName}`
-          : 'Marquee Signing',
-        fee: completedSignings[0].upfrontFee + completedSignings[0].installmentsFee,
-        fromClubName: state.clubs[completedSignings[0].sellingClubId]?.name || 'European Club',
+        playerName: signingEntries[0].playerName,
+        fee: signingEntries[0].fee,
+        fromClubName: signingEntries[0].counterpartClubName,
       }
     : {
         playerName: mostValuablePlayer
@@ -11025,13 +11168,11 @@ export function getClubAllTimeRecords(
         fromClubName: 'Club Record Transfer',
       };
 
-  const recordSale = completedSales[0]
+  const recordSale = saleEntries[0]
     ? {
-        playerName: state.players[completedSales[0].playerId]
-          ? `${state.players[completedSales[0].playerId].firstName} ${state.players[completedSales[0].playerId].lastName}`
-          : 'Record Departure',
-        fee: completedSales[0].upfrontFee + completedSales[0].installmentsFee,
-        toClubName: state.clubs[completedSales[0].buyingClubId]?.name || 'European Club',
+        playerName: saleEntries[0].playerName,
+        fee: saleEntries[0].fee,
+        toClubName: saleEntries[0].counterpartClubName,
       }
     : {
         playerName: 'Historic Record Departure',

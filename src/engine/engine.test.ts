@@ -4012,18 +4012,19 @@ test('29. Stage 16 Complete Suite: AI-to-AI Transfers, Multi-Season Career Archi
   const sakaAfter = rolled.players[saka.id];
   assert.equal(sakaAfter.stats.appearances, 0, 'Current season stats must reset to 0 on rollover');
   assert.ok(
-    sakaAfter.careerSeasonHistory && sakaAfter.careerSeasonHistory.length === 1,
-    'Saka must archive 2025/26 season stats into careerSeasonHistory'
+    sakaAfter.careerSeasonHistory && sakaAfter.careerSeasonHistory.length === 2,
+    'Saka must archive 2025/26 season stats ahead of pre-seeded 2024/25 careerSeasonHistory'
   );
   assert.equal(sakaAfter.careerSeasonHistory![0].season, world.currentSeason);
   assert.equal(sakaAfter.careerSeasonHistory![0].appearances, 34);
   assert.equal(sakaAfter.careerSeasonHistory![0].goals, 18);
   assert.equal(sakaAfter.careerSeasonHistory![0].assists, 14);
   assert.equal(sakaAfter.careerSeasonHistory![0].averageRating, 7.72);
+  assert.equal(sakaAfter.careerSeasonHistory![1].season, '2024/25');
 
   const extAfter = rolled.players[externalScorer.id];
   assert.ok(
-    extAfter.careerSeasonHistory && extAfter.careerSeasonHistory.length === 1 && extAfter.careerSeasonHistory[0].goals === 26,
+    extAfter.careerSeasonHistory && extAfter.careerSeasonHistory.length >= 1 && extAfter.careerSeasonHistory[0].goals === 26,
     'External players with appearances must also archive seasonal stats into careerSeasonHistory'
   );
 
@@ -4079,6 +4080,169 @@ test('29. Stage 16 Complete Suite: AI-to-AI Transfers, Multi-Season Career Archi
   // Also test direct helper idempotency
   const secondAlert = generateBosmanContractExpiryAlert(jan1Result.nextState);
   assert.equal(secondAlert.alertCreated, false, 'Bosman alert must not duplicate for the same date');
+});
+
+test('30. 2024/25 Real-World History, 2025/26 Squads/Transfers/Super Cups, Club Records & Legacy Save Upgrade', () => {
+  const world = createInitialWorldState(20252026);
+  const allPlayers = Object.values(world.players);
+  const findPlayer = (name: string) =>
+    allPlayers.find(
+      (p) => `${p.firstName} ${p.lastName}`.toLowerCase() === name.toLowerCase()
+    );
+
+  // 1. Authentic 2024/25 Trophy History (25+ competitions)
+  assert.ok(
+    (world.trophyHistory?.length || 0) >= 25,
+    `Expected at least 25 authentic 2024/25 trophy history entries, got ${world.trophyHistory?.length}`
+  );
+  const byComp = new Map((world.trophyHistory || []).map((t) => [t.competitionId, t]));
+  assert.equal(byComp.get('UEFA_UCL')?.winnerClubName, 'Paris Saint-Germain');
+  assert.equal(byComp.get('UEFA_UEL')?.winnerClubName, 'Tottenham Hotspur');
+  assert.equal(byComp.get('UEFA_UECL')?.winnerClubName, 'Chelsea');
+  assert.equal(byComp.get('GLB_CWC')?.winnerClubName, 'Chelsea');
+  assert.equal(byComp.get('ENG_PL')?.winnerClubName, 'Liverpool');
+  assert.equal(byComp.get('ESP_LL')?.winnerClubName, 'Barcelona');
+  assert.equal(byComp.get('GER_BL')?.winnerClubName, 'Bayern Munich');
+  assert.equal(byComp.get('ITA_SA')?.winnerClubName, 'Napoli');
+  assert.equal(byComp.get('ENG_CUP')?.winnerClubName, 'Crystal Palace');
+  assert.equal(byComp.get('ENG_LC')?.winnerClubName, 'Newcastle United');
+  assert.equal(byComp.get('ITA_CUP')?.winnerClubName, 'Bologna');
+
+  // 2. Authentic 2024/25 Annual Awards Gala
+  const awards2425 = world.seasonAwardsHistory?.[0];
+  assert.ok(awards2425, '2024/25 Season Awards must be seeded');
+  assert.equal(awards2425!.ballonDor.playerName, 'Ousmane Dembele');
+  assert.equal(awards2425!.goldenBoot.playerName, 'Kylian Mbappe');
+  assert.equal(awards2425!.goldenBoy.playerName, 'Desire Doue');
+  assert.equal(awards2425!.managerOfTheSeason.managerName, 'Luis Enrique');
+
+  // 3. Authentic 2025/26 Super Cup pairings derived from 2024/25 winners
+  const uefaSuperCup = world.fixtures.find((f) => f.competitionId === 'UEFA_USC');
+  assert.ok(uefaSuperCup, 'UEFA Super Cup fixture must be scheduled');
+  assert.equal(world.clubs[uefaSuperCup!.homeClubId]?.shortName, 'PSG');
+  assert.equal(world.clubs[uefaSuperCup!.awayClubId]?.shortName, 'TOT');
+
+  const engSuperCup = world.fixtures.find((f) => f.competitionId === 'ENG_SC');
+  assert.ok(engSuperCup, 'Community Shield fixture must be scheduled');
+  assert.equal(world.clubs[engSuperCup!.homeClubId]?.shortName, 'LIV');
+  assert.equal(world.clubs[engSuperCup!.awayClubId]?.shortName, 'CRY');
+
+  // 4. Expanded 2025/26 Transfers, Loans & Updated Squad Placements
+  const playersWithTransferHistory = allPlayers.filter((p) => p.transferHistory.length > 0);
+  assert.ok(
+    playersWithTransferHistory.length >= 115,
+    `Expected >= 115 players with verified 2025/26 transferHistory, got ${playersWithTransferHistory.length}`
+  );
+  const pogba = findPlayer('Paul Pogba');
+  assert.equal(world.clubs[pogba?.clubId || '']?.shortName, 'ASM');
+  const vardy = findPlayer('Jamie Vardy');
+  assert.equal(world.clubs[vardy?.clubId || '']?.shortName, 'CRE');
+  const laporte = findPlayer('Aymeric Laporte');
+  assert.equal(world.clubs[laporte?.clubId || '']?.shortName, 'ATH');
+  const retegui = findPlayer('Mateo Retegui');
+  assert.equal(world.clubs[retegui?.clubId || '']?.shortName, 'QAD');
+  const onana = findPlayer('Andre Onana');
+  assert.equal(world.clubs[onana?.clubId || '']?.shortName, 'TRA');
+  assert.equal(world.clubs[onana?.loanedFromClubId || '']?.shortName, 'MUN');
+  const pavard = findPlayer('Benjamin Pavard');
+  assert.equal(world.clubs[pavard?.clubId || '']?.shortName, 'OM');
+  assert.equal(world.clubs[pavard?.loanedFromClubId || '']?.shortName, 'INT');
+
+  // 5. Seeded 2024/25 Career Season History (attributed to 2024/25 club)
+  const gyokeres = findPlayer('Viktor Gyokeres');
+  assert.ok(gyokeres?.careerSeasonHistory?.length === 1);
+  assert.equal(gyokeres!.careerSeasonHistory![0].season, '2024/25');
+  assert.equal(gyokeres!.careerSeasonHistory![0].clubName, 'Sporting CP');
+  assert.equal(gyokeres!.careerSeasonHistory![0].goals, 39);
+
+  const salah = findPlayer('Mohamed Salah');
+  assert.equal(salah!.careerSeasonHistory![0].goals, 29);
+  assert.equal(salah!.careerSeasonHistory![0].assists, 18);
+
+  const playersWith2425 = allPlayers.filter((p) => (p.careerSeasonHistory?.length || 0) >= 1);
+  assert.ok(
+    playersWith2425.length >= 5000,
+    `Expected >= 5000 senior players with seeded 2024/25 careerSeasonHistory, got ${playersWith2425.length}`
+  );
+
+  // 6. Club All-Time Records inspect verified 2025/26 transferHistory & 2024/25 career stats
+  const arsenalRecords = getClubAllTimeRecords(world, 'club_eng_pl_1');
+  assert.equal(arsenalRecords.recordSigning.playerName, 'Viktor Gyokeres');
+  assert.equal(arsenalRecords.recordSigning.fee, 73_500_000);
+  const liverpoolRecords = getClubAllTimeRecords(world, 'club_eng_pl_3');
+  assert.equal(liverpoolRecords.recordSigning.playerName, 'Alexander Isak');
+  assert.equal(liverpoolRecords.recordSigning.fee, 145_000_000);
+  assert.equal(liverpoolRecords.topGoalscorer.playerName, 'Mohamed Salah');
+  assert.equal(liverpoolRecords.topGoalscorer.goals, 29);
+
+  // 7. Compact Firestore Dehydration + Legacy Cloud Save Auto-Upgrade
+  const dehydrated = dehydrateWorldStateToCareerMap(world);
+  assert.ok(
+    JSON.stringify(dehydrated).length < 250_000,
+    'Baseline 2024/25 careerSeasonHistory must keep Firestore payload compact'
+  );
+  const legacyDoc = {
+    ownerId: 'legacy_uid',
+    slotId: 'slot_legacy',
+    saveName: 'Legacy Save',
+    clubName: world.clubs[world.controlledClubId].name,
+    managerName: world.manager.name,
+    gameDate: '2026-06-05',
+    season: '2026/27',
+    lastSavedAtIso: '2026-06-05T10:00:00Z',
+    randomSeed: world.randomSeed,
+    controlledClubId: world.controlledClubId,
+    careerState: {
+      ...dehydrated,
+      trophyHistory: [
+        {
+          id: 'trp_2526_eng',
+          season: '2025/26',
+          competitionId: 'ENG_PL' as const,
+          competitionName: 'English Premier League',
+          winnerClubId: 'club_eng_pl_1',
+          winnerClubName: 'Arsenal',
+          runnerUpClubId: 'club_eng_pl_3',
+          runnerUpClubName: 'Liverpool',
+        },
+        {
+          id: 'trp_2425_ucl',
+          season: '2024/25',
+          competitionId: 'UEFA_UCL' as const,
+          competitionName: 'UEFA Champions League',
+          winnerClubId: 'club_esp_ll_1',
+          winnerClubName: 'Real Madrid',
+          runnerUpClubId: 'club_eng_pl_2',
+          runnerUpClubName: 'Manchester City',
+        },
+      ],
+      seasonAwardsHistory: [
+        {
+          ...awards2425!,
+          managerOfTheSeason: {
+            managerName: 'Carlo Ancelotti',
+            clubId: 'club_esp_ll_1',
+            clubName: 'Real Madrid',
+          },
+        },
+      ],
+    },
+  };
+  const upgraded = rehydrateWorldStateFromCareerDoc(legacyDoc);
+  assert.ok(
+    upgraded.trophyHistory!.some((t) => t.id === 'trp_2526_eng' && t.winnerClubName === 'Arsenal'),
+    'Legacy rehydration must preserve user-won 2025/26 trophies'
+  );
+  assert.equal(
+    upgraded.trophyHistory!.find((t) => t.id === 'trp_2425_ucl')?.winnerClubName,
+    'Paris Saint-Germain',
+    'Legacy rehydration must upgrade stale 2024/25 UCL record to PSG'
+  );
+  assert.equal(
+    upgraded.seasonAwardsHistory!.find((a) => a.season === '2024/25')?.managerOfTheSeason.managerName,
+    'Luis Enrique',
+    'Legacy rehydration must upgrade stale 2024/25 Manager of the Season to Luis Enrique'
+  );
 });
 
 

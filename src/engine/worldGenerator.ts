@@ -1,6 +1,7 @@
 import {
   AIManagerStyle,
   Club,
+  CompetitionId,
   CustomClubConfig,
   FinanceTransaction,
   Fixture,
@@ -243,10 +244,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   ],
   AJX: [
     ['Rayane', 'Bounida', 'AMC', 'BEL', 19, 138, 182, ['AML']],
-    ['Jorthy', 'Mokio', 'DM', 'BEL', 17, 136, 184, ['DC', 'DL']],
-  ],
-  BJK: [
-    ['Semih', 'Kilicsoy', 'ST', 'TUR', 19, 146, 182, ['AML', 'AMR']],
   ],
   MIA: [
     ['Lionel', 'Messi', 'AMR', 'ARG', 38, 174, 180, ['AMC', 'ST']],
@@ -276,10 +273,8 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   NAS: [
     ['Cristiano', 'Ronaldo', 'ST', 'POR', 40, 170, 180, ['AML']],
     ['Sadio', 'Mane', 'AML', 'SEN', 33, 162, 170, ['AMR']],
-    ['Aymeric', 'Laporte', 'DC', 'ESP', 31, 164, 170, []],
     ['Marcelo', 'Brozovic', 'DM', 'CRO', 32, 162, 170, ['MC']],
     ['Otavio', 'Monteiro', 'AMC', 'POR', 30, 162, 168, ['MC']],
-    ['Jhon', 'Duran', 'ST', 'COL', 21, 156, 182, []],
   ],
   ITT: [
     ['Karim', 'Benzema', 'ST', 'FRA', 37, 168, 176, ['AMC']],
@@ -291,7 +286,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Riyad', 'Mahrez', 'AMR', 'ALG', 34, 162, 170, []],
     ['Ivan', 'Toney', 'ST', 'ENG', 29, 162, 168, []],
     ['Franck', 'Kessie', 'MC', 'CIV', 28, 160, 168, ['DM']],
-    ['Gabri', 'Veiga', 'AMC', 'ESP', 23, 154, 178, ['MC']],
   ],
   FLA: [
     ['Gerson', 'Santos', 'MC', 'BRA', 28, 160, 166, ['AMC']],
@@ -311,13 +305,11 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Memphis', 'Depay', 'ST', 'NED', 31, 160, 168, ['AML', 'AMC']],
   ],
   RBS: [
-    ['Oscar', 'Gloukh', 'AMC', 'ISR', 21, 154, 184, ['AML', 'MC']],
     ['Karim', 'Konate', 'ST', 'CIV', 21, 150, 182, []],
   ],
   OLY: [
     ['Ayoub', 'El Kaabi', 'ST', 'MAR', 32, 158, 164, []],
     ['Christos', 'Mouzakitis', 'MC', 'GRE', 18, 138, 182, ['DM']],
-    ['Charalampos', 'Kostoulas', 'ST', 'GRE', 18, 138, 183, ['AMC']],
   ],
   VIS: [
     ['Yuya', 'Osako', 'ST', 'JPN', 35, 150, 156, []],
@@ -331,7 +323,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Jay', 'Stansfield', 'ST', 'ENG', 22, 142, 168, ['AML']],
   ],
   BOT: [
-    ['Igor', 'Jesus', 'ST', 'BRA', 24, 158, 174, []],
     ['Jefferson', 'Savarino', 'AMC', 'VEN', 28, 156, 164, ['AMR', 'AML']],
     ['Alex', 'Telles', 'DL', 'BRA', 32, 156, 162, ['WBL']],
   ],
@@ -341,7 +332,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Jonathan', 'Calleri', 'ST', 'ARG', 31, 156, 162, []],
   ],
   FLU: [
-    ['Jhon', 'Arias', 'AMR', 'COL', 27, 160, 170, ['AMC', 'AML']],
     ['German', 'Cano', 'ST', 'ARG', 37, 154, 160, []],
     ['Thiago', 'Silva', 'DC', 'BRA', 40, 160, 168, []],
   ],
@@ -1331,8 +1321,81 @@ export function createInitialWorldState(
     }
   }
 
-  // Generate 9 National Super Cups (Aug 10) + UEFA Super Cup (Aug 12)
-  const superCupFixtures = generateSeasonSuperCupFixtures(currentSeason, 2025, clubs);
+  // Helper to resolve club IDs reliably by shortName (and optional countryId)
+  const findClubIdByShortName = (shortName: string, preferredCountryId?: string): string | null => {
+    const allClubs = Object.values(clubs);
+    if (preferredCountryId) {
+      const scoped = allClubs.find(
+        (c) => c.shortName === shortName && c.countryId === preferredCountryId
+      );
+      if (scoped) return scoped.id;
+    }
+    const direct = allClubs.find((c) => c.shortName === shortName);
+    return direct ? direct.id : null;
+  };
+
+  // Verified 2024/25 Real-World Competition Winners & Runners-Up (used for Trophy Cabinet & 2025/26 Super Cup pairings)
+  const buildTrophyEntry = (
+    id: string,
+    competitionId: CompetitionId,
+    competitionName: string,
+    winnerShort: string,
+    runnerUpShort: string,
+    winnerCountry?: string,
+    runnerUpCountry?: string
+  ): TrophyHistoryRecord | null => {
+    const winnerId = findClubIdByShortName(winnerShort, winnerCountry);
+    const runnerUpId = findClubIdByShortName(runnerUpShort, runnerUpCountry);
+    if (!winnerId || !runnerUpId) return null;
+    return {
+      id,
+      season: '2024/25',
+      competitionId,
+      competitionName,
+      winnerClubId: winnerId,
+      winnerClubName: clubs[winnerId]?.name || winnerShort,
+      runnerUpClubId: runnerUpId,
+      runnerUpClubName: clubs[runnerUpId]?.name || runnerUpShort,
+    };
+  };
+
+  const trophyHistory: TrophyHistoryRecord[] = [
+    // UEFA & Global Competitions (2024/25)
+    buildTrophyEntry('trp_2425_ucl', 'UEFA_UCL', 'UEFA Champions League', 'PSG', 'INT', 'FRA', 'ITA'),
+    buildTrophyEntry('trp_2425_uel', 'UEFA_UEL', 'UEFA Europa League', 'TOT', 'MUN', 'ENG', 'ENG'),
+    buildTrophyEntry('trp_2425_uecl', 'UEFA_UECL', 'UEFA Conference League', 'CHE', 'BET', 'ENG', 'ESP'),
+    buildTrophyEntry('trp_2425_cwc', 'GLB_CWC', 'FIFA Club World Cup', 'CHE', 'PSG', 'ENG', 'FRA'),
+    // Big 5 European Leagues (2024/25)
+    buildTrophyEntry('trp_2425_eng', 'ENG_PL', 'English Premier League', 'LIV', 'ARS', 'ENG', 'ENG'),
+    buildTrophyEntry('trp_2425_esp', 'ESP_LL', 'Spanish La Liga', 'BAR', 'RMA', 'ESP', 'ESP'),
+    buildTrophyEntry('trp_2425_ger', 'GER_BL', 'German Bundesliga', 'FCB', 'B04', 'GER', 'GER'),
+    buildTrophyEntry('trp_2425_ita', 'ITA_SA', 'Italian Serie A', 'NAP', 'INT', 'ITA', 'ITA'),
+    buildTrophyEntry('trp_2425_fra', 'FRA_L1', 'French Ligue 1', 'PSG', 'OM', 'FRA', 'FRA'),
+    // Big 5 Domestic Cups (2024/25)
+    buildTrophyEntry('trp_2425_eng_cup', 'ENG_CUP', 'FA Cup', 'CRY', 'MCI', 'ENG', 'ENG'),
+    buildTrophyEntry('trp_2425_eng_lc', 'ENG_LC', 'EFL Cup', 'NEW', 'LIV', 'ENG', 'ENG'),
+    buildTrophyEntry('trp_2425_esp_cup', 'ESP_CUP', 'Copa del Rey', 'BAR', 'RMA', 'ESP', 'ESP'),
+    buildTrophyEntry('trp_2425_ger_cup', 'GER_CUP', 'DFB-Pokal', 'VFB', 'B04', 'GER', 'GER'),
+    buildTrophyEntry('trp_2425_ita_cup', 'ITA_CUP', 'Coppa Italia', 'BOL', 'MIL', 'ITA', 'ITA'),
+    buildTrophyEntry('trp_2425_fra_cup', 'FRA_CUP', 'Coupe de France', 'PSG', 'SDR', 'FRA', 'FRA'),
+    // European Challenger & World Leagues (2024/25)
+    buildTrophyEntry('trp_2425_por', 'POR_LP', 'Liga Portugal', 'SCP', 'SLB', 'POR', 'POR'),
+    buildTrophyEntry('trp_2425_ned', 'NED_ED', 'Eredivisie', 'PSV', 'AJX', 'NED', 'NED'),
+    buildTrophyEntry('trp_2425_bel', 'BEL_PL', 'Belgian Pro League', 'USG', 'CBK', 'BEL', 'BEL'),
+    buildTrophyEntry('trp_2425_tur', 'TUR_SL', 'Turkish Süper Lig', 'GAL', 'FEN', 'TUR', 'TUR'),
+    buildTrophyEntry('trp_2425_sco', 'SCO_PR', 'Scottish Premiership', 'CELT', 'RAN', 'SCO', 'SCO'),
+    buildTrophyEntry('trp_2425_aut', 'AUT_BL', 'Austrian Bundesliga', 'STU', 'RBS', 'AUT', 'AUT'),
+    buildTrophyEntry('trp_2425_sui', 'SUI_SL', 'Swiss Super League', 'FCB2', 'SFC', 'SUI', 'SUI'),
+    buildTrophyEntry('trp_2425_gre', 'GRE_SL', 'Super League Greece', 'OLY', 'PAO', 'GRE', 'GRE'),
+    buildTrophyEntry('trp_2425_ksa', 'KSA_SPL', 'Saudi Pro League', 'ITT', 'HIL', 'KSA', 'KSA'),
+    buildTrophyEntry('trp_2425_usa', 'USA_MLS', 'Major League Soccer', 'LAG', 'RBNY', 'USA', 'USA'),
+    buildTrophyEntry('trp_2425_bra', 'BRA_SA', 'Brasileirão Série A', 'BOT', 'PAL', 'BRA', 'BRA'),
+    buildTrophyEntry('trp_2425_jpn', 'JPN_J1', 'J1 League', 'VIS', 'SANF', 'JPN', 'JPN'),
+    buildTrophyEntry('trp_2425_eng_ch', 'ENG_CH', 'EFL Championship', 'LEE', 'BUR', 'ENG', 'ENG'),
+  ].filter((entry): entry is TrophyHistoryRecord => entry !== null);
+
+  // Generate 9 National Super Cups (Aug 10) + UEFA Super Cup (Aug 12) using authentic 2024/25 trophy winners
+  const superCupFixtures = generateSeasonSuperCupFixtures(currentSeason, 2025, clubs, trophyHistory);
   fixtures.push(...superCupFixtures);
 
   // Stage 11 Phase 4: Generate 3 Global Continental Champions Cups (AFC_ACL, CONMEBOL_LIB, CONCACAF_CCC)
@@ -1740,7 +1803,7 @@ export function createInitialWorldState(
       ),
       body: trText(
         `Your Assistant Manager has compiled the first-team readiness report. Our primary formation is currently set to ${controlledClub.primaryTactic.formation}, with our opening match scheduled on ${firstFixture?.kickoffDate || '2025-08-15'}. Review your Starting XI and weekly training focus before kick-off.`,
-        `ผู้ช่วยผู้จัดการทีมสรุปความพร้อมของขุมกำลังชุดใหญ่ แผนการเล่นหลักตอนนี้คือ ${controlledClub.primaryTactic.formation} โดยเรามีนัดเปิดสนามวันที่ ${firstFixture?.kickoffDate || '2026-08-15'} แนะนำให้ตรวจสอบตำแหน่งตัวจริงและตั้งค่าการฝึกซ้อมประจำสัปดาห์`
+        `ผู้ช่วยผู้จัดการทีมสรุปความพร้อมของขุมกำลังชุดใหญ่ แผนการเล่นหลักตอนนี้คือ ${controlledClub.primaryTactic.formation} โดยเรามีนัดเปิดสนามวันที่ ${firstFixture?.kickoffDate || '2025-08-15'} แนะนำให้ตรวจสอบตำแหน่งตัวจริงและตั้งค่าการฝึกซ้อมประจำสัปดาห์`
       ),
       isRead: false,
       relatedClubId: controlledClub.id,
@@ -1748,19 +1811,7 @@ export function createInitialWorldState(
     },
   ];
 
-  // Stage 15 Phase 3: Apply verified 2025/26 Transfer History & Real Loans (loanedFromClubId + loanOptionToBuyFee)
-  const findClubIdByShortName = (shortName: string, preferredCountryId?: string): string | null => {
-    const allClubs = Object.values(clubs);
-    if (preferredCountryId) {
-      const scoped = allClubs.find(
-        (c) => c.shortName === shortName && c.countryId === preferredCountryId
-      );
-      if (scoped) return scoped.id;
-    }
-    const direct = allClubs.find((c) => c.shortName === shortName);
-    return direct ? direct.id : null;
-  };
-
+  // Stage 15/17: Apply verified 2025/26 Transfer History & Real Loans (loanedFromClubId + loanOptionToBuyFee)
   const INITIAL_25_26_TRANSFERS: {
     playerName: string;
     fromShort: string;
@@ -1772,7 +1823,7 @@ export function createInitialWorldState(
     type: 'Transfer' | 'Loan' | 'Free';
     optionToBuyFee?: number | null;
   }[] = [
-    // Real 2025/26 Loans (with authentic parent club & option-to-buy fees)
+    // Verified 2025/26 Loans (with authentic parent club & option-to-buy fees)
     { playerName: 'Marcus Rashford', fromShort: 'MUN', toShort: 'BAR', fee: 0, date: '2025-07-23', type: 'Loan', optionToBuyFee: 30_000_000 },
     { playerName: 'Piero Hincapie', fromShort: 'B04', toShort: 'ARS', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 52_000_000 },
     { playerName: 'Harvey Elliott', fromShort: 'LIV', toShort: 'AVL', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 40_000_000 },
@@ -1786,65 +1837,217 @@ export function createInitialWorldState(
     { playerName: 'Claudio Echeverri', fromShort: 'MCI', toShort: 'B04', fee: 0, date: '2025-08-21', type: 'Loan', optionToBuyFee: null },
     { playerName: 'Victor Boniface', fromShort: 'B04', toShort: 'SVW', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 30_000_000 },
     { playerName: 'Leon Bailey', fromShort: 'AVL', toShort: 'ROM', fee: 0, date: '2025-08-20', type: 'Loan', optionToBuyFee: 22_000_000 },
+    { playerName: 'Nicolas Jackson', fromShort: 'CHE', toShort: 'FCB', toCountry: 'GER', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 65_000_000 },
+    { playerName: 'Ansu Fati', fromShort: 'BAR', toShort: 'ASM', fee: 0, date: '2025-07-01', type: 'Loan', optionToBuyFee: 12_000_000 },
+    { playerName: 'Andre Onana', fromShort: 'MUN', toShort: 'TRA', fee: 0, date: '2025-09-11', type: 'Loan', optionToBuyFee: 25_000_000 },
+    { playerName: 'Evan Ferguson', fromShort: 'BHA', toShort: 'ROM', fee: 0, date: '2025-07-23', type: 'Loan', optionToBuyFee: 38_000_000 },
+    { playerName: 'Benjamin Pavard', fromShort: 'INT', toShort: 'OM', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 15_000_000 },
+    { playerName: 'Matt ORiley', fromShort: 'BHA', toShort: 'OM', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 28_000_000 },
+    { playerName: 'Jhon Duran', fromShort: 'NAS', toShort: 'FEN', fee: 0, date: '2025-07-06', type: 'Loan', optionToBuyFee: null },
+    { playerName: 'Vitezslav Jaros', fromShort: 'LIV', toShort: 'AJX', fee: 0, date: '2025-06-18', type: 'Loan', optionToBuyFee: null },
+    { playerName: 'Semih Kilicsoy', fromShort: 'BJK', toShort: 'CAG', fee: 0, date: '2025-08-03', type: 'Loan', optionToBuyFee: 12_000_000 },
+    { playerName: 'Edson Alvarez', fromShort: 'WHU', toShort: 'FEN', fee: 0, date: '2025-08-23', type: 'Loan', optionToBuyFee: 22_000_000 },
+    { playerName: 'Bilal El Khannouss', fromShort: 'LEI', toShort: 'VFB', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 25_000_000 },
+    { playerName: 'Aaron Ramsdale', fromShort: 'SOU', toShort: 'NEW', fee: 0, date: '2025-08-02', type: 'Loan', optionToBuyFee: 20_000_000 },
+    { playerName: 'Matej Kovar', fromShort: 'B04', toShort: 'PSV', fee: 0, date: '2025-07-15', type: 'Loan', optionToBuyFee: 7_000_000 },
+    { playerName: 'Anass Salah-Eddine', fromShort: 'ROM', toShort: 'PSV', fee: 0, date: '2025-08-31', type: 'Loan', optionToBuyFee: 8_000_000 },
+    { playerName: 'David Jurasek', fromShort: 'SLB', toShort: 'BJK', fee: 0, date: '2025-06-29', type: 'Loan', optionToBuyFee: 7_000_000 },
+    { playerName: 'Orkun Kokcu', fromShort: 'SLB', toShort: 'BJK', fee: 0, date: '2025-07-12', type: 'Loan', optionToBuyFee: 25_000_000 },
+    { playerName: 'Tammy Abraham', fromShort: 'ROM', toShort: 'BJK', fee: 0, date: '2025-07-03', type: 'Loan', optionToBuyFee: 15_000_000 },
 
-    // Headline 2025/26 Permanent & Free Transfers
+    // Premier League 2025/26 Permanent & Free Transfers
     { playerName: 'Alexander Isak', fromShort: 'NEW', toShort: 'LIV', fee: 145_000_000, date: '2025-09-01', type: 'Transfer' },
     { playerName: 'Florian Wirtz', fromShort: 'B04', toShort: 'LIV', fee: 125_000_000, date: '2025-07-01', type: 'Transfer' },
     { playerName: 'Hugo Ekitike', fromShort: 'SGE', toShort: 'LIV', fee: 95_000_000, date: '2025-07-23', type: 'Transfer' },
     { playerName: 'Milos Kerkez', fromShort: 'BOU', toShort: 'LIV', fee: 47_000_000, date: '2025-07-01', type: 'Transfer' },
     { playerName: 'Jeremie Frimpong', fromShort: 'B04', toShort: 'LIV', fee: 40_000_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Giorgi Mamardashvili', fromShort: 'VAL', toShort: 'LIV', fee: 30_000_000, date: '2025-07-01', type: 'Transfer' },
     { playerName: 'Viktor Gyokeres', fromShort: 'SCP', toShort: 'ARS', fee: 73_500_000, date: '2025-07-26', type: 'Transfer' },
     { playerName: 'Eberechi Eze', fromShort: 'CRY', toShort: 'ARS', fee: 69_300_000, date: '2025-08-23', type: 'Transfer' },
     { playerName: 'Martin Zubimendi', fromShort: 'RSO', toShort: 'ARS', fee: 65_000_000, date: '2025-07-06', type: 'Transfer' },
     { playerName: 'Noni Madueke', fromShort: 'CHE', toShort: 'ARS', fee: 56_000_000, date: '2025-07-18', type: 'Transfer' },
     { playerName: 'Cristhian Mosquera', fromShort: 'VAL', toShort: 'ARS', fee: 15_000_000, date: '2025-07-24', type: 'Transfer' },
+    { playerName: 'Christian Norgaard', fromShort: 'BRE', fromCountry: 'ENG', toShort: 'ARS', fee: 11_600_000, date: '2025-07-10', type: 'Transfer' },
+    { playerName: 'Kepa Arrizabalaga', fromShort: 'CHE', toShort: 'ARS', fee: 5_800_000, date: '2025-07-01', type: 'Transfer' },
     { playerName: 'Gianluigi Donnarumma', fromShort: 'PSG', toShort: 'MCI', fee: 30_000_000, date: '2025-09-01', type: 'Transfer' },
     { playerName: 'Tijjani Reijnders', fromShort: 'MIL', toShort: 'MCI', fee: 55_000_000, date: '2025-06-11', type: 'Transfer' },
     { playerName: 'Rayan Cherki', fromShort: 'OL', toShort: 'MCI', fee: 36_500_000, date: '2025-06-10', type: 'Transfer' },
     { playerName: 'Rayan Ait-Nouri', fromShort: 'WOL', toShort: 'MCI', fee: 36_800_000, date: '2025-06-09', type: 'Transfer' },
+    { playerName: 'James Trafford', fromShort: 'BUR', toShort: 'MCI', fee: 31_200_000, date: '2025-07-29', type: 'Transfer' },
     { playerName: 'Benjamin Sesko', fromShort: 'RBL', toShort: 'MUN', fee: 76_500_000, date: '2025-08-09', type: 'Transfer' },
     { playerName: 'Matheus Cunha', fromShort: 'WOL', toShort: 'MUN', fee: 74_200_000, date: '2025-06-12', type: 'Transfer' },
     { playerName: 'Bryan Mbeumo', fromShort: 'BRE', fromCountry: 'ENG', toShort: 'MUN', fee: 75_000_000, date: '2025-07-21', type: 'Transfer' },
+    { playerName: 'Senne Lammens', fromShort: 'ANT', toShort: 'MUN', fee: 21_000_000, date: '2025-09-01', type: 'Transfer' },
     { playerName: 'Joao Pedro', fromShort: 'BHA', toShort: 'CHE', fee: 63_700_000, date: '2025-07-02', type: 'Transfer' },
     { playerName: 'Jamie Gittens', fromShort: 'BVB', toShort: 'CHE', fee: 56_000_000, date: '2025-07-05', type: 'Transfer' },
     { playerName: 'Alejandro Garnacho', fromShort: 'MUN', toShort: 'CHE', fee: 46_200_000, date: '2025-08-30', type: 'Transfer' },
     { playerName: 'Jorrel Hato', fromShort: 'AJX', fromCountry: 'NED', toShort: 'CHE', fee: 44_200_000, date: '2025-08-03', type: 'Transfer' },
     { playerName: 'Liam Delap', fromShort: 'IPS', toShort: 'CHE', fee: 35_500_000, date: '2025-06-04', type: 'Transfer' },
+    { playerName: 'Estevao Willian', fromShort: 'PAL', toShort: 'CHE', fee: 34_000_000, date: '2025-07-01', type: 'Transfer' },
     { playerName: 'Xavi Simons', fromShort: 'RBL', toShort: 'TOT', fee: 65_000_000, date: '2025-08-29', type: 'Transfer' },
     { playerName: 'Mohammed Kudus', fromShort: 'WHU', toShort: 'TOT', fee: 63_800_000, date: '2025-07-10', type: 'Transfer' },
+    { playerName: 'Mathys Tel', fromShort: 'FCB', fromCountry: 'GER', toShort: 'TOT', fee: 35_000_000, date: '2025-06-15', type: 'Transfer' },
+    { playerName: 'Kevin Danso', fromShort: 'RCL', toShort: 'TOT', fee: 25_000_000, date: '2025-07-01', type: 'Transfer' },
     { playerName: 'Nick Woltemade', fromShort: 'VFB', toShort: 'NEW', fee: 75_000_000, date: '2025-08-30', type: 'Transfer' },
     { playerName: 'Anthony Elanga', fromShort: 'NFO', toShort: 'NEW', fee: 61_400_000, date: '2025-07-11', type: 'Transfer' },
     { playerName: 'Yoane Wissa', fromShort: 'BRE', fromCountry: 'ENG', toShort: 'NEW', fee: 57_700_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Jacob Ramsey', fromShort: 'AVL', toShort: 'NEW', fee: 45_200_000, date: '2025-08-17', type: 'Transfer' },
+    { playerName: 'Malick Thiaw', fromShort: 'MIL', toShort: 'NEW', fee: 35_000_000, date: '2025-08-12', type: 'Transfer' },
+    { playerName: 'Evann Guessand', fromShort: 'NIC', toShort: 'AVL', fee: 30_000_000, date: '2025-08-08', type: 'Transfer' },
+    { playerName: 'Victor Lindelof', fromShort: 'MUN', toShort: 'AVL', fee: 0, date: '2025-09-01', type: 'Free' },
+    { playerName: 'Maxim De Cuyper', fromShort: 'CBK', toShort: 'BHA', fee: 20_000_000, date: '2025-07-05', type: 'Transfer' },
+    { playerName: 'Olivier Boscagli', fromShort: 'PSV', toShort: 'BHA', fee: 0, date: '2025-07-02', type: 'Free' },
+    { playerName: 'Charalampos Kostoulas', fromShort: 'OLY', toShort: 'BHA', fee: 35_000_000, date: '2025-06-12', type: 'Transfer' },
+    { playerName: 'Diego Coppola', fromShort: 'VER', toShort: 'BHA', fee: 11_000_000, date: '2025-06-17', type: 'Transfer' },
+    { playerName: 'Mads Hermansen', fromShort: 'LEI', toShort: 'WHU', fee: 20_800_000, date: '2025-08-09', type: 'Transfer' },
+    { playerName: 'Mateus Fernandes', fromShort: 'SOU', toShort: 'WHU', fee: 44_000_000, date: '2025-08-29', type: 'Transfer' },
+    { playerName: 'Kyle Walker-Peters', fromShort: 'SOU', toShort: 'WHU', fee: 0, date: '2025-07-20', type: 'Free' },
+    { playerName: 'Yeremy Pino', fromShort: 'VIL', toShort: 'CRY', fee: 30_000_000, date: '2025-08-29', type: 'Transfer' },
+    { playerName: 'Walter Benitez', fromShort: 'PSV', toShort: 'CRY', fee: 0, date: '2025-06-23', type: 'Free' },
+    { playerName: 'Jhon Arias', fromShort: 'FLU', toShort: 'WOL', fee: 17_000_000, date: '2025-07-24', type: 'Transfer' },
+    { playerName: 'Jackson Tchatchoua', fromShort: 'VER', toShort: 'WOL', fee: 12_500_000, date: '2025-08-19', type: 'Transfer' },
+    { playerName: 'David Moller Wolfe', fromShort: 'AZA', toShort: 'WOL', fee: 12_000_000, date: '2025-08-02', type: 'Transfer' },
+    { playerName: 'Thierno Barry', fromShort: 'VIL', toShort: 'EVE', fee: 30_000_000, date: '2025-07-09', type: 'Transfer' },
+    { playerName: 'Tyler Dibling', fromShort: 'SOU', toShort: 'EVE', fee: 40_500_000, date: '2025-08-25', type: 'Transfer' },
+    { playerName: 'Merlin Rohl', fromShort: 'SCF', toShort: 'EVE', fee: 20_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Jordan Henderson', fromShort: 'AJX', toShort: 'BRE', toCountry: 'ENG', fee: 0, date: '2025-07-15', type: 'Free' },
+    { playerName: 'Dango Ouattara', fromShort: 'BOU', toShort: 'BRE', toCountry: 'ENG', fee: 42_800_000, date: '2025-08-16', type: 'Transfer' },
+    { playerName: 'Adrien Truffert', fromShort: 'REN', toShort: 'BOU', fee: 13_500_000, date: '2025-06-16', type: 'Transfer' },
+    { playerName: 'Bafode Diakite', fromShort: 'LOSC', toShort: 'BOU', fee: 35_000_000, date: '2025-08-13', type: 'Transfer' },
+    { playerName: 'Ben Doak', fromShort: 'MID', toShort: 'BOU', fee: 23_200_000, date: '2025-08-18', type: 'Transfer' },
+    { playerName: 'Douglas Luiz', fromShort: 'JUV', toShort: 'NFO', fee: 30_000_000, date: '2025-08-21', type: 'Transfer' },
+    { playerName: 'Dan Ndoye', fromShort: 'BOL', toShort: 'NFO', fee: 42_000_000, date: '2025-07-31', type: 'Transfer' },
+    { playerName: 'Igor Jesus', fromShort: 'BOT', toShort: 'NFO', fee: 19_000_000, date: '2025-07-05', type: 'Transfer' },
+    { playerName: 'Arnaud Kalimuendo', fromShort: 'REN', toShort: 'NFO', fee: 30_000_000, date: '2025-08-18', type: 'Transfer' },
+    { playerName: 'Omari Hutchinson', fromShort: 'IPS', toShort: 'NFO', fee: 43_400_000, date: '2025-08-16', type: 'Transfer' },
+    { playerName: 'Lucas Perri', fromShort: 'OL', toShort: 'LEE', fee: 16_000_000, date: '2025-07-26', type: 'Transfer' },
+    { playerName: 'Jaka Bijol', fromShort: 'UDI', toShort: 'LEE', fee: 18_000_000, date: '2025-06-23', type: 'Transfer' },
+    { playerName: 'Anton Stach', fromShort: 'TSG', toShort: 'LEE', fee: 20_000_000, date: '2025-07-22', type: 'Transfer' },
+    { playerName: 'Gabriel Gudmundsson', fromShort: 'LOSC', toShort: 'LEE', fee: 11_600_000, date: '2025-07-08', type: 'Transfer' },
+    { playerName: 'James Justin', fromShort: 'LEI', toShort: 'LEE', fee: 9_300_000, date: '2025-08-25', type: 'Transfer' },
+    { playerName: 'Dominic Calvert-Lewin', fromShort: 'EVE', toShort: 'LEE', fee: 0, date: '2025-08-15', type: 'Free' },
+    { playerName: 'Granit Xhaka', fromShort: 'B04', toShort: 'SUN', fee: 15_000_000, date: '2025-07-30', type: 'Transfer' },
+    { playerName: 'Robin Roefs', fromShort: 'NEC', toShort: 'SUN', fee: 10_500_000, date: '2025-08-01', type: 'Transfer' },
+    { playerName: 'Omar Alderete', fromShort: 'GET', toShort: 'SUN', fee: 11_600_000, date: '2025-08-12', type: 'Transfer' },
+    { playerName: 'Nordi Mukiele', fromShort: 'PSG', toShort: 'SUN', fee: 12_000_000, date: '2025-08-17', type: 'Transfer' },
+    { playerName: 'Noah Sadiki', fromShort: 'USG', toShort: 'SUN', fee: 17_000_000, date: '2025-07-04', type: 'Transfer' },
+    { playerName: 'Habib Diarra', fromShort: 'RCSA', toShort: 'SUN', fee: 31_500_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Simon Adingra', fromShort: 'BHA', toShort: 'SUN', fee: 24_400_000, date: '2025-07-10', type: 'Transfer' },
+    { playerName: 'Brian Brobbey', fromShort: 'AJX', toShort: 'SUN', fee: 20_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Kyle Walker', fromShort: 'MCI', toShort: 'BUR', fee: 0, date: '2025-07-05', type: 'Free' },
+    { playerName: 'Martin Dubravka', fromShort: 'NEW', toShort: 'BUR', fee: 0, date: '2025-08-07', type: 'Free' },
+
+    // La Liga 2025/26 Transfers
     { playerName: 'Trent Alexander-Arnold', fromShort: 'LIV', toShort: 'RMA', fee: 10_000_000, date: '2025-06-01', type: 'Transfer' },
     { playerName: 'Dean Huijsen', fromShort: 'BOU', toShort: 'RMA', fee: 62_500_000, date: '2025-06-01', type: 'Transfer' },
     { playerName: 'Alvaro Carreras', fromShort: 'SLB', toShort: 'RMA', fee: 50_000_000, date: '2025-07-14', type: 'Transfer' },
     { playerName: 'Joan Garcia', fromShort: 'ESP', toShort: 'BAR', fee: 25_000_000, date: '2025-06-18', type: 'Transfer' },
+    { playerName: 'Alex Baena', fromShort: 'VIL', toShort: 'ATM', fee: 42_000_000, date: '2025-07-02', type: 'Transfer' },
+    { playerName: 'Thiago Almada', fromShort: 'OL', toShort: 'ATM', fee: 21_000_000, date: '2025-07-17', type: 'Transfer' },
+    { playerName: 'David Hancko', fromShort: 'FEY', toShort: 'ATM', fee: 26_000_000, date: '2025-07-24', type: 'Transfer' },
+    { playerName: 'Johnny Cardoso', fromShort: 'BET', toShort: 'ATM', fee: 24_000_000, date: '2025-07-16', type: 'Transfer' },
+    { playerName: 'Matteo Ruggeri', fromShort: 'ATA', toShort: 'ATM', fee: 17_000_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Giacomo Raspadori', fromShort: 'NAP', toShort: 'ATM', fee: 22_000_000, date: '2025-08-11', type: 'Transfer' },
+    { playerName: 'Aymeric Laporte', fromShort: 'NAS', toShort: 'ATH', fee: 10_000_000, date: '2025-09-11', type: 'Transfer' },
+    { playerName: 'Thomas Partey', fromShort: 'ARS', toShort: 'VIL', fee: 0, date: '2025-08-07', type: 'Free' },
+    { playerName: 'Renato Veiga', fromShort: 'CHE', toShort: 'VIL', fee: 24_500_000, date: '2025-08-22', type: 'Transfer' },
+    { playerName: 'Georges Mikautadze', fromShort: 'OL', toShort: 'VIL', fee: 31_000_000, date: '2025-09-01', type: 'Transfer' },
+
+    // Bundesliga 2025/26 Transfers
     { playerName: 'Luis Diaz', fromShort: 'LIV', toShort: 'FCB', toCountry: 'GER', fee: 70_000_000, date: '2025-07-30', type: 'Transfer' },
     { playerName: 'Jonathan Tah', fromShort: 'B04', toShort: 'FCB', toCountry: 'GER', fee: 0, date: '2025-07-01', type: 'Free' },
+    { playerName: 'Jarell Quansah', fromShort: 'LIV', toShort: 'B04', fee: 35_000_000, date: '2025-07-02', type: 'Transfer' },
+    { playerName: 'Loic Bade', fromShort: 'SEV', toShort: 'B04', fee: 25_000_000, date: '2025-08-21', type: 'Transfer' },
+    { playerName: 'Malik Tillman', fromShort: 'PSV', toShort: 'B04', fee: 35_000_000, date: '2025-07-12', type: 'Transfer' },
+    { playerName: 'Mark Flekken', fromShort: 'BRE', fromCountry: 'ENG', toShort: 'B04', fee: 10_000_000, date: '2025-06-03', type: 'Transfer' },
+    { playerName: 'Eliesse Ben Seghir', fromShort: 'ASM', toShort: 'B04', fee: 32_000_000, date: '2025-08-31', type: 'Transfer' },
+    { playerName: 'Lucas Vazquez', fromShort: 'RMA', toShort: 'B04', fee: 0, date: '2025-08-26', type: 'Free' },
+    { playerName: 'Jobe Bellingham', fromShort: 'SUN', toShort: 'BVB', fee: 30_500_000, date: '2025-06-10', type: 'Transfer' },
+    { playerName: 'Ritsu Doan', fromShort: 'SCF', toShort: 'SGE', fee: 21_000_000, date: '2025-08-07', type: 'Transfer' },
+    { playerName: 'Jonathan Burkardt', fromShort: 'M05', toShort: 'SGE', fee: 21_000_000, date: '2025-07-04', type: 'Transfer' },
+    { playerName: 'Michael Zetterer', fromShort: 'SVW', toShort: 'SGE', fee: 5_000_000, date: '2025-08-20', type: 'Transfer' },
+    { playerName: 'Koki Machida', fromShort: 'USG', toShort: 'TSG', fee: 4_750_000, date: '2025-06-27', type: 'Transfer' },
+    { playerName: 'Christian Eriksen', fromShort: 'MUN', toShort: 'WOB', fee: 0, date: '2025-09-10', type: 'Free' },
+
+    // Serie A 2025/26 Transfers
     { playerName: 'Kevin De Bruyne', fromShort: 'MCI', toShort: 'NAP', fee: 0, date: '2025-07-01', type: 'Free' },
+    { playerName: 'Noa Lang', fromShort: 'PSV', toShort: 'NAP', fee: 25_000_000, date: '2025-07-17', type: 'Transfer' },
+    { playerName: 'Sam Beukema', fromShort: 'BOL', toShort: 'NAP', fee: 31_000_000, date: '2025-07-20', type: 'Transfer' },
+    { playerName: 'Miguel Gutierrez', fromShort: 'GIR', toShort: 'NAP', fee: 18_000_000, date: '2025-08-19', type: 'Transfer' },
+    { playerName: 'Vanja Milinkovic-Savic', fromShort: 'TOR', toShort: 'NAP', fee: 21_000_000, date: '2025-07-26', type: 'Transfer' },
+    { playerName: 'Lorenzo Lucca', fromShort: 'UDI', toShort: 'NAP', fee: 35_000_000, date: '2025-07-18', type: 'Transfer' },
+    { playerName: 'Ange-Yoan Bonny', fromShort: 'PAR', toShort: 'INT', fee: 23_000_000, date: '2025-07-05', type: 'Transfer' },
     { playerName: 'Luka Modric', fromShort: 'RMA', toShort: 'MIL', fee: 0, date: '2025-07-14', type: 'Free' },
+    { playerName: 'Christopher Nkunku', fromShort: 'CHE', toShort: 'MIL', fee: 37_000_000, date: '2025-08-30', type: 'Transfer' },
+    { playerName: 'Adrien Rabiot', fromShort: 'OM', toShort: 'MIL', fee: 7_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Pervis Estupinan', fromShort: 'BHA', toShort: 'MIL', fee: 17_000_000, date: '2025-07-24', type: 'Transfer' },
+    { playerName: 'Ardon Jashari', fromShort: 'CBK', toShort: 'MIL', fee: 36_000_000, date: '2025-08-06', type: 'Transfer' },
+    { playerName: 'Samuele Ricci', fromShort: 'TOR', toShort: 'MIL', fee: 23_000_000, date: '2025-07-03', type: 'Transfer' },
+    { playerName: 'Koni De Winter', fromShort: 'GEN', toShort: 'MIL', fee: 20_000_000, date: '2025-08-13', type: 'Transfer' },
     { playerName: 'Jonathan David', fromShort: 'LOSC', toShort: 'JUV', fee: 0, date: '2025-07-04', type: 'Free' },
+    { playerName: 'Lois Openda', fromShort: 'RBL', toShort: 'JUV', fee: 44_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Edon Zhegrova', fromShort: 'LOSC', toShort: 'JUV', fee: 15_500_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Nikola Krstovic', fromShort: 'LEC', toShort: 'ATA', fee: 25_000_000, date: '2025-08-20', type: 'Transfer' },
+    { playerName: 'Kamaldeen Sulemana', fromShort: 'SOU', toShort: 'ATA', fee: 17_000_000, date: '2025-07-02', type: 'Transfer' },
+    { playerName: 'Wesley Franca', fromShort: 'FLA', toShort: 'ROM', fee: 25_000_000, date: '2025-07-28', type: 'Transfer' },
+    { playerName: 'Neil El Aynaoui', fromShort: 'RCL', toShort: 'ROM', fee: 23_500_000, date: '2025-07-20', type: 'Transfer' },
+    { playerName: 'Edin Dzeko', fromShort: 'FEN', toShort: 'FIO', fee: 0, date: '2025-07-10', type: 'Free' },
+    { playerName: 'Jacopo Fazzini', fromShort: 'EMP', toShort: 'FIO', fee: 10_000_000, date: '2025-06-25', type: 'Transfer' },
+    { playerName: 'Ciro Immobile', fromShort: 'BJK', toShort: 'BOL', fee: 0, date: '2025-07-10', type: 'Free' },
+    { playerName: 'Jonathan Rowe', fromShort: 'OM', toShort: 'BOL', fee: 17_000_000, date: '2025-08-24', type: 'Transfer' },
+    { playerName: 'Alvaro Morata', fromShort: 'GAL', toShort: 'COM', fee: 10_000_000, date: '2025-08-12', type: 'Transfer' },
+    { playerName: 'Nicolas Kuhn', fromShort: 'CELT', toShort: 'COM', fee: 19_000_000, date: '2025-07-11', type: 'Transfer' },
+    { playerName: 'Jamie Vardy', fromShort: 'LEI', toShort: 'CRE', fee: 0, date: '2025-09-01', type: 'Free' },
+
+    // Ligue 1 & Rest of World 2025/26 Transfers
     { playerName: 'Lucas Chevalier', fromShort: 'LOSC', toShort: 'PSG', fee: 40_000_000, date: '2025-08-09', type: 'Transfer' },
     { playerName: 'Illia Zabarnyi', fromShort: 'BOU', toShort: 'PSG', fee: 63_000_000, date: '2025-08-12', type: 'Transfer' },
-    { playerName: 'Jobe Bellingham', fromShort: 'SUN', toShort: 'BVB', fee: 30_500_000, date: '2025-06-10', type: 'Transfer' },
+    { playerName: 'Paul Pogba', fromShort: 'JUV', toShort: 'ASM', fee: 0, date: '2025-06-28', type: 'Free' },
+    { playerName: 'Igor Paixao', fromShort: 'FEY', toShort: 'OM', fee: 30_000_000, date: '2025-08-01', type: 'Transfer' },
+    { playerName: 'Facundo Medina', fromShort: 'RCL', toShort: 'OM', fee: 20_000_000, date: '2025-07-02', type: 'Transfer' },
+    { playerName: 'Angel Gomes', fromShort: 'LOSC', toShort: 'OM', fee: 0, date: '2025-07-04', type: 'Free' },
+    { playerName: 'Emerson Palmieri', fromShort: 'WHU', toShort: 'OM', fee: 1_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Pierre-Emerick Aubameyang', fromShort: 'QAD', toShort: 'OM', fee: 0, date: '2025-07-31', type: 'Free' },
+    { playerName: 'Richard Rios', fromShort: 'PAL', toShort: 'SLB', fee: 27_000_000, date: '2025-07-22', type: 'Transfer' },
+    { playerName: 'Franjo Ivanovic', fromShort: 'USG', toShort: 'SLB', fee: 22_800_000, date: '2025-07-31', type: 'Transfer' },
+    { playerName: 'Dodi Lukebakio', fromShort: 'SEV', toShort: 'SLB', fee: 20_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Fotis Ioannidis', fromShort: 'PAO', toShort: 'SCP', fee: 22_000_000, date: '2025-08-31', type: 'Transfer' },
+    { playerName: 'Gabri Veiga', fromShort: 'AHL', toShort: 'FCP', fee: 15_000_000, date: '2025-06-05', type: 'Transfer' },
+    { playerName: 'Jan Bednarek', fromShort: 'SOU', toShort: 'FCP', fee: 7_500_000, date: '2025-07-28', type: 'Transfer' },
+    { playerName: 'Luuk de Jong', fromShort: 'PSV', toShort: 'FCP', fee: 0, date: '2025-08-03', type: 'Free' },
+    { playerName: 'Dennis Man', fromShort: 'PAR', toShort: 'PSV', fee: 8_500_000, date: '2025-08-12', type: 'Transfer' },
+    { playerName: 'Alassane Plea', fromShort: 'BMG', toShort: 'PSV', fee: 4_500_000, date: '2025-07-17', type: 'Transfer' },
+    { playerName: 'Sem Steijn', fromShort: 'TWE', toShort: 'FEY', fee: 10_000_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Tsuyoshi Watanabe', fromShort: 'GNT', toShort: 'FEY', fee: 8_000_000, date: '2025-07-23', type: 'Transfer' },
+    { playerName: 'Casper Tengstedt', fromShort: 'VER', toShort: 'FEY', fee: 6_000_000, date: '2025-07-24', type: 'Transfer' },
+    { playerName: 'Ko Itakura', fromShort: 'BMG', toShort: 'AJX', fee: 10_500_000, date: '2025-08-08', type: 'Transfer' },
+    { playerName: 'Oscar Gloukh', fromShort: 'RBS', toShort: 'AJX', fee: 14_750_000, date: '2025-08-01', type: 'Transfer' },
+    { playerName: 'Kasper Dolberg', fromShort: 'AND', toShort: 'AJX', fee: 10_000_000, date: '2025-09-02', type: 'Transfer' },
+    { playerName: 'Raul Moro', fromShort: 'VLL', toShort: 'AJX', fee: 11_000_000, date: '2025-07-15', type: 'Transfer' },
+    { playerName: 'Ludovit Reis', fromShort: 'HSV', toShort: 'CBK', fee: 6_000_000, date: '2025-06-25', type: 'Transfer' },
+    { playerName: 'Kjell Scherpen', fromShort: 'STU', toShort: 'USG', fee: 2_000_000, date: '2025-07-24', type: 'Transfer' },
     { playerName: 'Victor Osimhen', fromShort: 'NAP', toShort: 'GAL', fee: 75_000_000, date: '2025-07-31', type: 'Transfer' },
     { playerName: 'Leroy Sane', fromShort: 'FCB', fromCountry: 'GER', toShort: 'GAL', fee: 0, date: '2025-07-01', type: 'Free' },
+    { playerName: 'Kerem Akturkoglu', fromShort: 'SLB', toShort: 'FEN', fee: 22_500_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Nelson Semedo', fromShort: 'WOL', toShort: 'FEN', fee: 0, date: '2025-07-31', type: 'Free' },
+    { playerName: 'Archie Brown', fromShort: 'GNT', toShort: 'FEN', fee: 8_000_000, date: '2025-07-12', type: 'Transfer' },
+    { playerName: 'Wilfred Ndidi', fromShort: 'LEI', toShort: 'BJK', fee: 8_000_000, date: '2025-08-08', type: 'Transfer' },
+    { playerName: 'Vaclav Cerny', fromShort: 'RAN', toShort: 'BJK', fee: 6_000_000, date: '2025-09-02', type: 'Transfer' },
+    { playerName: 'Kieran Tierney', fromShort: 'ARS', toShort: 'CELT', fee: 0, date: '2025-07-01', type: 'Free' },
     { playerName: 'Darwin Nunez', fromShort: 'LIV', toShort: 'HIL', fee: 53_000_000, date: '2025-08-09', type: 'Transfer' },
     { playerName: 'Theo Hernandez', fromShort: 'MIL', toShort: 'HIL', fee: 25_000_000, date: '2025-07-10', type: 'Transfer' },
     { playerName: 'Kingsley Coman', fromShort: 'FCB', fromCountry: 'GER', toShort: 'NAS', fee: 25_000_000, date: '2025-08-15', type: 'Transfer' },
     { playerName: 'Joao Felix', fromShort: 'CHE', toShort: 'NAS', fee: 30_000_000, date: '2025-07-29', type: 'Transfer' },
+    { playerName: 'Inigo Martinez', fromShort: 'BAR', toShort: 'NAS', fee: 0, date: '2025-08-09', type: 'Free' },
+    { playerName: 'Enzo Millot', fromShort: 'VFB', toShort: 'AHL', fee: 28_000_000, date: '2025-08-09', type: 'Transfer' },
+    { playerName: 'Mateo Retegui', fromShort: 'ATA', toShort: 'QAD', fee: 68_250_000, date: '2025-07-21', type: 'Transfer' },
     { playerName: 'Heung-Min Son', fromShort: 'TOT', toShort: 'LAFC', fee: 22_000_000, date: '2025-08-06', type: 'Transfer' },
-    { playerName: 'Granit Xhaka', fromShort: 'B04', toShort: 'SUN', fee: 15_000_000, date: '2025-07-30', type: 'Transfer' },
-    { playerName: 'Kyle Walker', fromShort: 'MCI', toShort: 'BUR', fee: 0, date: '2025-07-05', type: 'Free' },
-    { playerName: 'Douglas Luiz', fromShort: 'JUV', toShort: 'NFO', fee: 30_000_000, date: '2025-08-21', type: 'Transfer' },
-    { playerName: 'Thomas Partey', fromShort: 'ARS', toShort: 'VIL', fee: 0, date: '2025-08-07', type: 'Free' },
-    { playerName: 'Christian Eriksen', fromShort: 'MUN', toShort: 'WOB', fee: 0, date: '2025-09-10', type: 'Free' },
-    { playerName: 'Alex Baena', fromShort: 'VIL', toShort: 'ATM', fee: 42_000_000, date: '2025-07-02', type: 'Transfer' },
-    { playerName: 'Thiago Almada', fromShort: 'OL', toShort: 'ATM', fee: 21_000_000, date: '2025-07-17', type: 'Transfer' },
-    { playerName: 'Fotis Ioannidis', fromShort: 'PAO', toShort: 'SCP', fee: 22_000_000, date: '2025-08-31', type: 'Transfer' },
+    { playerName: 'Rodrigo De Paul', fromShort: 'ATM', toShort: 'MIA', fee: 15_000_000, date: '2025-07-25', type: 'Transfer' },
+    { playerName: 'Andreas Pereira', fromShort: 'FUL', toShort: 'PAL', fee: 10_000_000, date: '2025-08-29', type: 'Transfer' },
+    { playerName: 'Arthur Cabral', fromShort: 'SLB', toShort: 'BOT', fee: 12_000_000, date: '2025-06-08', type: 'Transfer' },
   ];
 
-  // Index players by normalized name for O(1) transfer history & loan lookup
+  // Index players by normalized name for O(1) transfer history, loan & 2024/25 career stats lookup
   const playerByNormName = new Map<string, Player>();
   for (const p of Object.values(players)) {
     playerByNormName.set(normalizePlayerNameKey(p.firstName, p.lastName), p);
@@ -1869,6 +2072,148 @@ export function createInitialWorldState(
       targetPlayer.loanedFromClubId = fromClubId;
       targetPlayer.loanOptionToBuyFee = tr.optionToBuyFee ?? null;
     }
+  }
+
+  // Seed authentic 2024/25 Career Season History so Player Profiles & Club Records reflect real 2024/25 form
+  const VERIFIED_24_25_PLAYER_STATS: Record<
+    string,
+    { apps: number; goals: number; assists: number; cs: number; rating: number }
+  > = {
+    'mohamed salah': { apps: 38, goals: 29, assists: 18, cs: 0, rating: 8.15 },
+    'kylian mbappe': { apps: 34, goals: 31, assists: 3, cs: 0, rating: 8.08 },
+    'viktor gyokeres': { apps: 33, goals: 39, assists: 7, cs: 0, rating: 8.22 },
+    'ousmane dembele': { apps: 49, goals: 35, assists: 16, cs: 0, rating: 8.24 },
+    'harry kane': { apps: 31, goals: 26, assists: 9, cs: 0, rating: 8.05 },
+    'alexander isak': { apps: 34, goals: 23, assists: 6, cs: 0, rating: 7.86 },
+    'erling haaland': { apps: 31, goals: 22, assists: 3, cs: 0, rating: 7.74 },
+    'robert lewandowski': { apps: 34, goals: 27, assists: 2, cs: 0, rating: 7.82 },
+    'raphinha belloli': { apps: 36, goals: 18, assists: 9, cs: 0, rating: 8.12 },
+    'lamine yamal': { apps: 35, goals: 9, assists: 13, cs: 0, rating: 7.98 },
+    'desire doue': { apps: 46, goals: 15, assists: 14, cs: 0, rating: 7.82 },
+    'bukayo saka': { apps: 25, goals: 6, assists: 10, cs: 0, rating: 7.72 },
+    'cole palmer': { apps: 37, goals: 15, assists: 8, cs: 0, rating: 7.76 },
+    'florian wirtz': { apps: 31, goals: 10, assists: 12, cs: 0, rating: 7.91 },
+    'bryan mbeumo': { apps: 38, goals: 20, assists: 7, cs: 0, rating: 7.68 },
+    'matheus cunha': { apps: 33, goals: 15, assists: 6, cs: 0, rating: 7.62 },
+    'mateo retegui': { apps: 36, goals: 25, assists: 8, cs: 0, rating: 7.78 },
+    'victor osimhen': { apps: 30, goals: 26, assists: 5, cs: 0, rating: 7.92 },
+    'serhou guirassy': { apps: 30, goals: 21, assists: 4, cs: 0, rating: 7.69 },
+    'mason greenwood': { apps: 34, goals: 21, assists: 5, cs: 0, rating: 7.64 },
+    'lautaro martinez': { apps: 31, goals: 12, assists: 3, cs: 0, rating: 7.56 },
+    'marcus thuram': { apps: 32, goals: 14, assists: 4, cs: 0, rating: 7.58 },
+    'jamal musiala': { apps: 25, goals: 12, assists: 2, cs: 0, rating: 7.84 },
+    'michael olise': { apps: 34, goals: 12, assists: 15, cs: 0, rating: 7.95 },
+    'vinicius junior': { apps: 30, goals: 11, assists: 8, cs: 0, rating: 7.66 },
+    'jude bellingham': { apps: 31, goals: 9, assists: 8, cs: 0, rating: 7.68 },
+    'pedri gonzalez': { apps: 37, goals: 4, assists: 5, cs: 0, rating: 7.94 },
+    'declan rice': { apps: 35, goals: 4, assists: 7, cs: 0, rating: 7.65 },
+    'bruno fernandes': { apps: 36, goals: 8, assists: 10, cs: 0, rating: 7.52 },
+    'ollie watkins': { apps: 38, goals: 16, assists: 8, cs: 0, rating: 7.54 },
+    'omar marmoush': { apps: 33, goals: 22, assists: 10, cs: 0, rating: 7.79 },
+    'hugo ekitike': { apps: 33, goals: 15, assists: 8, cs: 0, rating: 7.58 },
+    'benjamin sesko': { apps: 33, goals: 13, assists: 5, cs: 0, rating: 7.45 },
+    'jonathan david': { apps: 32, goals: 16, assists: 5, cs: 0, rating: 7.56 },
+    'vangelis pavlidis': { apps: 34, goals: 19, assists: 7, cs: 0, rating: 7.62 },
+    'julian alvarez': { apps: 37, goals: 17, assists: 4, cs: 0, rating: 7.64 },
+    'scott mctominay': { apps: 34, goals: 12, assists: 4, cs: 0, rating: 7.78 },
+    'romelu lukaku': { apps: 36, goals: 14, assists: 10, cs: 0, rating: 7.58 },
+    'khvicha kvaratskhelia': { apps: 31, goals: 9, assists: 6, cs: 0, rating: 7.72 },
+    'bradley barcola': { apps: 34, goals: 14, assists: 10, cs: 0, rating: 7.68 },
+    'vitinha ferreira': { apps: 29, goals: 5, assists: 4, cs: 0, rating: 7.81 },
+    'achraf hakimi': { apps: 25, goals: 4, assists: 6, cs: 11, rating: 7.88 },
+    'virgil van dijk': { apps: 37, goals: 3, assists: 1, cs: 14, rating: 7.76 },
+    'william saliba': { apps: 35, goals: 2, assists: 0, cs: 13, rating: 7.62 },
+    'alessandro bastoni': { apps: 33, goals: 1, assists: 5, cs: 14, rating: 7.68 },
+    'gianluigi donnarumma': { apps: 24, goals: 0, assists: 0, cs: 11, rating: 7.58 },
+    'david raya': { apps: 38, goals: 0, assists: 0, cs: 13, rating: 7.46 },
+    'thibaut courtois': { apps: 30, goals: 0, assists: 0, cs: 11, rating: 7.48 },
+    'lionel messi': { apps: 28, goals: 23, assists: 16, cs: 0, rating: 8.18 },
+    'cristiano ronaldo': { apps: 30, goals: 25, assists: 3, cs: 0, rating: 7.82 },
+    'chris wood': { apps: 36, goals: 20, assists: 3, cs: 0, rating: 7.54 },
+    'yoane wissa': { apps: 35, goals: 19, assists: 4, cs: 0, rating: 7.52 },
+    'moise kean': { apps: 32, goals: 19, assists: 3, cs: 0, rating: 7.56 },
+    'ademola lookman': { apps: 31, goals: 15, assists: 5, cs: 0, rating: 7.64 },
+    'christian pulisic': { apps: 34, goals: 11, assists: 9, cs: 0, rating: 7.58 },
+    'tijjani reijnders': { apps: 37, goals: 10, assists: 4, cs: 0, rating: 7.62 },
+    'martin odegaard': { apps: 30, goals: 3, assists: 8, cs: 0, rating: 7.55 },
+    'eberechi eze': { apps: 34, goals: 8, assists: 8, cs: 0, rating: 7.56 },
+    'jean-philippe mateta': { apps: 37, goals: 14, assists: 2, cs: 0, rating: 7.42 },
+    'luis diaz': { apps: 36, goals: 13, assists: 5, cs: 0, rating: 7.55 },
+    'cody gakpo': { apps: 35, goals: 10, assists: 4, cs: 0, rating: 7.42 },
+    'nick woltemade': { apps: 28, goals: 12, assists: 2, cs: 0, rating: 7.48 },
+    'sem steijn': { apps: 33, goals: 24, assists: 7, cs: 0, rating: 7.72 },
+    'igor paixao': { apps: 34, goals: 16, assists: 10, cs: 0, rating: 7.68 },
+    'jonathan burkardt': { apps: 29, goals: 18, assists: 3, cs: 0, rating: 7.56 },
+  };
+
+  for (const p of Object.values(players)) {
+    const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2002;
+    const ageIn2025 = 2025 - birthYear;
+    const normKey = normalizePlayerNameKey(p.firstName, p.lastName);
+    const verified = VERIFIED_24_25_PLAYER_STATS[normKey];
+    if (!verified && ageIn2025 < 19) continue;
+
+    // Attribute 2024/25 stats to the player's previous club if they moved in Summer 2025
+    const club2425Id = p.transferHistory[0]?.fromClubId || p.clubId;
+    const club2425Name = clubs[club2425Id]?.name || clubs[p.clubId]?.name || 'Club';
+
+    if (verified) {
+      p.careerSeasonHistory = [
+        {
+          season: '2024/25',
+          clubId: club2425Id,
+          clubName: club2425Name,
+          appearances: verified.apps,
+          goals: verified.goals,
+          assists: verified.assists,
+          cleanSheets: verified.cs,
+          averageRating: verified.rating,
+        },
+      ];
+      continue;
+    }
+
+    // Deterministic realistic 2024/25 season line for remaining senior players
+    const pos = p.positions[0];
+    const caFactor = Math.max(0, Math.min(1, (p.currentAbility - 115) / 65));
+    const apps = Math.max(8, Math.min(38, Math.round(16 + caFactor * 18 + (rng.next() * 8 - 4))));
+    let goals = 0;
+    let assists = 0;
+    let cleanSheets = 0;
+
+    if (pos === 'GK') {
+      cleanSheets = Math.max(1, Math.min(apps - 2, Math.round(apps * (0.24 + caFactor * 0.16))));
+    } else if (pos === 'ST') {
+      goals = Math.max(2, Math.round(apps * (0.18 + caFactor * 0.34) + rng.next() * 3));
+      assists = Math.max(0, Math.round(apps * (0.06 + caFactor * 0.1) + rng.next() * 2));
+    } else if (pos === 'AML' || pos === 'AMR' || pos === 'AMC' || pos === 'ML' || pos === 'MR') {
+      goals = Math.max(1, Math.round(apps * (0.11 + caFactor * 0.2) + rng.next() * 2));
+      assists = Math.max(1, Math.round(apps * (0.12 + caFactor * 0.18) + rng.next() * 2));
+    } else if (pos === 'MC' || pos === 'DM') {
+      goals = Math.max(0, Math.round(apps * (0.04 + caFactor * 0.1) + rng.next() * 1.5));
+      assists = Math.max(0, Math.round(apps * (0.07 + caFactor * 0.14) + rng.next() * 2));
+    } else {
+      goals = Math.max(0, Math.round(apps * (0.02 + caFactor * 0.05) + rng.next() * 1.2));
+      assists = Math.max(0, Math.round(apps * (pos === 'DC' ? 0.02 : 0.08 + caFactor * 0.1)));
+      cleanSheets = Math.max(1, Math.round(apps * (0.22 + caFactor * 0.14)));
+    }
+
+    const avgRating = Number(
+      Math.max(6.45, Math.min(7.72, 6.65 + caFactor * 0.72 + (rng.next() * 0.24 - 0.12))).toFixed(2)
+    );
+
+    p.careerSeasonHistory = [
+      {
+        season: '2024/25',
+        clubId: club2425Id,
+        clubName: club2425Name,
+        appearances: apps,
+        goals,
+        assists,
+        cleanSheets,
+        averageRating: avgRating,
+      },
+    ];
   }
 
   // Populate FM27 Player Traits (Preferred Moves) for all players
@@ -2148,111 +2493,55 @@ export function createInitialWorldState(
     });
   }
 
-  // Seed inaugural historical Trophy Cabinet & Annual Awards Gala records (2024/25)
-  const trophyHistory: TrophyHistoryRecord[] = [
-    {
-      id: 'trp_2425_ucl',
-      season: '2024/25',
-      competitionId: 'UEFA_UCL',
-      competitionName: 'UEFA Champions League',
-      winnerClubId: 'club_esp_ll_1',
-      winnerClubName: clubs['club_esp_ll_1']?.name || 'Real Madrid',
-      runnerUpClubId: 'club_eng_pl_2',
-      runnerUpClubName: clubs['club_eng_pl_2']?.name || 'Manchester City',
-    },
-    {
-      id: 'trp_2425_eng',
-      season: '2024/25',
-      competitionId: 'ENG_PL',
-      competitionName: 'English Premier League',
-      winnerClubId: 'club_eng_pl_3',
-      winnerClubName: clubs['club_eng_pl_3']?.name || 'Liverpool',
-      runnerUpClubId: 'club_eng_pl_1',
-      runnerUpClubName: clubs['club_eng_pl_1']?.name || 'Arsenal',
-    },
-    {
-      id: 'trp_2425_esp',
-      season: '2024/25',
-      competitionId: 'ESP_LL',
-      competitionName: 'Spanish La Liga',
-      winnerClubId: 'club_esp_ll_2',
-      winnerClubName: clubs['club_esp_ll_2']?.name || 'Barcelona',
-      runnerUpClubId: 'club_esp_ll_1',
-      runnerUpClubName: clubs['club_esp_ll_1']?.name || 'Real Madrid',
-    },
-    {
-      id: 'trp_2425_ger',
-      season: '2024/25',
-      competitionId: 'GER_BL',
-      competitionName: 'German Bundesliga',
-      winnerClubId: 'club_ger_bl_1',
-      winnerClubName: clubs['club_ger_bl_1']?.name || 'Bayern Munich',
-      runnerUpClubId: 'club_ger_bl_2',
-      runnerUpClubName: clubs['club_ger_bl_2']?.name || 'Bayer Leverkusen',
-    },
-    {
-      id: 'trp_2425_ita',
-      season: '2024/25',
-      competitionId: 'ITA_SA',
-      competitionName: 'Italian Serie A',
-      winnerClubId: 'club_ita_sa_1',
-      winnerClubName: clubs['club_ita_sa_1']?.name || 'Inter Milan',
-      runnerUpClubId: 'club_ita_sa_2',
-      runnerUpClubName: clubs['club_ita_sa_2']?.name || 'Napoli',
-    },
-    {
-      id: 'trp_2425_fra',
-      season: '2024/25',
-      competitionId: 'FRA_L1',
-      competitionName: 'French Ligue 1',
-      winnerClubId: 'club_fra_l1_1',
-      winnerClubName: clubs['club_fra_l1_1']?.name || 'Paris Saint-Germain',
-      runnerUpClubId: 'club_fra_l1_2',
-      runnerUpClubName: clubs['club_fra_l1_2']?.name || 'Monaco',
-    },
-  ];
-
+  // Seed verified 2024/25 Annual Awards Gala records (2025 Ballon d'Or, Golden Shoe, Golden Boy & Manager of the Season)
   const allPlayerList = Object.values(players).sort((a, b) => b.currentAbility - a.currentAbility);
-  const topStar = allPlayerList[0];
-  const topScorer = allPlayerList.find((p) => p.positions.includes('ST')) || topStar;
-  const topU21 =
+  const ballonDorWinner =
+    playerByNormName.get(normalizePlayerNameKey('Ousmane Dembele', '')) || allPlayerList[0];
+  const goldenBootWinner =
+    playerByNormName.get(normalizePlayerNameKey('Kylian Mbappe', '')) ||
+    allPlayerList.find((p) => p.positions.includes('ST')) ||
+    allPlayerList[0];
+  const goldenBoyWinner =
+    playerByNormName.get(normalizePlayerNameKey('Desire Doue', '')) ||
     allPlayerList.find((p) => {
-      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2006;
-      return 2026 - birthYear <= 21;
-    }) || topStar;
+      const birthYear = parseInt(p.dateOfBirth.slice(0, 4), 10) || 2005;
+      return 2025 - birthYear <= 21;
+    }) ||
+    allPlayerList[0];
+  const psgClubId = findClubIdByShortName('PSG', 'FRA') || 'club_fra_l1_1';
 
   const seasonAwardsHistory: SeasonAwardRecord[] = [
     {
       season: '2024/25',
       ballonDor: {
-        playerId: topStar.id,
-        playerName: `${topStar.firstName} ${topStar.lastName}`,
-        clubId: topStar.clubId,
-        clubName: clubs[topStar.clubId]?.name || 'Real Madrid',
-        goals: 31,
-        assists: 14,
-        averageRating: 8.12,
+        playerId: ballonDorWinner.id,
+        playerName: `${ballonDorWinner.firstName} ${ballonDorWinner.lastName}`,
+        clubId: ballonDorWinner.clubId,
+        clubName: clubs[ballonDorWinner.clubId]?.name || 'Paris Saint-Germain',
+        goals: 35,
+        assists: 16,
+        averageRating: 8.24,
       },
       goldenBoot: {
-        playerId: topScorer.id,
-        playerName: `${topScorer.firstName} ${topScorer.lastName}`,
-        clubId: topScorer.clubId,
-        clubName: clubs[topScorer.clubId]?.name || 'Manchester City',
-        goals: 36,
+        playerId: goldenBootWinner.id,
+        playerName: `${goldenBootWinner.firstName} ${goldenBootWinner.lastName}`,
+        clubId: goldenBootWinner.clubId,
+        clubName: clubs[goldenBootWinner.clubId]?.name || 'Real Madrid',
+        goals: 31,
       },
       goldenBoy: {
-        playerId: topU21.id,
-        playerName: `${topU21.firstName} ${topU21.lastName}`,
-        clubId: topU21.clubId,
-        clubName: clubs[topU21.clubId]?.name || 'Barcelona',
-        age: 18,
-        ca: topU21.currentAbility,
-        averageRating: 7.78,
+        playerId: goldenBoyWinner.id,
+        playerName: `${goldenBoyWinner.firstName} ${goldenBoyWinner.lastName}`,
+        clubId: goldenBoyWinner.clubId,
+        clubName: clubs[goldenBoyWinner.clubId]?.name || 'Paris Saint-Germain',
+        age: 20,
+        ca: goldenBoyWinner.currentAbility,
+        averageRating: 7.82,
       },
       managerOfTheSeason: {
-        managerName: 'Carlo Ancelotti',
-        clubId: 'club_esp_ll_1',
-        clubName: clubs['club_esp_ll_1']?.name || 'Real Madrid',
+        managerName: 'Luis Enrique',
+        clubId: psgClubId,
+        clubName: clubs[psgClubId]?.name || 'Paris Saint-Germain',
       },
     },
   ];
