@@ -9,7 +9,6 @@ import {
   LogOut,
   Play,
   Shield,
-  Sparkles,
   Trash2,
   Trophy,
   UserCheck,
@@ -671,7 +670,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         {/* LEFT COLUMN (7 COLS): OFFICIAL BRANDING & SLEEK FM27 ACTION STACK */}
         <div className="lg:col-span-7 flex flex-col items-start justify-center space-y-5">
           {/* Official Game Crest & Title Lockup */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="w-full max-w-xl flex flex-col sm:flex-row items-start sm:items-center gap-5">
             <img
               src="/assets/aistudio/touchline_logo.webp"
               alt="TOUCHLINE Football Manager"
@@ -681,17 +680,20 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               loading="eager"
               decoding="async"
               data-testid="title-hero-logo"
-              className="w-56 sm:w-64 h-36 sm:h-40 -my-4 -ml-3 object-contain object-left drop-shadow-[0_14px_32px_rgba(16,185,129,0.35)] select-none pointer-events-none"
+              className="w-52 sm:w-56 h-32 sm:h-36 -my-3 -ml-2 shrink-0 object-contain object-left drop-shadow-[0_14px_32px_rgba(16,185,129,0.35)] select-none pointer-events-none"
             />
-            <div className="space-y-1.5">
-              <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-md bg-slate-900/90 border border-slate-700/80 text-[11px] font-mono text-emerald-400">
-                <Sparkles className="w-3 h-3" />
+            <div
+              data-testid="title-description-box"
+              className="flex-1 min-w-0 rounded-2xl bg-slate-900/75 border border-slate-700/70 shadow-lg shadow-slate-950/60 backdrop-blur-md px-4 py-3.5 space-y-2"
+            >
+              <div className="flex items-center justify-between gap-2 text-[11px] font-mono text-emerald-400 tracking-wide">
                 <span>FOOTBALL MANAGEMENT SIMULATION</span>
+                <span className="text-slate-500">2025/26</span>
               </div>
-              <h1 className="text-2xl sm:text-3xl font-display font-extrabold tracking-tight text-white">
+              <h1 className="text-xl sm:text-2xl font-display font-extrabold tracking-tight text-white leading-snug text-balance">
                 {tr('EVERY TACTICAL CALL MATTERS.', 'ทุกการตัดสินใจข้างสนามคือชัยชนะ')}
               </h1>
-              <p className="text-xs sm:text-sm text-slate-300 max-w-xl leading-relaxed">
+              <p className="text-xs sm:text-[13px] text-slate-300 leading-relaxed text-justify [text-justify:inter-word] border-t border-slate-800/80 pt-2">
                 {tr(
                   'Command 394 clubs across 23 World & European leagues with live 2D pitch physics, UEFA Swiss Phase, realistic Pre-Season Tours, and 100% Cloud Firestore career sync.',
                   'คุมทัพ 394 สโมสรจาก 23 ลีกดังทั่วโลกและยุโรป พร้อมเอนจินสนาม 2D สมจริง, ถ้วยยุโรป Swiss Model, แคมป์ปรีซีซั่น และระบบเซฟเกมบน Cloud Firestore 100%'

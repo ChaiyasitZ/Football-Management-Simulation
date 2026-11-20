@@ -7,6 +7,7 @@ import {
   LEAGUES_CONFIG,
 } from './leaguesConfig';
 import { createInitialWorldState } from './worldGenerator';
+import { REAL_CLUB_CORE_PLAYERS, REAL_CLUB_ROSTERS } from './realRostersData';
 import {
   checkAndAdvanceDomesticCup,
   CUP_COMPETITIONS_META,
@@ -1448,7 +1449,7 @@ test('FM26/FM27 Complete Audit: Authentic Squad Shirt Numbers (1-99), Dynamic AI
   assert.equal(findByName('Mohamed Salah')?.shirtNumber, 11);
   assert.equal(findByName('Erling Haaland')?.shirtNumber, 9);
   assert.equal(findByName('Cole Palmer')?.shirtNumber, 20);
-  assert.equal(findByName('Lamine Yamal')?.shirtNumber, 19);
+  assert.equal(findByName('Lamine Yamal')?.shirtNumber, 10);
   assert.equal(findByName('Declan Rice')?.shirtNumber, 41);
 
   // Verify Dynamic AI Live Match Management & Substitution events at minutes 62 / 76
@@ -3701,6 +3702,186 @@ test('27. Stage 14 Complete Suite: Global & Challenger 2025/26 Real Squads, 45+ 
       Math.round(marqueeStar.wagePerWeek * 1.15),
     'Winning a Bidding War must apply the +15% sweetened wage boost'
   );
+});
+
+test('28. Stage 15 Complete Suite: 2025/26–2026/27 Verified Transfer Database, Zero Cross-Club Duplicates, Initial Real Loans & Transfer History', () => {
+  const norm = (first: string, last: string) =>
+    `${first} ${last}`
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9 ]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  // 1. Zero duplicate club keys between REAL_CLUB_ROSTERS and REAL_CLUB_CORE_PLAYERS
+  const overlappingClubKeys = Object.keys(REAL_CLUB_ROSTERS).filter(
+    (k) => k in REAL_CLUB_CORE_PLAYERS
+  );
+  assert.deepEqual(
+    overlappingClubKeys,
+    [],
+    `REAL_CLUB_ROSTERS and REAL_CLUB_CORE_PLAYERS must not share duplicate club keys, found: ${overlappingClubKeys.join(', ')}`
+  );
+
+  // 2. Zero duplicate player names across all static real roster seeds
+  const seedMap = new Map<string, string[]>();
+  for (const [clubCode, roster] of Object.entries(REAL_CLUB_ROSTERS)) {
+    for (const p of roster) {
+      const k = norm(p[0], p[1]);
+      if (!seedMap.has(k)) seedMap.set(k, []);
+      seedMap.get(k)!.push(`R:${clubCode}`);
+    }
+  }
+  for (const [clubCode, roster] of Object.entries(REAL_CLUB_CORE_PLAYERS)) {
+    for (const p of roster) {
+      const k = norm(p[0], p[1]);
+      if (!seedMap.has(k)) seedMap.set(k, []);
+      seedMap.get(k)!.push(`C:${clubCode}`);
+    }
+  }
+  const seedDuplicates = [...seedMap.entries()].filter(([, clubs]) => clubs.length > 1);
+  assert.equal(
+    seedDuplicates.length,
+    0,
+    `Zero duplicate player names allowed across realRostersData.ts, found: ${seedDuplicates.map(([n, c]) => `${n} (${c.join(',')})`).join('; ')}`
+  );
+
+  // 3. Zero duplicate player names across ALL 394 clubs in createInitialWorldState()
+  const world = createInitialWorldState(20261515);
+  const allPlayers = Object.values(world.players);
+  assert.equal(Object.keys(world.clubs).length, 394, 'World must contain all 394 clubs');
+
+  const worldNameMap = new Map<string, string[]>();
+  for (const p of allPlayers) {
+    const k = norm(p.firstName, p.lastName);
+    if (!worldNameMap.has(k)) worldNameMap.set(k, []);
+    worldNameMap.get(k)!.push(world.clubs[p.clubId]?.shortName || p.clubId);
+  }
+  const worldDuplicates = [...worldNameMap.entries()].filter(([, list]) => list.length > 1);
+  assert.equal(
+    worldDuplicates.length,
+    0,
+    `Global Deduplication Guard must guarantee 0 duplicate players across 394 clubs, found: ${worldDuplicates.slice(0, 10).map(([n, c]) => `${n} (${c.join(',')})`).join('; ')}`
+  );
+
+  // 4. Verify Headline 2025/26–2026/27 Verified Club Placements (and fixed hallucinations)
+  const findPlayer = (fullName: string) =>
+    allPlayers.find((p) => norm(p.firstName, p.lastName) === norm(fullName, ''));
+  const assertAtClub = (fullName: string, expectedShort: string, expectedCountry?: string) => {
+    const p = findPlayer(fullName);
+    assert.ok(p, `Expected real player "${fullName}" to exist in world`);
+    const club = world.clubs[p.clubId];
+    assert.equal(
+      club?.shortName,
+      expectedShort,
+      `Expected "${fullName}" at ${expectedShort}, found at ${club?.shortName} (${club?.name})`
+    );
+    if (expectedCountry) {
+      assert.equal(club?.countryId, expectedCountry);
+    }
+  };
+
+  // Premier League
+  assertAtClub('Viktor Gyokeres', 'ARS');
+  assertAtClub('Eberechi Eze', 'ARS');
+  assertAtClub('Martin Zubimendi', 'ARS');
+  assertAtClub('Noni Madueke', 'ARS');
+  assertAtClub('Piero Hincapie', 'ARS');
+  assertAtClub('Gabriel Martinelli', 'ARS');
+  assertAtClub('Florian Wirtz', 'LIV');
+  assertAtClub('Alexander Isak', 'LIV');
+  assertAtClub('Hugo Ekitike', 'LIV');
+  assertAtClub('Milos Kerkez', 'LIV');
+  assertAtClub('Jeremie Frimpong', 'LIV');
+  assertAtClub('Gianluigi Donnarumma', 'MCI');
+  assertAtClub('Tijjani Reijnders', 'MCI');
+  assertAtClub('Rayan Cherki', 'MCI');
+  assertAtClub('Rayan Ait-Nouri', 'MCI');
+  assertAtClub('Benjamin Sesko', 'MUN');
+  assertAtClub('Matheus Cunha', 'MUN');
+  assertAtClub('Bryan Mbeumo', 'MUN');
+  assertAtClub('Joao Pedro', 'CHE');
+  assertAtClub('Alejandro Garnacho', 'CHE');
+  assertAtClub('Jorrel Hato', 'CHE');
+  assertAtClub('Xavi Simons', 'TOT');
+  assertAtClub('Mohammed Kudus', 'TOT');
+  assertAtClub('Bruno Guimaraes', 'NEW');
+  assertAtClub('Nick Woltemade', 'NEW');
+  assertAtClub('Morgan Rogers', 'AVL');
+  assertAtClub('Youri Tielemans', 'AVL');
+  assertAtClub('Harvey Elliott', 'AVL');
+  assertAtClub('Jack Grealish', 'EVE');
+  assertAtClub('Granit Xhaka', 'SUN');
+  assertAtClub('Kyle Walker', 'BUR');
+
+  // LaLiga, Bundesliga, Serie A, Ligue 1 & Global
+  assertAtClub('Trent Alexander-Arnold', 'RMA');
+  assertAtClub('Dean Huijsen', 'RMA');
+  assertAtClub('Alvaro Carreras', 'RMA');
+  assertAtClub('Marcus Rashford', 'BAR');
+  assertAtClub('Joan Garcia', 'BAR');
+  assertAtClub('Alex Baena', 'ATM');
+  assertAtClub('Thiago Almada', 'ATM');
+  assertAtClub('Luis Diaz', 'FCB', 'GER');
+  assertAtClub('Jonathan Tah', 'FCB', 'GER');
+  assertAtClub('Jobe Bellingham', 'BVB');
+  assertAtClub('Claudio Echeverri', 'B04');
+  assertAtClub('Manuel Akanji', 'INT');
+  assertAtClub('Kevin De Bruyne', 'NAP');
+  assertAtClub('Rasmus Hojlund', 'NAP');
+  assertAtClub('Jonathan David', 'JUV');
+  assertAtClub('Luka Modric', 'MIL');
+  assertAtClub('Lucas Chevalier', 'PSG');
+  assertAtClub('Illia Zabarnyi', 'PSG');
+  assertAtClub('Endrick Felipe', 'OL');
+  assertAtClub('Victor Osimhen', 'GAL');
+  assertAtClub('Leroy Sane', 'GAL');
+  assertAtClub('Darwin Nunez', 'HIL');
+  assertAtClub('Theo Hernandez', 'HIL');
+  assertAtClub('Kingsley Coman', 'NAS');
+  assertAtClub('Joao Felix', 'NAS');
+  assertAtClub('Heung-Min Son', 'LAFC');
+
+  // 5. Verify Initial 2025/26 Real Loans (loanedFromClubId & loanOptionToBuyFee)
+  const initialLoans = allPlayers.filter((p) => Boolean(p.loanedFromClubId));
+  assert.ok(initialLoans.length >= 11, `Expected at least 11 real 2025/26 loans, got ${initialLoans.length}`);
+
+  const rashford = findPlayer('Marcus Rashford')!;
+  assert.equal(world.clubs[rashford.loanedFromClubId!]?.shortName, 'MUN');
+  assert.equal(rashford.loanOptionToBuyFee, 30_000_000);
+
+  const hincapie = findPlayer('Piero Hincapie')!;
+  assert.equal(world.clubs[hincapie.loanedFromClubId!]?.shortName, 'B04');
+  assert.equal(hincapie.loanOptionToBuyFee, 52_000_000);
+
+  const hojlund = findPlayer('Rasmus Hojlund')!;
+  assert.equal(world.clubs[hojlund.loanedFromClubId!]?.shortName, 'MUN');
+  assert.equal(hojlund.loanOptionToBuyFee, 45_000_000);
+
+  const akanji = findPlayer('Manuel Akanji')!;
+  assert.equal(world.clubs[akanji.loanedFromClubId!]?.shortName, 'MCI');
+  assert.equal(akanji.loanOptionToBuyFee, 15_000_000);
+
+  // 6. Verify 2025/26 transferHistory records & Updated Iconic Shirt Numbers
+  const playersWithTransferHistory = allPlayers.filter((p) => p.transferHistory.length > 0);
+  assert.ok(
+    playersWithTransferHistory.length >= 50,
+    `Expected at least 50 real 2025/26 transferHistory records, got ${playersWithTransferHistory.length}`
+  );
+
+  const gyokeres = findPlayer('Viktor Gyokeres')!;
+  assert.equal(gyokeres.shirtNumber, 14);
+  assert.equal(gyokeres.transferHistory.length, 1);
+  assert.equal(world.clubs[gyokeres.transferHistory[0].fromClubId]?.shortName, 'SCP');
+  assert.equal(gyokeres.transferHistory[0].fee, 73_500_000);
+
+  assert.equal(findPlayer('Eberechi Eze')?.shirtNumber, 10);
+  assert.equal(findPlayer('Florian Wirtz')?.shirtNumber, 7);
+  assert.equal(findPlayer('Alexander Isak')?.shirtNumber, 9);
+  assert.equal(findPlayer('Trent Alexander-Arnold')?.shirtNumber, 12);
+  assert.equal(findPlayer('Lamine Yamal')?.shirtNumber, 10);
+  assert.equal(findPlayer('Heung-Min Son')?.shirtNumber, 7);
 });
 
 

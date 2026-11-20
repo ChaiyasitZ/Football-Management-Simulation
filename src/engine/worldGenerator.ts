@@ -158,7 +158,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   ],
   MCI: [
     ['Rico', 'Lewis', 'DR', 'ENG', 20, 152, 179, ['DM', 'DL']],
-    ['Claudio', 'Echeverri', 'AMC', 'ARG', 19, 140, 182, ['AML', 'ST']],
     ['Vitor', 'Reis', 'DC', 'BRA', 19, 138, 180, ['DR']],
   ],
   LIV: [
@@ -166,7 +165,7 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Rio', 'Ngumoha', 'AML', 'ENG', 17, 130, 185, ['AMR', 'ST']],
   ],
   CHE: [
-    ['Estevao', 'Willian', 'AMR', 'BRA', 18, 148, 190, ['AMC', 'AML']],
+    ['Estevao', 'Willian', 'AMR', 'BRA', 18, 154, 192, ['AMC', 'AML']],
     ['Kendry', 'Paez', 'AMC', 'ECU', 18, 140, 184, ['AMR', 'MC']],
     ['Josh', 'Acheampong', 'DR', 'ENG', 19, 136, 178, ['DC']],
     ['Tyrique', 'George', 'AML', 'ENG', 19, 135, 177, ['AMR']],
@@ -181,12 +180,8 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Lucas', 'Bergvall', 'MC', 'SWE', 19, 144, 182, ['AMC', 'DM']],
     ['Mikey', 'Moore', 'AML', 'ENG', 18, 136, 183, ['AMR', 'AMC']],
   ],
-  BOU: [
-    ['Dean', 'Huijsen', 'DC', 'ESP', 20, 152, 184, ['DM']],
-  ],
   SUN: [
     ['Chris', 'Rigg', 'MC', 'ENG', 18, 138, 182, ['AMC', 'DM']],
-    ['Jobe', 'Bellingham', 'MC', 'ENG', 19, 142, 179, ['AMC', 'DM']],
   ],
   BAR: [
     ['Lamine', 'Yamal', 'AMR', 'ESP', 18, 178, 196, ['AML', 'AMC']],
@@ -198,13 +193,11 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   ],
   RMA: [
     ['Arda', 'Guler', 'AMC', 'TUR', 20, 160, 188, ['AMR', 'MC']],
-    ['Endrick', 'Felipe', 'ST', 'BRA', 19, 154, 189, ['AMR']],
-    ['Franco', 'Mastantuono', 'AMC', 'ARG', 18, 144, 188, ['AMR', 'MC']],
+    ['Franco', 'Mastantuono', 'AMC', 'ARG', 18, 146, 188, ['AMR', 'MC']],
     ['Joan', 'Martinez', 'DC', 'ESP', 18, 134, 183, []],
   ],
   ATM: [
     ['Pablo', 'Barrios', 'MC', 'ESP', 21, 154, 180, ['DM']],
-    ['Arthur', 'Vermeeren', 'DM', 'BEL', 20, 146, 180, ['MC']],
   ],
   PSG: [
     ['Warren', 'Zaire-Emery', 'MC', 'FRA', 19, 164, 190, ['DM', 'DR']],
@@ -213,21 +206,13 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Senny', 'Mayulu', 'AMC', 'FRA', 19, 140, 181, ['MC']],
     ['Ibrahim', 'Mbaye', 'AMR', 'FRA', 17, 132, 182, ['AML']],
   ],
-  LIL: [
+  LOSC: [
     ['Ayyoub', 'Bouaddi', 'MC', 'FRA', 17, 142, 186, ['DM']],
   ],
-  ASM: [
-    ['Eliesse', 'Ben Seghir', 'AML', 'MAR', 20, 152, 183, ['AMC']],
-    ['Eli Junior', 'Kroupi', 'ST', 'FRA', 19, 142, 182, ['AMC', 'AML']],
-  ],
-  BAY: [
+  FCB: [
     ['Jamal', 'Musiala', 'AMC', 'GER', 22, 178, 193, ['AML', 'MC']],
     ['Aleksandar', 'Pavlovic', 'DM', 'GER', 21, 160, 185, ['MC']],
-    ['Paul', 'Wanner', 'AMC', 'GER', 19, 144, 184, ['AMR', 'MC']],
-    ['Mathys', 'Tel', 'ST', 'FRA', 20, 148, 182, ['AML', 'AMR']],
-  ],
-  B04: [
-    ['Florian', 'Wirtz', 'AMC', 'GER', 22, 180, 194, ['AML', 'MC']],
+    ['Lennart', 'Karl', 'AMR', 'GER', 17, 134, 184, ['AMC']],
   ],
   BVB: [
     ['Julien', 'Duranville', 'AMR', 'BEL', 19, 142, 183, ['AML']],
@@ -239,7 +224,7 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   JUV: [
     ['Kenan', 'Yildiz', 'AML', 'TUR', 20, 158, 187, ['AMC', 'ST']],
   ],
-  ACM: [
+  MIL: [
     ['Francesco', 'Camarda', 'ST', 'ITA', 17, 134, 188, []],
   ],
   COM: [
@@ -256,9 +241,9 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Rodrigo', 'Mora', 'AMC', 'POR', 18, 142, 186, ['AMR']],
     ['Samu', 'Aghehowa', 'ST', 'ESP', 21, 156, 183, []],
   ],
-  AJA: [
-    ['Jorrel', 'Hato', 'DL', 'NED', 19, 152, 185, ['DC']],
-    ['Sverre', 'Nypan', 'MC', 'NOR', 18, 140, 184, ['AMC']],
+  AJX: [
+    ['Rayane', 'Bounida', 'AMC', 'BEL', 19, 138, 182, ['AML']],
+    ['Jorthy', 'Mokio', 'DM', 'BEL', 17, 136, 184, ['DC', 'DL']],
   ],
   BJK: [
     ['Semih', 'Kilicsoy', 'ST', 'TUR', 19, 146, 182, ['AML', 'AMR']],
@@ -276,8 +261,8 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Gabriel', 'Pec', 'AMR', 'BRA', 24, 154, 170, ['AML']],
   ],
   LAFC: [
+    ['Heung-Min', 'Son', 'AML', 'KOR', 33, 170, 170, ['ST']],
     ['Denis', 'Bouanga', 'AML', 'GAB', 30, 158, 164, ['ST']],
-    ['Olivier', 'Giroud', 'ST', 'FRA', 38, 154, 164, []],
     ['Hugo', 'Lloris', 'GK', 'FRA', 38, 154, 164, []],
   ],
   HIL: [
@@ -348,7 +333,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
   BOT: [
     ['Igor', 'Jesus', 'ST', 'BRA', 24, 158, 174, []],
     ['Jefferson', 'Savarino', 'AMC', 'VEN', 28, 156, 164, ['AMR', 'AML']],
-    ['Thiago', 'Almada', 'AMC', 'ARG', 24, 160, 178, ['AML', 'MC']],
     ['Alex', 'Telles', 'DL', 'BRA', 32, 156, 162, ['WBL']],
   ],
   SAO: [
@@ -391,7 +375,6 @@ const REAL_CLUB_WONDERKIDS: Record<string, RealPlayerSeed[]> = {
     ['Kiril', 'Despodov', 'AMR', 'BUL', 28, 154, 162, ['ST']],
   ],
   PAO: [
-    ['Fotis', 'Ioannidis', 'ST', 'GRE', 25, 158, 174, []],
     ['Tete', 'Martins', 'AMR', 'BRA', 25, 156, 170, ['AMC']],
     ['Anastasios', 'Bakasetas', 'AMC', 'GRE', 32, 154, 162, ['MC']],
   ],
@@ -567,12 +550,75 @@ function getDefaultSecondaryPositions(pos: PositionCode): PositionCode[] {
   }
 }
 
+function normalizePlayerNameKey(firstName: string, lastName: string): string {
+  return `${firstName} ${lastName}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildAllRealSeedNamesSet(): Set<string> {
+  const all = new Set<string>();
+  for (const list of Object.values(REAL_CLUB_ROSTERS)) {
+    for (const seed of list) all.add(normalizePlayerNameKey(seed[0], seed[1]));
+  }
+  for (const list of Object.values(REAL_CLUB_CORE_PLAYERS)) {
+    for (const seed of list) all.add(normalizePlayerNameKey(seed[0], seed[1]));
+  }
+  for (const list of Object.values(REAL_CLUB_WONDERKIDS)) {
+    for (const seed of list) all.add(normalizePlayerNameKey(seed[0], seed[1]));
+  }
+  return all;
+}
+
+function pickUniqueGeneratedName(
+  pool: { firstNames: string[]; lastNames: string[] },
+  rng: SeededRNG,
+  existingNames: Set<string>,
+  globalClaimedNames: Set<string>,
+  allRealSeedNames: Set<string>
+): { firstName: string; lastName: string; normKey: string } {
+  const isTaken = (k: string) =>
+    existingNames.has(k) || globalClaimedNames.has(k) || allRealSeedNames.has(k);
+
+  for (let attempts = 0; attempts < 50; attempts++) {
+    const fName = capitalizeName(rng.pick(pool.firstNames));
+    const lName = capitalizeName(rng.pick(pool.lastNames));
+    const normKey = normalizePlayerNameKey(fName, lName);
+    if (!isTaken(normKey)) {
+      return { firstName: fName, lastName: lName, normKey };
+    }
+  }
+
+  // Fallback: compound surname from pool so global uniqueness is strictly guaranteed
+  for (let attempts = 0; attempts < 60; attempts++) {
+    const fName = capitalizeName(rng.pick(pool.firstNames));
+    const l1 = capitalizeName(rng.pick(pool.lastNames));
+    const l2 = capitalizeName(rng.pick(pool.lastNames));
+    if (l1 === l2) continue;
+    const lName = `${l1}-${l2}`;
+    const normKey = normalizePlayerNameKey(fName, lName);
+    if (!isTaken(normKey)) {
+      return { firstName: fName, lastName: lName, normKey };
+    }
+  }
+
+  const fName = capitalizeName(rng.pick(pool.firstNames));
+  const lName = `${capitalizeName(rng.pick(pool.lastNames))} ${String.fromCharCode(65 + rng.int(0, 25))}`;
+  return { firstName: fName, lastName: lName, normKey: normalizePlayerNameKey(fName, lName) };
+}
+
 function buildClubSquadSeeds(
   shortName: string,
   reputation: number,
   countryId: string,
   rng: SeededRNG,
-  minHomegrownQuota = 8
+  minHomegrownQuota = 8,
+  globalClaimedNames: Set<string> = new Set(),
+  allRealSeedNames: Set<string> = new Set()
 ): {
   firstName: string;
   lastName: string;
@@ -592,12 +638,31 @@ function buildClubSquadSeeds(
     REAL_CLUB_WONDERKIDS[countryScopedKey] || REAL_CLUB_WONDERKIDS[rosterLookupKey] || [];
 
   if (fullRoster && fullRoster.length > 0) {
-    const baseList = fullRoster.map((seed, idx) => {
+    const existingNames = new Set<string>();
+    const baseList: {
+      firstName: string;
+      lastName: string;
+      pos: PositionCode;
+      secondary: PositionCode[];
+      natCode: string;
+      age: number;
+      targetCa: number;
+      targetPa: number;
+      isYouth: boolean;
+    }[] = [];
+
+    fullRoster.forEach((seed, idx) => {
       const [first, last, pos, nat, age, ca, pa, sec] = seed;
+      const fName = capitalizeName(first);
+      const lName = capitalizeName(last);
+      const normKey = normalizePlayerNameKey(fName, lName);
+      if (existingNames.has(normKey) || globalClaimedNames.has(normKey)) return;
+      existingNames.add(normKey);
+      globalClaimedNames.add(normKey);
       const isYouth = age <= 19 && idx >= 18;
-      return {
-        firstName: capitalizeName(first),
-        lastName: capitalizeName(last),
+      baseList.push({
+        firstName: fName,
+        lastName: lName,
         pos,
         secondary: sec || getDefaultSecondaryPositions(pos),
         natCode: nat,
@@ -605,19 +670,20 @@ function buildClubSquadSeeds(
         targetCa: ca,
         targetPa: pa,
         isYouth,
-      };
+      });
     });
-    const existingNames = new Set(
-      baseList.map((p) => `${p.firstName.toLowerCase()} ${p.lastName.toLowerCase()}`)
-    );
+
     for (const wk of extraWonderkids) {
       const [first, last, pos, nat, age, ca, pa, sec] = wk;
-      const fullKey = `${capitalizeName(first).toLowerCase()} ${capitalizeName(last).toLowerCase()}`;
-      if (!existingNames.has(fullKey)) {
-        existingNames.add(fullKey);
+      const fName = capitalizeName(first);
+      const lName = capitalizeName(last);
+      const normKey = normalizePlayerNameKey(fName, lName);
+      if (!existingNames.has(normKey) && !globalClaimedNames.has(normKey)) {
+        existingNames.add(normKey);
+        globalClaimedNames.add(normKey);
         baseList.push({
-          firstName: capitalizeName(first),
-          lastName: capitalizeName(last),
+          firstName: fName,
+          lastName: lName,
           pos,
           secondary: sec || getDefaultSecondaryPositions(pos),
           natCode: nat,
@@ -645,15 +711,15 @@ function buildClubSquadSeeds(
     for (let i = 0; i < padCount; i++) {
       const pos = padPositions[i % padPositions.length];
       const isYouth = i >= Math.max(0, padCount - 3);
-      let fName = capitalizeName(rng.pick(domesticPool.firstNames));
-      let lName = capitalizeName(rng.pick(domesticPool.lastNames));
-      let attempts = 0;
-      while (existingNames.has(`${fName.toLowerCase()} ${lName.toLowerCase()}`) && attempts < 20) {
-        fName = capitalizeName(rng.pick(domesticPool.firstNames));
-        lName = capitalizeName(rng.pick(domesticPool.lastNames));
-        attempts++;
-      }
-      existingNames.add(`${fName.toLowerCase()} ${lName.toLowerCase()}`);
+      const { firstName: fName, lastName: lName, normKey } = pickUniqueGeneratedName(
+        domesticPool,
+        rng,
+        existingNames,
+        globalClaimedNames,
+        allRealSeedNames
+      );
+      existingNames.add(normKey);
+      globalClaimedNames.add(normKey);
 
       const age = isYouth ? rng.int(17, 19) : rng.int(21, 28);
       const targetCa = isYouth
@@ -697,7 +763,10 @@ function buildClubSquadSeeds(
   for (const [first, last, pos, nat, age] of coreRoster) {
     const fName = capitalizeName(first);
     const lName = capitalizeName(last);
-    usedFullNames.add(`${fName} ${lName}`);
+    const normKey = normalizePlayerNameKey(fName, lName);
+    if (usedFullNames.has(normKey) || globalClaimedNames.has(normKey)) continue;
+    usedFullNames.add(normKey);
+    globalClaimedNames.add(normKey);
 
     const targetCa = Math.round(reputation * 1.92 + rng.int(-6, 8));
     const potDelta = age <= 21 ? rng.int(16, 30) : age <= 24 ? rng.int(8, 18) : age <= 27 ? rng.int(2, 8) : 0;
@@ -720,8 +789,10 @@ function buildClubSquadSeeds(
     const [first, last, pos, nat, age, ca, pa, sec] = wk;
     const fName = capitalizeName(first);
     const lName = capitalizeName(last);
-    if (!usedFullNames.has(`${fName} ${lName}`)) {
-      usedFullNames.add(`${fName} ${lName}`);
+    const normKey = normalizePlayerNameKey(fName, lName);
+    if (!usedFullNames.has(normKey) && !globalClaimedNames.has(normKey)) {
+      usedFullNames.add(normKey);
+      globalClaimedNames.add(normKey);
       results.push({
         firstName: fName,
         lastName: lName,
@@ -763,15 +834,15 @@ function buildClubSquadSeeds(
   for (let i = 0; i < neededCount; i++) {
     const spec = fallbackPositions[i % fallbackPositions.length];
     const isYouth = i >= neededCount - 2 || spec.isYouth;
-    let fName = capitalizeName(rng.pick(pool.firstNames));
-    let lName = capitalizeName(rng.pick(pool.lastNames));
-    let attempts = 0;
-    while (usedFullNames.has(`${fName} ${lName}`) && attempts < 15) {
-      fName = capitalizeName(rng.pick(pool.firstNames));
-      lName = capitalizeName(rng.pick(pool.lastNames));
-      attempts++;
-    }
-    usedFullNames.add(`${fName} ${lName}`);
+    const { firstName: fName, lastName: lName, normKey } = pickUniqueGeneratedName(
+      pool,
+      rng,
+      usedFullNames,
+      globalClaimedNames,
+      allRealSeedNames
+    );
+    usedFullNames.add(normKey);
+    globalClaimedNames.add(normKey);
 
     const age = isYouth ? rng.int(17, 19) : rng.int(20, 29);
     const targetCa = isYouth
@@ -840,6 +911,8 @@ export function createInitialWorldState(
   const transactions: FinanceTransaction[] = [];
 
   const leagueIds = Object.keys(LEAGUES_CONFIG) as LeagueId[];
+  const allRealSeedNames = buildAllRealSeedNamesSet();
+  const globalClaimedNames = new Set<string>();
 
   for (const leagueId of leagueIds) {
     const config = LEAGUES_CONFIG[leagueId];
@@ -860,7 +933,9 @@ export function createInitialWorldState(
         tpl.reputation,
         config.countryId,
         rng,
-        config.registrationRules?.minHomegrownTotal ?? 8
+        config.registrationRules?.minHomegrownTotal ?? 8,
+        globalClaimedNames,
+        allRealSeedNames
       );
 
       squadSeeds.forEach((pSeed, pIdx) => {
@@ -1446,8 +1521,14 @@ export function createInitialWorldState(
     const pool = NATIONALITY_POOLS[controlledClub.countryId] || NATIONALITY_POOLS.ENG;
     wkPositions.forEach((pos, idx) => {
       const wkId = `plr_${controlledClub.id}_wk_challenge_${idx + 1}`;
-      const fName = capitalizeName(rng.pick(pool.firstNames));
-      const lName = capitalizeName(rng.pick(pool.lastNames));
+      const { firstName: fName, lastName: lName, normKey } = pickUniqueGeneratedName(
+        pool,
+        rng,
+        new Set<string>(),
+        globalClaimedNames,
+        allRealSeedNames
+      );
+      globalClaimedNames.add(normKey);
       const attrs = generateAttributesForPosition(pos, 134 + idx * 2, rng);
       const ca = computeCoherentCA(attrs);
       const pa = 186 + idx * 3;
@@ -1667,35 +1748,165 @@ export function createInitialWorldState(
     },
   ];
 
+  // Stage 15 Phase 3: Apply verified 2025/26 Transfer History & Real Loans (loanedFromClubId + loanOptionToBuyFee)
+  const findClubIdByShortName = (shortName: string, preferredCountryId?: string): string | null => {
+    const allClubs = Object.values(clubs);
+    if (preferredCountryId) {
+      const scoped = allClubs.find(
+        (c) => c.shortName === shortName && c.countryId === preferredCountryId
+      );
+      if (scoped) return scoped.id;
+    }
+    const direct = allClubs.find((c) => c.shortName === shortName);
+    return direct ? direct.id : null;
+  };
+
+  const INITIAL_25_26_TRANSFERS: {
+    playerName: string;
+    fromShort: string;
+    fromCountry?: string;
+    toShort: string;
+    toCountry?: string;
+    fee: number;
+    date: string;
+    type: 'Transfer' | 'Loan' | 'Free';
+    optionToBuyFee?: number | null;
+  }[] = [
+    // Real 2025/26 Loans (with authentic parent club & option-to-buy fees)
+    { playerName: 'Marcus Rashford', fromShort: 'MUN', toShort: 'BAR', fee: 0, date: '2025-07-23', type: 'Loan', optionToBuyFee: 30_000_000 },
+    { playerName: 'Piero Hincapie', fromShort: 'B04', toShort: 'ARS', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 52_000_000 },
+    { playerName: 'Harvey Elliott', fromShort: 'LIV', toShort: 'AVL', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 40_000_000 },
+    { playerName: 'Jadon Sancho', fromShort: 'MUN', toShort: 'AVL', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 25_000_000 },
+    { playerName: 'Joao Palhinha', fromShort: 'FCB', fromCountry: 'GER', toShort: 'TOT', fee: 0, date: '2025-08-03', type: 'Loan', optionToBuyFee: 30_000_000 },
+    { playerName: 'Randal Kolo Muani', fromShort: 'PSG', toShort: 'TOT', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 45_000_000 },
+    { playerName: 'Rasmus Hojlund', fromShort: 'MUN', toShort: 'NAP', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 45_000_000 },
+    { playerName: 'Manuel Akanji', fromShort: 'MCI', toShort: 'INT', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 15_000_000 },
+    { playerName: 'Jack Grealish', fromShort: 'MCI', toShort: 'EVE', fee: 0, date: '2025-08-12', type: 'Loan', optionToBuyFee: 35_000_000 },
+    { playerName: 'Endrick Felipe', fromShort: 'RMA', toShort: 'OL', fee: 0, date: '2025-08-28', type: 'Loan', optionToBuyFee: null },
+    { playerName: 'Claudio Echeverri', fromShort: 'MCI', toShort: 'B04', fee: 0, date: '2025-08-21', type: 'Loan', optionToBuyFee: null },
+    { playerName: 'Victor Boniface', fromShort: 'B04', toShort: 'SVW', fee: 0, date: '2025-09-01', type: 'Loan', optionToBuyFee: 30_000_000 },
+    { playerName: 'Leon Bailey', fromShort: 'AVL', toShort: 'ROM', fee: 0, date: '2025-08-20', type: 'Loan', optionToBuyFee: 22_000_000 },
+
+    // Headline 2025/26 Permanent & Free Transfers
+    { playerName: 'Alexander Isak', fromShort: 'NEW', toShort: 'LIV', fee: 145_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Florian Wirtz', fromShort: 'B04', toShort: 'LIV', fee: 125_000_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Hugo Ekitike', fromShort: 'SGE', toShort: 'LIV', fee: 95_000_000, date: '2025-07-23', type: 'Transfer' },
+    { playerName: 'Milos Kerkez', fromShort: 'BOU', toShort: 'LIV', fee: 47_000_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Jeremie Frimpong', fromShort: 'B04', toShort: 'LIV', fee: 40_000_000, date: '2025-07-01', type: 'Transfer' },
+    { playerName: 'Viktor Gyokeres', fromShort: 'SCP', toShort: 'ARS', fee: 73_500_000, date: '2025-07-26', type: 'Transfer' },
+    { playerName: 'Eberechi Eze', fromShort: 'CRY', toShort: 'ARS', fee: 69_300_000, date: '2025-08-23', type: 'Transfer' },
+    { playerName: 'Martin Zubimendi', fromShort: 'RSO', toShort: 'ARS', fee: 65_000_000, date: '2025-07-06', type: 'Transfer' },
+    { playerName: 'Noni Madueke', fromShort: 'CHE', toShort: 'ARS', fee: 56_000_000, date: '2025-07-18', type: 'Transfer' },
+    { playerName: 'Cristhian Mosquera', fromShort: 'VAL', toShort: 'ARS', fee: 15_000_000, date: '2025-07-24', type: 'Transfer' },
+    { playerName: 'Gianluigi Donnarumma', fromShort: 'PSG', toShort: 'MCI', fee: 30_000_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Tijjani Reijnders', fromShort: 'MIL', toShort: 'MCI', fee: 55_000_000, date: '2025-06-11', type: 'Transfer' },
+    { playerName: 'Rayan Cherki', fromShort: 'OL', toShort: 'MCI', fee: 36_500_000, date: '2025-06-10', type: 'Transfer' },
+    { playerName: 'Rayan Ait-Nouri', fromShort: 'WOL', toShort: 'MCI', fee: 36_800_000, date: '2025-06-09', type: 'Transfer' },
+    { playerName: 'Benjamin Sesko', fromShort: 'RBL', toShort: 'MUN', fee: 76_500_000, date: '2025-08-09', type: 'Transfer' },
+    { playerName: 'Matheus Cunha', fromShort: 'WOL', toShort: 'MUN', fee: 74_200_000, date: '2025-06-12', type: 'Transfer' },
+    { playerName: 'Bryan Mbeumo', fromShort: 'BRE', fromCountry: 'ENG', toShort: 'MUN', fee: 75_000_000, date: '2025-07-21', type: 'Transfer' },
+    { playerName: 'Joao Pedro', fromShort: 'BHA', toShort: 'CHE', fee: 63_700_000, date: '2025-07-02', type: 'Transfer' },
+    { playerName: 'Jamie Gittens', fromShort: 'BVB', toShort: 'CHE', fee: 56_000_000, date: '2025-07-05', type: 'Transfer' },
+    { playerName: 'Alejandro Garnacho', fromShort: 'MUN', toShort: 'CHE', fee: 46_200_000, date: '2025-08-30', type: 'Transfer' },
+    { playerName: 'Jorrel Hato', fromShort: 'AJX', fromCountry: 'NED', toShort: 'CHE', fee: 44_200_000, date: '2025-08-03', type: 'Transfer' },
+    { playerName: 'Liam Delap', fromShort: 'IPS', toShort: 'CHE', fee: 35_500_000, date: '2025-06-04', type: 'Transfer' },
+    { playerName: 'Xavi Simons', fromShort: 'RBL', toShort: 'TOT', fee: 65_000_000, date: '2025-08-29', type: 'Transfer' },
+    { playerName: 'Mohammed Kudus', fromShort: 'WHU', toShort: 'TOT', fee: 63_800_000, date: '2025-07-10', type: 'Transfer' },
+    { playerName: 'Nick Woltemade', fromShort: 'VFB', toShort: 'NEW', fee: 75_000_000, date: '2025-08-30', type: 'Transfer' },
+    { playerName: 'Anthony Elanga', fromShort: 'NFO', toShort: 'NEW', fee: 61_400_000, date: '2025-07-11', type: 'Transfer' },
+    { playerName: 'Yoane Wissa', fromShort: 'BRE', fromCountry: 'ENG', toShort: 'NEW', fee: 57_700_000, date: '2025-09-01', type: 'Transfer' },
+    { playerName: 'Trent Alexander-Arnold', fromShort: 'LIV', toShort: 'RMA', fee: 10_000_000, date: '2025-06-01', type: 'Transfer' },
+    { playerName: 'Dean Huijsen', fromShort: 'BOU', toShort: 'RMA', fee: 62_500_000, date: '2025-06-01', type: 'Transfer' },
+    { playerName: 'Alvaro Carreras', fromShort: 'SLB', toShort: 'RMA', fee: 50_000_000, date: '2025-07-14', type: 'Transfer' },
+    { playerName: 'Joan Garcia', fromShort: 'ESP', toShort: 'BAR', fee: 25_000_000, date: '2025-06-18', type: 'Transfer' },
+    { playerName: 'Luis Diaz', fromShort: 'LIV', toShort: 'FCB', toCountry: 'GER', fee: 70_000_000, date: '2025-07-30', type: 'Transfer' },
+    { playerName: 'Jonathan Tah', fromShort: 'B04', toShort: 'FCB', toCountry: 'GER', fee: 0, date: '2025-07-01', type: 'Free' },
+    { playerName: 'Kevin De Bruyne', fromShort: 'MCI', toShort: 'NAP', fee: 0, date: '2025-07-01', type: 'Free' },
+    { playerName: 'Luka Modric', fromShort: 'RMA', toShort: 'MIL', fee: 0, date: '2025-07-14', type: 'Free' },
+    { playerName: 'Jonathan David', fromShort: 'LOSC', toShort: 'JUV', fee: 0, date: '2025-07-04', type: 'Free' },
+    { playerName: 'Lucas Chevalier', fromShort: 'LOSC', toShort: 'PSG', fee: 40_000_000, date: '2025-08-09', type: 'Transfer' },
+    { playerName: 'Illia Zabarnyi', fromShort: 'BOU', toShort: 'PSG', fee: 63_000_000, date: '2025-08-12', type: 'Transfer' },
+    { playerName: 'Jobe Bellingham', fromShort: 'SUN', toShort: 'BVB', fee: 30_500_000, date: '2025-06-10', type: 'Transfer' },
+    { playerName: 'Victor Osimhen', fromShort: 'NAP', toShort: 'GAL', fee: 75_000_000, date: '2025-07-31', type: 'Transfer' },
+    { playerName: 'Leroy Sane', fromShort: 'FCB', fromCountry: 'GER', toShort: 'GAL', fee: 0, date: '2025-07-01', type: 'Free' },
+    { playerName: 'Darwin Nunez', fromShort: 'LIV', toShort: 'HIL', fee: 53_000_000, date: '2025-08-09', type: 'Transfer' },
+    { playerName: 'Theo Hernandez', fromShort: 'MIL', toShort: 'HIL', fee: 25_000_000, date: '2025-07-10', type: 'Transfer' },
+    { playerName: 'Kingsley Coman', fromShort: 'FCB', fromCountry: 'GER', toShort: 'NAS', fee: 25_000_000, date: '2025-08-15', type: 'Transfer' },
+    { playerName: 'Joao Felix', fromShort: 'CHE', toShort: 'NAS', fee: 30_000_000, date: '2025-07-29', type: 'Transfer' },
+    { playerName: 'Heung-Min Son', fromShort: 'TOT', toShort: 'LAFC', fee: 22_000_000, date: '2025-08-06', type: 'Transfer' },
+    { playerName: 'Granit Xhaka', fromShort: 'B04', toShort: 'SUN', fee: 15_000_000, date: '2025-07-30', type: 'Transfer' },
+    { playerName: 'Kyle Walker', fromShort: 'MCI', toShort: 'BUR', fee: 0, date: '2025-07-05', type: 'Free' },
+    { playerName: 'Douglas Luiz', fromShort: 'JUV', toShort: 'NFO', fee: 30_000_000, date: '2025-08-21', type: 'Transfer' },
+    { playerName: 'Thomas Partey', fromShort: 'ARS', toShort: 'VIL', fee: 0, date: '2025-08-07', type: 'Free' },
+    { playerName: 'Christian Eriksen', fromShort: 'MUN', toShort: 'WOB', fee: 0, date: '2025-09-10', type: 'Free' },
+    { playerName: 'Alex Baena', fromShort: 'VIL', toShort: 'ATM', fee: 42_000_000, date: '2025-07-02', type: 'Transfer' },
+    { playerName: 'Thiago Almada', fromShort: 'OL', toShort: 'ATM', fee: 21_000_000, date: '2025-07-17', type: 'Transfer' },
+    { playerName: 'Fotis Ioannidis', fromShort: 'PAO', toShort: 'SCP', fee: 22_000_000, date: '2025-08-31', type: 'Transfer' },
+  ];
+
+  // Index players by normalized name for O(1) transfer history & loan lookup
+  const playerByNormName = new Map<string, Player>();
+  for (const p of Object.values(players)) {
+    playerByNormName.set(normalizePlayerNameKey(p.firstName, p.lastName), p);
+  }
+
+  for (const tr of INITIAL_25_26_TRANSFERS) {
+    const targetPlayer = playerByNormName.get(normalizePlayerNameKey(tr.playerName, ''));
+    const fromClubId = findClubIdByShortName(tr.fromShort, tr.fromCountry);
+    const toClubId = findClubIdByShortName(tr.toShort, tr.toCountry);
+    if (!targetPlayer || !fromClubId || !toClubId) continue;
+    if (targetPlayer.clubId !== toClubId) continue;
+
+    targetPlayer.transferHistory.push({
+      date: tr.date,
+      fromClubId,
+      toClubId,
+      fee: tr.fee,
+      type: tr.type,
+    });
+
+    if (tr.type === 'Loan') {
+      targetPlayer.loanedFromClubId = fromClubId;
+      targetPlayer.loanOptionToBuyFee = tr.optionToBuyFee ?? null;
+    }
+  }
+
   // Populate FM27 Player Traits (Preferred Moves) for all players
   for (const p of Object.values(players)) {
     p.traits = derivePlayerTraitsFromAttributes(p);
   }
 
-  // Assign authentic squad shirt numbers (1–99) per club with real-world star numbers
+  // Assign authentic squad shirt numbers (1–99) per club with real-world 2025/26–2026/27 star numbers
   const ICONIC_SHIRT_NUMBERS: Record<string, number> = {
     'david raya': 22,
     'william saliba': 2,
     'gabriel magalhaes': 6,
     'ben white': 4,
     'jurrien timber': 12,
+    'piero hincapie': 5,
     'declan rice': 41,
+    'martin zubimendi': 36,
     'martin odegaard': 8,
+    'eberechi eze': 10,
     'bukayo saka': 7,
     'gabriel martinelli': 11,
+    'viktor gyokeres': 14,
+    'noni madueke': 20,
     'kai havertz': 29,
     'mikel merino': 23,
     'riccardo calafiori': 33,
     'leandro trossard': 19,
     'ethan nwaneri': 53,
     'myles lewis-skelly': 49,
+    'gianluigi donnarumma': 25,
     'ederson moraes': 31,
     'ruben dias': 3,
     'josko gvardiol': 24,
     'john stones': 5,
     'manuel akanji': 25,
     'rodri hernandez': 16,
-    'kevin de bruyne': 17,
+    'tijjani reijnders': 4,
+    'rayan cherki': 10,
     'bernardo silva': 20,
     'phil foden': 47,
     'jeremy doku': 11,
@@ -1705,15 +1916,17 @@ export function createInitialWorldState(
     'alisson becker': 1,
     'virgil van dijk': 4,
     'ibrahima konate': 5,
-    'trent alexander-arnold': 66,
+    'milos kerkez': 6,
+    'jeremie frimpong': 30,
     'andrew robertson': 26,
     'ryan gravenberch': 38,
     'alexis mac allister': 10,
     'dominik szoboszlai': 8,
+    'florian wirtz': 7,
     'mohamed salah': 11,
-    'luis diaz': 7,
+    'alexander isak': 9,
+    'hugo ekitike': 22,
     'cody gakpo': 18,
-    'darwin nunez': 9,
     'curtis jones': 17,
     'cole palmer': 20,
     'moises caicedo': 25,
@@ -1721,26 +1934,32 @@ export function createInitialWorldState(
     'levi colwill': 6,
     'marc cucurella': 3,
     'reece james': 24,
-    'nicolas jackson': 15,
+    'joao pedro': 20,
+    'estevao willian': 41,
     'pedro neto': 7,
-    'noni madueke': 11,
+    'alejandro garnacho': 49,
+    'liam delap': 9,
     'bruno fernandes': 8,
     'kobbie mainoo': 37,
     'amad diallo': 16,
-    'alejandro garnacho': 17,
     'lisandro martinez': 6,
     'matthijs de ligt': 4,
-    'rasmus hojlund': 9,
+    'matheus cunha': 10,
+    'bryan mbeumo': 19,
+    'benjamin sesko': 30,
+    'heung-min son': 7,
     'son heung-min': 7,
+    'xavi simons': 7,
+    'mohammed kudus': 20,
     'james maddison': 10,
     'dejan kulusevski': 21,
     'cristian romero': 17,
     'micky van de ven': 37,
     'dominic solanke': 19,
-    'alexander isak': 14,
     'bruno guimaraes': 39,
     'anthony gordon': 10,
     'sandro tonali': 8,
+    'nick woltemade': 27,
     'ollie watkins': 11,
     'morgan rogers': 27,
     'emiliano martinez': 23,
@@ -1748,6 +1967,9 @@ export function createInitialWorldState(
     'antonio rudiger': 22,
     'eder militao': 3,
     'dani carvajal': 2,
+    'trent alexander-arnold': 12,
+    'dean huijsen': 24,
+    'alvaro carreras': 18,
     'federico valverde': 8,
     'jude bellingham': 5,
     'aurelien tchouameni': 14,
@@ -1756,7 +1978,9 @@ export function createInitialWorldState(
     'kylian mbappe': 9,
     'rodrygo goes': 11,
     'arda guler': 15,
-    'lamine yamal': 19,
+    'joan garcia': 13,
+    'lamine yamal': 10,
+    'marcus rashford': 14,
     'pedri gonzalez': 8,
     'gavi paez': 6,
     'pau cubarsi': 2,
@@ -1769,22 +1993,22 @@ export function createInitialWorldState(
     'julian alvarez': 19,
     'antoine griezmann': 7,
     'jan oblak': 13,
+    'alex baena': 10,
     'nico williams': 10,
     'harry kane': 9,
     'jamal musiala': 42,
     'michael olise': 17,
+    'luis diaz': 14,
+    'jonathan tah': 4,
     'joshua kimmich': 6,
     'alphonso davies': 19,
     'dayot upamecano': 2,
     'manuel neuer': 1,
-    'florian wirtz': 10,
     'granit xhaka': 34,
     'alejandro grimaldo': 20,
-    'jeremie frimpong': 30,
-    'xavi simons': 10,
-    'benjamin sesko': 30,
     'serhou guirassy': 9,
     'gregor kobel': 1,
+    'jobe bellingham': 7,
     'lautaro martinez': 10,
     'nicolo barella': 23,
     'alessandro bastoni': 95,
@@ -1792,22 +2016,29 @@ export function createInitialWorldState(
     'marcus thuram': 9,
     'federico dimarco': 32,
     'khvicha kvaratskhelia': 77,
-    'romelu lukaku': 11,
+    'kevin de bruyne': 11,
+    'rasmus hojlund': 19,
+    'romelu lukaku': 9,
     'scott mctominay': 8,
+    'luka modric': 14,
     'rafael leao': 10,
     'christian pulisic': 11,
-    'theo hernandez': 19,
     'mike maignan': 16,
     'kenan yildiz': 10,
     'dusan vlahovic': 9,
+    'jonathan david': 30,
     'ousmane dembele': 10,
     'bradley barcola': 29,
     'joao neves': 87,
     'vitinha ferreira': 17,
     'achraf hakimi': 2,
     'nuno mendes': 25,
-    'gianluigi donnarumma': 1,
-    'viktor gyokeres': 9,
+    'victor osimhen': 45,
+    'leroy sane': 10,
+    'darwin nunez': 9,
+    'theo hernandez': 19,
+    'kingsley coman': 21,
+    'joao felix': 79,
     'lionel messi': 10,
     'luis suarez': 9,
     'sergio busquets': 5,
