@@ -299,6 +299,17 @@ export interface DevelopmentPoint {
   keyAttributeChanges: { attr: string; delta: number }[];
 }
 
+export interface PlayerCareerSeasonRecord {
+  season: string;
+  clubId: string;
+  clubName: string;
+  appearances: number;
+  goals: number;
+  assists: number;
+  cleanSheets: number;
+  averageRating: number;
+}
+
 export interface Player {
   id: string;
   firstName: string;
@@ -347,6 +358,7 @@ export interface Player {
   stats: PlayerSeasonStats;
   developmentHistory: DevelopmentPoint[];
   transferHistory: { date: string; fromClubId: string; toClubId: string; fee: number; type: 'Transfer' | 'Loan' | 'Free' }[];
+  careerSeasonHistory?: PlayerCareerSeasonRecord[];
   isYouthAcademy?: boolean;
   isHomegrown?: boolean;
   homegrownStatus?: HomegrownStatus;

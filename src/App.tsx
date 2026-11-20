@@ -1810,6 +1810,16 @@ function TouchlineShell() {
                 setWorld(res.nextState);
                 showToast(res.message);
               }}
+              onTriggerLoanOptionToBuy={(playerId) => {
+                const res = triggerLoanOptionToBuy(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
+              onRecallFromLoan={(playerId) => {
+                const res = recallPlayerFromLoan(world, playerId);
+                setWorld(res.nextState);
+                showToast(res.message);
+              }}
             />
           ) : (
             <>

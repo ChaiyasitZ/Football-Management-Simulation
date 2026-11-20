@@ -16,6 +16,7 @@ import {
   NationalTeamCode,
   NewsItem,
   Player,
+  PlayerCareerSeasonRecord,
   PlayerRole,
   PlayerTrait,
   PositionCode,
@@ -2025,8 +2026,20 @@ export function advanceWorldOneDay(state: WorldState): {
     nextState = triggerFifaInternationalBreak(nextState).nextState;
   }
 
-  // Stage 13 Phase 3: Weekly Monday AI Managerial Carousel Check after Matchday 10 (plus 1st of month)
+  // Stage 16 Phase 2: Weekly Monday Autonomous AI-to-AI Transfer Market during Open Transfer Windows (Jan, Jul, Aug)
   const dayOfWeekUtc = new Date(`${nextDate}T00:00:00Z`).getUTCDay();
+  const nextMonthNum = parseInt(nextDate.slice(5, 7), 10) || 7;
+  if (dayOfWeekUtc === 1 && (nextMonthNum === 1 || nextMonthNum === 7 || nextMonthNum === 8)) {
+    nextState = simulateAiToAiTransferWindowTick(nextState).nextState;
+  }
+
+  // Stage 16 Phase 4: January 1st Contract Expiry & Bosman Protection Report from Assistant Manager
+  if (nextDate.endsWith('-01-01')) {
+    const bosmanAlertRes = generateBosmanContractExpiryAlert(nextState);
+    nextState = bosmanAlertRes.nextState;
+  }
+
+  // Stage 13 Phase 3: Weekly Monday AI Managerial Carousel Check after Matchday 10 (plus 1st of month)
   const maxPlayedInUserLeague = Math.max(
     0,
     ...(nextState.standings[nextState.clubs[nextState.controlledClubId]?.leagueId || 'ENG_PL'] || []).map(
@@ -4060,15 +4073,42 @@ export function processEndOfSeasonRollover(
     const nextClubId =
       p.loanedFromClubId && updatedClubs[p.loanedFromClubId] ? p.loanedFromClubId : p.clubId;
 
+    // Stage 16 Phase 3: Archive player's seasonal stats into careerSeasonHistory before resetting
+    const shouldArchiveSeason =
+      p.stats.appearances > 0 || p.clubId === state.controlledClubId;
+    const prevHistory: PlayerCareerSeasonRecord[] = p.careerSeasonHistory || [];
+    const alreadyArchived = prevHistory.some((rec) => rec.season === state.currentSeason);
+    const nextCareerSeasonHistory: PlayerCareerSeasonRecord[] | undefined =
+      shouldArchiveSeason && !alreadyArchived
+        ? [
+            {
+              season: state.currentSeason,
+              clubId: p.clubId,
+              clubName: state.clubs[p.clubId]?.name || p.clubId,
+              appearances: p.stats.appearances,
+              goals: p.stats.goals,
+              assists: p.stats.assists,
+              cleanSheets: p.stats.cleanSheets,
+              averageRating:
+                p.stats.appearances > 0
+                  ? Number(p.stats.averageRating.toFixed(2))
+                  : 0,
+            },
+            ...prevHistory,
+          ]
+        : p.careerSeasonHistory;
+
     updatedPlayers[pid] = {
       ...p,
       clubId: nextClubId,
       loanedFromClubId: null,
+      loanOptionToBuyFee: null,
       currentAbility: nextCa,
       attributes: nextAttrs,
       fitness: 90,
       matchSharpness: 64,
       suspensionMatchesRemaining: 0,
+      careerSeasonHistory: nextCareerSeasonHistory,
       stats: {
         appearances: 0,
         starts: 0,
@@ -4493,6 +4533,7 @@ export interface PlayerDelta {
   askingPrice?: number;
   loanedFromClubId?: string | null;
   loanOptionToBuyFee?: number | null;
+  careerSeasonHistory?: PlayerCareerSeasonRecord[];
 }
 
 export interface CompactFixtureScore {
@@ -4794,9 +4835,11 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
 
     const isTracked = shortlistSet.has(id) || Boolean(compacted.scoutReports[id]);
     const inUserLeague = pLeagueId === userLeagueId;
+    const hasCareerArchive = Boolean(p.careerSeasonHistory && p.careerSeasonHistory.length > 0);
     const hasNotableChange =
       p.stats.goals > 0 ||
       p.stats.assists > 0 ||
+      hasCareerArchive ||
       p.currentAbility !== basePlayer.currentAbility ||
       p.injuryStatus.isInjured !== basePlayer.injuryStatus.isInjured ||
       p.transferListed !== basePlayer.transferListed ||
@@ -4810,6 +4853,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     if (
       !inUserLeague &&
       !isTracked &&
+      !hasCareerArchive &&
       p.stats.goals < 2 &&
       p.stats.assists < 2 &&
       !p.transferListed &&
@@ -4822,6 +4866,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     const priority =
       (isTracked ? 1000 : 0) +
       (inUserLeague ? 500 : 0) +
+      (hasCareerArchive ? 250 : 0) +
       p.stats.goals * 15 +
       p.stats.assists * 10 +
       (p.transferListed ? 25 : 0);
@@ -4850,6 +4895,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
         askingPrice: p.askingPrice,
         loanedFromClubId: p.loanedFromClubId,
         loanOptionToBuyFee: p.loanOptionToBuyFee,
+        careerSeasonHistory: p.careerSeasonHistory ? p.careerSeasonHistory.slice(0, 12) : undefined,
       },
     });
   }
@@ -10401,26 +10447,365 @@ export function advanceDeadlineDayTwoHours(state: WorldState): {
     });
   }
 
+  let nextDeadlineState: WorldState = {
+    ...state,
+    players: updatedPlayers,
+    transferOffers: updatedOffers,
+    inbox: updatedInbox,
+    deadlineHour: nextHour,
+    deadlineFlashDealPlayerId: flashPlayer?.id || null,
+    deadlineTickerHeadlines: [
+      tickerHeadline,
+      ...(state.deadlineTickerHeadlines || []).slice(0, 11),
+    ],
+  };
+
+  let finalHeadline = tickerHeadline;
+  if (nextHour === 14 || nextHour === 20) {
+    const aiTick = simulateAiToAiTransferWindowTick(nextDeadlineState, true);
+    if (aiTick.completedDeal) {
+      nextDeadlineState = aiTick.nextState;
+      finalHeadline = aiTick.message;
+    }
+  }
+
+  return {
+    nextState: nextDeadlineState,
+    currentHour: nextHour,
+    hoursRemaining,
+    tickerHeadline: finalHeadline,
+    flashDealPlayerId: flashPlayer?.id || null,
+    windowClosed: false,
+    message: finalHeadline,
+  };
+}
+
+/**
+ * Stage 16 Phase 4: Check whether a player's contract expires within maxMonths (default 12 months)
+ */
+export function isContractExpiringSoon(
+  contractEndDate: string | undefined,
+  gameDate: string,
+  maxMonths = 12
+): boolean {
+  if (!contractEndDate) return false;
+  const endYear = parseInt(contractEndDate.slice(0, 4), 10);
+  const endMonth = parseInt(contractEndDate.slice(5, 7), 10) || 6;
+  const curYear = parseInt(gameDate.slice(0, 4), 10);
+  const curMonth = parseInt(gameDate.slice(5, 7), 10) || 7;
+  if (Number.isNaN(endYear) || Number.isNaN(curYear)) return false;
+  const monthsRemaining = (endYear - curYear) * 12 + (endMonth - curMonth);
+  return monthsRemaining <= maxMonths;
+}
+
+/**
+ * Stage 16 Phase 4: January 1st Bosman Contract Expiry Alert from Assistant Manager
+ */
+export function generateBosmanContractExpiryAlert(state: WorldState): {
+  nextState: WorldState;
+  expiringPlayers: Player[];
+  alertCreated: boolean;
+} {
+  const myClub = state.clubs[state.controlledClubId];
+  if (!myClub) {
+    return { nextState: state, expiringPlayers: [], alertCreated: false };
+  }
+
+  const currentYear = parseInt(state.gameDate.slice(0, 4), 10) || 2026;
+  const myOwnedPlayers = Object.values(state.players).filter(
+    (p) => p.clubId === myClub.id && !p.loanedFromClubId
+  );
+
+  // Critical Bosman risk (<= 6 months left, expiring this summer) first, fallback to <= 1 year window
+  const criticalBosman = myOwnedPlayers.filter((p) => {
+    const endYear = parseInt((p.contractEndDate || '2028-06-30').slice(0, 4), 10) || 2028;
+    return endYear <= currentYear;
+  });
+
+  const expiringPlayers = (
+    criticalBosman.length > 0
+      ? criticalBosman
+      : myOwnedPlayers.filter((p) => {
+          const endYear = parseInt((p.contractEndDate || '2028-06-30').slice(0, 4), 10) || 2028;
+          return endYear - currentYear <= 1;
+        })
+  ).sort((a, b) => b.currentAbility - a.currentAbility);
+
+  if (expiringPlayers.length === 0) {
+    return { nextState: state, expiringPlayers: [], alertCreated: false };
+  }
+
+  const alertId = `news_bosman_alert_${state.gameDate}_${myClub.id}`;
+  if (state.inbox.some((n) => n.id === alertId)) {
+    return { nextState: state, expiringPlayers, alertCreated: false };
+  }
+
+  const topNames = expiringPlayers
+    .slice(0, 6)
+    .map(
+      (p) =>
+        `${p.firstName} ${p.lastName} (${p.positions[0]}, expires ${p.contractEndDate})`
+    )
+    .join(', ');
+  const extraCount = Math.max(0, expiringPlayers.length - 6);
+  const extraSuffixEn = extraCount > 0 ? ` and ${extraCount} more.` : '.';
+  const extraSuffixTh = extraCount > 0 ? ` และอีก ${extraCount} ราย` : '';
+
+  const isImmediateBosman = criticalBosman.length > 0;
+  const alertItem: NewsItem = {
+    id: alertId,
+    gameDate: state.gameDate,
+    category: 'Transfer',
+    title: trText(
+      isImmediateBosman
+        ? `⚠️ Bosman Risk Alert: ${expiringPlayers.length} ${myClub.shortName} Player(s) Entering Final 6 Months of Contract`
+        : `Contract Expiry Review: ${expiringPlayers.length} ${myClub.shortName} Player(s) Entering Final Year`,
+      isImmediateBosman
+        ? `⚠️ แจ้งเตือนด่วนกฎ Bosman: นักเตะ ${myClub.shortName} ${expiringPlayers.length} รายเหลือสัญญา 6 เดือนสุดท้าย!`
+        : `รายงานสัญญาใกล้หมด: นักเตะ ${myClub.shortName} ${expiringPlayers.length} รายเหลือสัญญาไม่เกิน 1 ปี`
+    ),
+    body: trText(
+      `Assistant Manager Report (${state.gameDate}): Foreign clubs can now approach players in the final 6 months of their deals on pre-contract Bosman free transfers. Priority renewals needed for: ${topNames}${extraSuffixEn} Open Squad > Expiring (<1 Yr) to negotiate extensions immediately.`,
+      `รายงานด่วนจากผู้ช่วยผู้จัดการทีม (${state.gameDate}): ตลาดมกราคมเปิดแล้วและสโมสรคู่แข่งสามารถยื่นเซ็นฟรีล่วงหน้าตามกฎ Bosman ได้ทันที แนะนำให้เร่งต่อสัญญา: ${topNames}${extraSuffixTh} ไปที่หน้าขุมกำลัง > ตัวกรอง สัญญาใกล้หมด (<1 ปี) เพื่อเปิดโต๊ะเจรจา`
+    ),
+    isRead: false,
+    isImportant: true,
+    relatedClubId: myClub.id,
+    relatedPlayerId: expiringPlayers[0]?.id,
+    actionType: 'GoToTransfer',
+  };
+
   return {
     nextState: {
       ...state,
-      players: updatedPlayers,
-      transferOffers: updatedOffers,
-      inbox: updatedInbox,
-      deadlineHour: nextHour,
-      deadlineFlashDealPlayerId: flashPlayer?.id || null,
-      deadlineTickerHeadlines: [
-        tickerHeadline,
-        ...(state.deadlineTickerHeadlines || []).slice(0, 5),
-      ],
+      inbox: [alertItem, ...state.inbox],
     },
-    currentHour: nextHour,
-    hoursRemaining,
-    tickerHeadline,
-    flashDealPlayerId: flashPlayer?.id || null,
-    windowClosed: false,
-    message: tickerHeadline,
+    expiringPlayers,
+    alertCreated: true,
   };
+}
+
+/**
+ * Stage 16 Phase 2: Autonomous AI-to-AI Transfer Market Tick
+ * Runs during open transfer windows (Jul, Aug, Jan) or on Deadline Day to keep the 394-club world alive.
+ */
+export function simulateAiToAiTransferWindowTick(
+  state: WorldState,
+  forceDeal = false
+): { nextState: WorldState; completedDeal: TransferOffer | null; message: string } {
+  const month = parseInt(state.gameDate.slice(5, 7), 10) || 7;
+  const isTransferWindow = month === 7 || month === 8 || month === 1;
+  if (!isTransferWindow && !forceDeal) {
+    return { nextState: state, completedDeal: null, message: 'Transfer window closed.' };
+  }
+
+  const rng = new SeededRNG(
+    state.randomSeed + state.processedDates.length * 131 + state.transferOffers.length * 19 + 17
+  );
+  const aiBuyerCandidates = Object.values(state.clubs).filter(
+    (c) =>
+      c.id !== state.controlledClubId &&
+      c.reputation >= 74 &&
+      c.finances.transferBudget >= 18_000_000
+  );
+  if (aiBuyerCandidates.length === 0) {
+    return { nextState: state, completedDeal: null, message: 'No eligible AI buyers.' };
+  }
+
+  // Count players per club to avoid depleting any selling club below 16 players
+  const clubSquadCounts = new Map<string, number>();
+  for (const pl of Object.values(state.players)) {
+    clubSquadCounts.set(pl.clubId, (clubSquadCounts.get(pl.clubId) || 0) + 1);
+  }
+
+  // Try up to 4 candidate buyers to guarantee a clean realistic match
+  const shuffledBuyers = [...aiBuyerCandidates].sort(() => rng.next() - 0.5).slice(0, 4);
+
+  for (const rawBuyer of shuffledBuyers) {
+    const buyerClub = { ...rawBuyer };
+    const maxFee = Math.min(buyerClub.finances.transferBudget * 0.85, 85_000_000);
+    const minTargetCa = Math.max(132, Math.round(buyerClub.reputation * 1.72));
+
+    // Detect weakest position slot in buyer's starting XI so AI upgrades real tactical needs
+    let weakestPos: PositionCode | null = null;
+    let lowestSlotCa = 999;
+    for (const slot of buyerClub.primaryTactic.lineup) {
+      const slotPlayer = slot.playerId ? state.players[slot.playerId] : null;
+      const slotCa = slotPlayer ? slotPlayer.currentAbility : 0;
+      if (slotCa < lowestSlotCa) {
+        lowestSlotCa = slotCa;
+        weakestPos = slot.position;
+      }
+    }
+
+    const baseTargetPool = Object.values(state.players).filter(
+      (p) =>
+        p.clubId !== state.controlledClubId &&
+        p.clubId !== buyerClub.id &&
+        (clubSquadCounts.get(p.clubId) || 0) > 16 &&
+        !p.loanedFromClubId &&
+        !p.injuryStatus.isInjured &&
+        p.currentAbility >= minTargetCa &&
+        p.askingPrice > 0 &&
+        p.askingPrice <= maxFee &&
+        (p.transferListed || (state.clubs[p.clubId]?.reputation || 70) <= buyerClub.reputation - 2)
+    );
+
+    if (baseTargetPool.length === 0) continue;
+
+    const positionalMatches = weakestPos
+      ? baseTargetPool.filter((p) => p.positions.includes(weakestPos!))
+      : [];
+    const targetPool = positionalMatches.length > 0 ? positionalMatches : baseTargetPool;
+    const targetPlayer = rng.pick(targetPool);
+    const sellingClubRaw = state.clubs[targetPlayer.clubId];
+    if (!sellingClubRaw) continue;
+    const sellingClub = { ...sellingClubRaw };
+
+    const isLoanDeal = !forceDeal && targetPlayer.loanListed && rng.chance(0.35);
+    const agreedFee = isLoanDeal
+      ? 0
+      : Math.max(
+          2_500_000,
+          Math.min(
+            buyerClub.finances.transferBudget,
+            Math.round((targetPlayer.marketValue * 1.05) / 100_000) * 100_000
+          )
+        );
+    const newWage = isLoanDeal ? targetPlayer.wagePerWeek : Math.round(targetPlayer.wagePerWeek * 1.12);
+    const endYear = (parseInt(state.gameDate.slice(0, 4), 10) || 2025) + 4;
+    const optionToBuyFee = isLoanDeal
+      ? Math.round((targetPlayer.marketValue * 1.15) / 100_000) * 100_000
+      : null;
+
+    buyerClub.finances = {
+      ...buyerClub.finances,
+      balance: buyerClub.finances.balance - agreedFee,
+      transferBudget: Math.max(0, buyerClub.finances.transferBudget - agreedFee),
+      wageUsedPerWeek: buyerClub.finances.wageUsedPerWeek + newWage,
+    };
+    sellingClub.finances = {
+      ...sellingClub.finances,
+      balance: sellingClub.finances.balance + agreedFee,
+      transferBudget: sellingClub.finances.transferBudget + Math.round(agreedFee * 0.8),
+      wageUsedPerWeek: Math.max(0, sellingClub.finances.wageUsedPerWeek - targetPlayer.wagePerWeek),
+    };
+
+    const updatedPlayer: Player = {
+      ...targetPlayer,
+      clubId: buyerClub.id,
+      loanedFromClubId: isLoanDeal ? sellingClub.id : null,
+      loanOptionToBuyFee: optionToBuyFee,
+      wagePerWeek: newWage,
+      contractEndDate: isLoanDeal ? targetPlayer.contractEndDate : `${endYear}-06-30`,
+      transferListed: false,
+      loanListed: false,
+      transferHistory: [
+        {
+          date: state.gameDate,
+          fromClubId: sellingClub.id,
+          toClubId: buyerClub.id,
+          fee: agreedFee,
+          type: isLoanDeal ? 'Loan' : 'Transfer',
+        },
+        ...targetPlayer.transferHistory,
+      ],
+    };
+
+    const updatedPlayers: Record<string, Player> = {
+      ...state.players,
+      [updatedPlayer.id]: updatedPlayer,
+    };
+
+    const buyerSquad = Object.values(updatedPlayers).filter((p) => p.clubId === buyerClub.id);
+    const sellerSquad = Object.values(updatedPlayers).filter((p) => p.clubId === sellingClub.id);
+    if (buyerSquad.length >= 11) {
+      buyerClub.primaryTactic = autoPickLineup(
+        buyerClub.primaryTactic.formation,
+        buyerSquad,
+        buyerClub.primaryTactic.instructions,
+        buyerClub.primaryTactic.id,
+        buyerClub.primaryTactic.name
+      );
+    }
+    if (sellerSquad.length >= 11) {
+      sellingClub.primaryTactic = autoPickLineup(
+        sellingClub.primaryTactic.formation,
+        sellerSquad,
+        sellingClub.primaryTactic.instructions,
+        sellingClub.primaryTactic.id,
+        sellingClub.primaryTactic.name
+      );
+    }
+
+    const aiOffer: TransferOffer = {
+      id: `off_ai_${state.gameDate}_${targetPlayer.id}_${buyerClub.id}`,
+      date: state.gameDate,
+      playerId: targetPlayer.id,
+      buyingClubId: buyerClub.id,
+      sellingClubId: sellingClub.id,
+      offerType: isLoanDeal ? 'Loan' : 'Transfer',
+      upfrontFee: agreedFee,
+      installmentsFee: 0,
+      sellOnPercentage: 0,
+      loanOptionToBuyFee: optionToBuyFee ?? undefined,
+      proposedWagePerWeek: newWage,
+      proposedContractYears: isLoanDeal ? 1 : 4,
+      proposedSquadStatus: 'Important Player',
+      signingBonus: isLoanDeal ? 0 : Math.round(newWage * 2),
+      agentFee: isLoanDeal ? 0 : Math.round(newWage * 1.5),
+      status: 'Completed',
+    };
+
+    const headlineEn = isLoanDeal
+      ? `🌍 WORLD TRANSFER: ${buyerClub.name} sign ${targetPlayer.firstName} ${targetPlayer.lastName} on loan from ${sellingClub.name}!`
+      : `🌍 WORLD TRANSFER: ${buyerClub.name} sign ${targetPlayer.firstName} ${targetPlayer.lastName} from ${sellingClub.name} for €${(agreedFee / 1_000_000).toFixed(2)}M!`;
+    const headlineTh = isLoanDeal
+      ? `🌍 ตลาดลูกหนังโลก: ${buyerClub.name} ยืมตัว ${targetPlayer.firstName} ${targetPlayer.lastName} จาก ${sellingClub.name}!`
+      : `🌍 ตลาดลูกหนังโลก: ${buyerClub.name} ปิดดีลคว้า ${targetPlayer.firstName} ${targetPlayer.lastName} จาก ${sellingClub.name} ค่าตัว €${(agreedFee / 1_000_000).toFixed(2)}M!`;
+
+    return {
+      nextState: {
+        ...state,
+        players: updatedPlayers,
+        clubs: {
+          ...state.clubs,
+          [buyerClub.id]: buyerClub,
+          [sellingClub.id]: sellingClub,
+        },
+        transferOffers: [aiOffer, ...state.transferOffers],
+        deadlineTickerHeadlines: [
+          trText(headlineEn, headlineTh),
+          ...(state.deadlineTickerHeadlines || []),
+        ].slice(0, 12),
+        inbox: [
+          {
+            id: `news_ai_trf_${aiOffer.id}`,
+            gameDate: state.gameDate,
+            category: 'Transfer',
+            title: trText(headlineEn, headlineTh),
+            body: isLoanDeal
+              ? trText(
+                  `${buyerClub.name} have finalized a season-long loan deal for ${targetPlayer.firstName} ${targetPlayer.lastName} (${targetPlayer.positions.join('/')}, CA ${(targetPlayer.currentAbility / 10).toFixed(1)}) from ${sellingClub.name} with a €${((optionToBuyFee || 0) / 1_000_000).toFixed(1)}M option to buy.`,
+                  `${buyerClub.name} บรรลุข้อตกลงยืมตัว ${targetPlayer.firstName} ${targetPlayer.lastName} (${targetPlayer.positions.join('/')}, CA ${(targetPlayer.currentAbility / 10).toFixed(1)}) จาก ${sellingClub.name} จนจบฤดูกาล พร้อมออปชันซื้อขาด €${((optionToBuyFee || 0) / 1_000_000).toFixed(1)}M`
+                )
+              : trText(
+                  `${buyerClub.name} have completed the €${(agreedFee / 1_000_000).toFixed(2)}M signing of ${targetPlayer.firstName} ${targetPlayer.lastName} (${targetPlayer.positions.join('/')}, CA ${(targetPlayer.currentAbility / 10).toFixed(1)}) from ${sellingClub.name} on a contract until ${endYear}.`,
+                  `${buyerClub.name} บรรลุข้อตกลงคว้าตัว ${targetPlayer.firstName} ${targetPlayer.lastName} (${targetPlayer.positions.join('/')}, CA ${(targetPlayer.currentAbility / 10).toFixed(1)}) จาก ${sellingClub.name} ด้วยค่าตัว €${(agreedFee / 1_000_000).toFixed(2)}M สัญญาถึงปี ${endYear}`
+                ),
+            isRead: false,
+            relatedClubId: buyerClub.id,
+            relatedPlayerId: targetPlayer.id,
+          },
+          ...state.inbox,
+        ],
+      },
+      completedDeal: aiOffer,
+      message: trText(headlineEn, headlineTh),
+    };
+  }
+
+  return { nextState: state, completedDeal: null, message: 'No matching AI transfer targets.' };
 }
 
 /**

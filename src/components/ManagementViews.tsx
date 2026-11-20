@@ -1925,6 +1925,10 @@ export const TransfersView: React.FC<{
   const [tab, setTab] = useState<
     'market' | 'deadline' | 'bosman' | 'incoming' | 'loans' | 'shortlist' | 'history'
   >('market');
+  const [historySubTab, setHistorySubTab] = useState<'global' | 'myClub'>('global');
+  const [globalLedgerLeague, setGlobalLedgerLeague] = useState<'ALL' | LeagueId>('ALL');
+  const [globalLedgerType, setGlobalLedgerType] = useState<'ALL' | 'Transfer' | 'Loan' | 'Free'>('ALL');
+  const [globalLedgerSort, setGlobalLedgerSort] = useState<'fee' | 'date'>('fee');
   const [negotiatingOfferId, setNegotiatingOfferId] = useState<string | null>(null);
   const [counterUpfrontM, setCounterUpfrontM] = useState<number>(20);
   const [counterInstallmentsM, setCounterInstallmentsM] = useState<number>(5);
@@ -2029,6 +2033,72 @@ export const TransfersView: React.FC<{
         .slice(0, 4),
     [world.players, club.id]
   );
+
+  const myClubTransferOffers = useMemo(
+    () =>
+      world.transferOffers.filter(
+        (o) => o.buyingClubId === club.id || o.sellingClubId === club.id
+      ),
+    [world.transferOffers, club.id]
+  );
+
+  const globalTransferLedgerAll = useMemo(() => {
+    const entries: Array<{
+      key: string;
+      date: string;
+      player: Player;
+      fromClubId: string;
+      toClubId: string;
+      fee: number;
+      type: 'Transfer' | 'Loan' | 'Free';
+      optionToBuyFee?: number | null;
+    }> = [];
+    const seen = new Set<string>();
+    for (const p of Object.values(world.players)) {
+      if (!p.transferHistory || p.transferHistory.length === 0) continue;
+      for (const th of p.transferHistory) {
+        const key = `${p.id}_${th.date}_${th.fromClubId}_${th.toClubId}_${th.type}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        entries.push({
+          key,
+          date: th.date,
+          player: p,
+          fromClubId: th.fromClubId,
+          toClubId: th.toClubId,
+          fee: th.fee,
+          type: th.type,
+          optionToBuyFee:
+            th.type === 'Loan' && p.loanedFromClubId === th.fromClubId && p.clubId === th.toClubId
+              ? p.loanOptionToBuyFee
+              : null,
+        });
+      }
+    }
+    return entries;
+  }, [world.players]);
+
+  const filteredGlobalLedger = useMemo(() => {
+    return globalTransferLedgerAll
+      .filter((entry) => {
+        if (globalLedgerType !== 'ALL' && entry.type !== globalLedgerType) return false;
+        if (globalLedgerLeague !== 'ALL') {
+          const fromLeague = world.clubs[entry.fromClubId]?.leagueId;
+          const toLeague = world.clubs[entry.toClubId]?.leagueId;
+          if (fromLeague !== globalLedgerLeague && toLeague !== globalLedgerLeague) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        if (globalLedgerSort === 'fee') {
+          if (b.fee !== a.fee) return b.fee - a.fee;
+          return b.date.localeCompare(a.date);
+        }
+        const dateCmp = b.date.localeCompare(a.date);
+        if (dateCmp !== 0) return dateCmp;
+        return b.fee - a.fee;
+      });
+  }, [globalTransferLedgerAll, globalLedgerLeague, globalLedgerType, globalLedgerSort, world.clubs]);
 
   return (
     <div className="space-y-4">
@@ -2180,8 +2250,8 @@ export const TransfersView: React.FC<{
             {
               id: 'history',
               label: tr(
-                `Transfer Offers & History (${world.transferOffers.length})`,
-                `ประวัติข้อเสนอและการซื้อขาย (${world.transferOffers.length})`
+                `Offers & World Ledger (${globalTransferLedgerAll.length})`,
+                `ข้อเสนอ & ทำเนียบดีลโลก (${globalTransferLedgerAll.length})`
               ),
             },
           ].map((t) => (
@@ -2975,17 +3045,234 @@ export const TransfersView: React.FC<{
           </div>
         </div>
       ) : tab === 'history' ? (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-          {world.transferOffers.length === 0 ? (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+          {/* Sub-tab switcher: My Club Negotiations vs Global Transfer Ledger */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
+              <button
+                type="button"
+                data-testid="history-subtab-global"
+                onClick={() => setHistorySubTab('global')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                  historySubTab === 'global'
+                    ? 'bg-emerald-500 text-slate-950'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {tr(
+                  `Global Transfer Ledger (${globalTransferLedgerAll.length})`,
+                  `ทำเนียบการย้ายทีมทั่วโลก (${globalTransferLedgerAll.length})`
+                )}
+              </button>
+              <button
+                type="button"
+                data-testid="history-subtab-myclub"
+                onClick={() => setHistorySubTab('myClub')}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                  historySubTab === 'myClub'
+                    ? 'bg-emerald-500 text-slate-950'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {tr(
+                  `My Club Negotiations & Bids (${myClubTransferOffers.length})`,
+                  `ประวัติการเจรจาของสโมสร (${myClubTransferOffers.length})`
+                )}
+              </button>
+            </div>
+
+            {historySubTab === 'global' && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <div className="flex items-center gap-1 p-0.5 bg-slate-950 rounded-lg border border-slate-800">
+                  {(['ALL', 'Transfer', 'Loan', 'Free'] as const).map((dt) => (
+                    <button
+                      key={dt}
+                      type="button"
+                      onClick={() => setGlobalLedgerType(dt)}
+                      className={`px-2.5 py-1 rounded text-[11px] font-medium cursor-pointer whitespace-nowrap ${
+                        globalLedgerType === dt
+                          ? 'bg-slate-800 text-emerald-400 font-semibold'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {dt === 'ALL'
+                        ? tr('All Types', 'ทุกประเภท')
+                        : dt === 'Transfer'
+                          ? tr('Transfers', 'ซื้อขาด')
+                          : dt === 'Loan'
+                            ? tr('Loans', 'ยืมตัว')
+                            : tr('Free', 'ย้ายฟรี')}
+                    </button>
+                  ))}
+                </div>
+
+                <select
+                  aria-label={tr('Filter transfer ledger by league', 'กรองทำเนียบดีลตามลีก')}
+                  data-testid="global-ledger-league-select"
+                  value={globalLedgerLeague}
+                  onChange={(e) => setGlobalLedgerLeague(e.target.value as 'ALL' | LeagueId)}
+                  className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-200"
+                >
+                  <option value="ALL">{tr('All 23 Leagues', 'ทุกลีกทั่วโลก (23 ลีก)')}</option>
+                  {Object.values(LEAGUES_CONFIG).map((lg) => (
+                    <option key={lg.id} value={lg.id}>
+                      {lg.name} ({lg.countryId})
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  aria-label={tr('Sort transfer ledger', 'เรียงลำดับทำเนียบดีล')}
+                  data-testid="global-ledger-sort-select"
+                  value={globalLedgerSort}
+                  onChange={(e) => setGlobalLedgerSort(e.target.value as 'fee' | 'date')}
+                  className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-emerald-300 font-medium"
+                >
+                  <option value="fee">{tr('Sort: Highest Fee', 'เรียง: ค่าตัวสูงสุด')}</option>
+                  <option value="date">{tr('Sort: Most Recent', 'เรียง: ล่าสุดก่อน')}</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          {historySubTab === 'global' ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400 font-mono tabular-nums">
+                <div>
+                  {tr('Showing', 'แสดง')} <strong className="text-white">{filteredGlobalLedger.length}</strong>{' '}
+                  {tr('completed world deals', 'ดีลย้ายทีมที่เสร็จสมบูรณ์')} ·{' '}
+                  {tr('Total Spend:', 'มูลค่ารวม:')}{' '}
+                  <strong className="text-emerald-400">
+                    €
+                    {(
+                      filteredGlobalLedger.reduce((acc, item) => acc + item.fee, 0) / 1_000_000
+                    ).toLocaleString(undefined, {
+                      minimumFractionDigits: 1,
+                      maximumFractionDigits: 1,
+                    })}
+                    M
+                  </strong>{' '}
+                  · {tr('Loan Deals:', 'สัญญายืมตัว:')}{' '}
+                  <strong className="text-sky-400">
+                    {filteredGlobalLedger.filter((item) => item.type === 'Loan').length}
+                  </strong>
+                </div>
+                <span className="font-sans text-[11px] text-slate-500">
+                  {tr('Click any row to open full player profile', 'คลิกแถวใดก็ได้เพื่อเปิดหน้าโปรไฟล์นักเตะ')}
+                </span>
+              </div>
+
+              {filteredGlobalLedger.length === 0 ? (
+                <div className="text-center py-10 text-xs text-slate-400 bg-slate-950 rounded-lg border border-slate-800">
+                  {tr(
+                    'No completed transfers match the selected league and deal type filters.',
+                    'ไม่พบรายการย้ายทีมที่ตรงกับตัวกรองลีกและประเภทดีลที่เลือก'
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[560px] overflow-y-auto rounded-lg border border-slate-800">
+                  <table
+                    className="w-full text-left text-xs border-collapse font-mono tabular-nums"
+                    data-testid="global-transfer-ledger-table"
+                  >
+                    <thead className="sticky top-0 bg-slate-950 z-10">
+                      <tr className="border-b border-slate-800 text-[11px] text-slate-400">
+                        <th className="py-2.5 px-3">{tr('Date', 'วันที่')}</th>
+                        <th className="py-2.5 px-3 font-sans">{tr('Player', 'นักเตะ')}</th>
+                        <th className="py-2.5 px-3 font-sans">{tr('From Club', 'จากสโมสร')}</th>
+                        <th className="py-2.5 px-3 font-sans">{tr('To Club', 'สู่สโมสร')}</th>
+                        <th className="py-2.5 px-3">{tr('Deal Type', 'ประเภทดีล')}</th>
+                        <th className="py-2.5 px-3 text-right">{tr('Fee / Terms', 'ค่าตัว / เงื่อนไข')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/70">
+                      {filteredGlobalLedger.slice(0, 150).map((entry) => {
+                        const fromClub = world.clubs[entry.fromClubId];
+                        const toClub = world.clubs[entry.toClubId];
+                        return (
+                          <tr
+                            key={entry.key}
+                            onClick={() => onSelectPlayer(entry.player.id)}
+                            className="hover:bg-slate-800/50 cursor-pointer transition-colors"
+                          >
+                            <td className="py-2.5 px-3 text-slate-400 whitespace-nowrap">{entry.date}</td>
+                            <td className="py-2.5 px-3 font-sans">
+                              <div className="flex items-center gap-2">
+                                <PlayerAvatar player={entry.player} club={toClub} size="xs" />
+                                <NationalityFlag code={entry.player.nationalityCode} size="xs" />
+                                <span className="font-semibold text-white">
+                                  {entry.player.firstName} {entry.player.lastName}
+                                </span>
+                                <span className="font-mono text-[11px] text-slate-400">
+                                  {entry.player.positions[0]} · {(entry.player.currentAbility / 10).toFixed(1)}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 font-sans text-slate-300">
+                              <span className="inline-flex items-center gap-1.5">
+                                {fromClub && <ClubBadge club={fromClub} size="xs" />}
+                                <span>{fromClub?.name || entry.fromClubId}</span>
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-sans text-white font-medium">
+                              <span className="inline-flex items-center gap-1.5">
+                                {toClub && <ClubBadge club={toClub} size="xs" />}
+                                <span>{toClub?.name || entry.toClubId}</span>
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 whitespace-nowrap">
+                              <span
+                                className={`font-semibold text-[11px] ${
+                                  entry.type === 'Transfer'
+                                    ? 'text-emerald-400'
+                                    : entry.type === 'Loan'
+                                      ? 'text-sky-400'
+                                      : 'text-amber-300'
+                                }`}
+                              >
+                                {entry.type === 'Transfer'
+                                  ? tr('Transfer', 'ซื้อขาด')
+                                  : entry.type === 'Loan'
+                                    ? tr('Loan', 'ยืมตัว')
+                                    : tr('Free', 'ย้ายฟรี')}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-bold whitespace-nowrap">
+                              {entry.type === 'Loan' ? (
+                                <span className="text-sky-300">
+                                  {entry.optionToBuyFee && entry.optionToBuyFee > 0
+                                    ? tr(
+                                        `Loan (Opt €${(entry.optionToBuyFee / 1_000_000).toFixed(1)}M)`,
+                                        `ยืมตัว (ซื้อขาด €${(entry.optionToBuyFee / 1_000_000).toFixed(1)}M)`
+                                      )
+                                    : tr('Season Loan', 'ยืมตัวทั้งฤดูกาล')}
+                                </span>
+                              ) : entry.fee > 0 ? (
+                                <span className="text-emerald-400">
+                                  €{(entry.fee / 1_000_000).toFixed(2)}M
+                                </span>
+                              ) : (
+                                <span className="text-amber-300">{tr('Free Transfer', 'ย้ายฟรี')}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ) : myClubTransferOffers.length === 0 ? (
             <div className="text-center py-10 text-xs text-slate-400">
               {tr(
-                'No transfer offers submitted yet. Click any player in the Transfer Market or Scouting network to begin negotiations.',
-                'ยังไม่มีประวัติการยื่นข้อเสนอซื้อขาย คลิกที่นักเตะคนใดก็ได้ในหน้าตลาดซื้อขายหรือแมวมองเพื่อเปิดโต๊ะเจรจา'
+                'No club transfer negotiations submitted yet. Click any player in the Transfer Market or Scouting network to begin negotiations.',
+                'ยังไม่มีประวัติการยื่นข้อเสนอซื้อขายของสโมสรคุณ คลิกที่นักเตะคนใดก็ได้ในหน้าตลาดซื้อขายหรือแมวมองเพื่อเปิดโต๊ะเจรจา'
               )}
             </div>
           ) : (
             <div className="space-y-2">
-              {world.transferOffers.map((off) => {
+              {myClubTransferOffers.map((off) => {
                 const p = world.players[off.playerId];
                 const swapP = off.swapPlayerId ? world.players[off.swapPlayerId] : null;
                 const sellClub = world.clubs[off.sellingClubId];
@@ -2993,7 +3280,8 @@ export const TransfersView: React.FC<{
                 return (
                   <div
                     key={off.id}
-                    className="flex flex-wrap items-center justify-between p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs"
+                    onClick={() => p && onSelectPlayer(p.id)}
+                    className="flex flex-wrap items-center justify-between p-3.5 rounded-lg bg-slate-950 border border-slate-800 hover:border-slate-700 cursor-pointer text-xs"
                   >
                     <div>
                       <div className="font-semibold text-white flex flex-wrap items-center gap-1.5">
@@ -3002,21 +3290,21 @@ export const TransfersView: React.FC<{
                           {p?.firstName} {p?.lastName} ({sellClub?.name} → {buyClub?.name})
                         </span>
                         {swapP && (
-                          <span className="px-1.5 py-0.5 rounded bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-mono">
-                            🔄 + {swapP.firstName} {swapP.lastName}
+                          <span className="text-sky-300 text-[11px] font-mono">
+                            · + {swapP.firstName} {swapP.lastName}
                             {off.swapValuation
                               ? ` (€${(off.swapValuation / 1_000_000).toFixed(1)}M)`
                               : ''}
                           </span>
                         )}
                         {off.biddingWarClubName && (
-                          <span className="px-1.5 py-0.5 rounded bg-rose-500/15 border border-rose-500/40 text-rose-300 text-[10px] font-mono">
-                            ⚔️ vs {off.biddingWarClubName}
+                          <span className="text-rose-300 text-[11px] font-mono">
+                            · vs {off.biddingWarClubName}
                           </span>
                         )}
                       </div>
                       <div className="text-slate-400 font-mono tabular-nums">
-                        {off.offerType} · {tr('Upfront', 'เงินต้น')} €{(off.upfrontFee / 1_000_000).toFixed(2)}M + {tr('Installments', 'ผ่อน')} €{(off.installmentsFee / 1_000_000).toFixed(2)}M · {tr('Wage', 'ค่าเหนื่อย')} €{off.proposedWagePerWeek.toLocaleString()}/w
+                        {off.date} · {off.offerType} · {tr('Upfront', 'เงินต้น')} €{(off.upfrontFee / 1_000_000).toFixed(2)}M + {tr('Installments', 'ผ่อน')} €{(off.installmentsFee / 1_000_000).toFixed(2)}M · {tr('Wage', 'ค่าเหนื่อย')} €{off.proposedWagePerWeek.toLocaleString()}/w
                       </div>
                     </div>
                     <span

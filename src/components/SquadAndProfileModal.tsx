@@ -5,7 +5,7 @@ import {
   PositionGroup,
   WorldState,
 } from '../types/game';
-import { getAgeAtDate } from '../engine/worldSimulationService';
+import { getAgeAtDate, isContractExpiringSoon } from '../engine/worldSimulationService';
 import {
   computePlayerPolygon8Axes,
   computeSquadDepthChart,
@@ -59,7 +59,9 @@ export const SquadView: React.FC<SquadViewProps> = ({
   const club = world.clubs[world.controlledClubId];
   const [search, setSearch] = useState('');
   const [posFilter, setPosFilter] = useState<'ALL' | PositionGroup>('ALL');
-  const [subFilter, setSubFilter] = useState<'ALL' | 'REGISTERED' | 'HOMEGROWN' | 'RESERVES' | 'UNHAPPY'>('ALL');
+  const [subFilter, setSubFilter] = useState<
+    'ALL' | 'REGISTERED' | 'HOMEGROWN' | 'RESERVES' | 'UNHAPPY' | 'EXPIRING'
+  >('ALL');
   const [sortBy, setSortBy] = useState<'ca' | 'fitness' | 'sharpness' | 'morale' | 'age' | 'wage' | 'value' | 'rating'>('ca');
   const [viewMode, setViewMode] = useState<'table' | 'planner' | 'dynamics'>(initialViewMode);
   const [tablePreset, setTablePreset] = useState<'ALL' | 'OVERVIEW' | 'CONDITION' | 'CONTRACT' | 'STATS'>('ALL');
@@ -85,6 +87,9 @@ export const SquadView: React.FC<SquadViewProps> = ({
   );
   const highRiskPlayersCount = clubPlayers.filter((p) => p.fitness < 70 || p.injuryStatus.isInjured).length;
   const reservesAssignedCount = clubPlayers.filter((p) => p.playInReserves).length;
+  const expiringPlayersCount = clubPlayers.filter(
+    (p) => !p.loanedFromClubId && isContractExpiringSoon(p.contractEndDate, world.gameDate)
+  ).length;
   const unhappyHierarchyPlayers = clubPlayers.filter(
     (p) =>
       ((p.squadStatus === 'Star Player' || p.squadStatus === 'Important Player') &&
@@ -100,6 +105,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
       if (subFilter === 'REGISTERED' && p.isRegistered === false) return false;
       if (subFilter === 'HOMEGROWN' && !isPlayerHomegrownForClub(p, club.countryId)) return false;
       if (subFilter === 'RESERVES' && !p.playInReserves && p.matchSharpness >= 78) return false;
+      if (
+        subFilter === 'EXPIRING' &&
+        (Boolean(p.loanedFromClubId) || !isContractExpiringSoon(p.contractEndDate, world.gameDate))
+      ) {
+        return false;
+      }
       if (
         subFilter === 'UNHAPPY' &&
         !(((p.squadStatus === 'Star Player' || p.squadStatus === 'Important Player') && (p.consecutiveBenched || 0) >= 2) || p.morale < 65)
@@ -356,12 +367,13 @@ export const SquadView: React.FC<SquadViewProps> = ({
             ))}
           </div>
 
-          <div className="flex items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-950 rounded-lg border border-slate-800">
             {(
               [
                 { id: 'ALL', en: 'All Roster', th: 'ทั้งทีม' },
                 { id: 'REGISTERED', en: `Registered (${regSummary.registeredCount}/25)`, th: `ลงทะเบียน (${regSummary.registeredCount}/25)` },
                 { id: 'HOMEGROWN', en: `Homegrown (${regSummary.totalHomegrownInClub})`, th: `Homegrown (${regSummary.totalHomegrownInClub})` },
+                { id: 'EXPIRING', en: `Expiring (<1 Yr · ${expiringPlayersCount})`, th: `สัญญาใกล้หมด (${expiringPlayersCount})` },
                 { id: 'RESERVES', en: 'Low Sharpness / U23', th: 'ขาดความเฉียบคม / สำรอง U23' },
                 { id: 'UNHAPPY', en: 'Hierarchy Alert', th: 'ถูกดร็อป / กังวล' },
               ] as const
@@ -369,11 +381,16 @@ export const SquadView: React.FC<SquadViewProps> = ({
               <button
                 key={f.id}
                 type="button"
+                data-testid={f.id === 'EXPIRING' ? 'squad-filter-expiring-btn' : undefined}
                 onClick={() => setSubFilter(f.id)}
-                className={`px-2.5 py-1.5 text-xs rounded-md transition-colors cursor-pointer ${
+                className={`px-2.5 py-1.5 text-xs rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                   subFilter === f.id
-                    ? 'bg-slate-800 text-emerald-400 font-semibold'
-                    : 'text-slate-400 hover:text-white'
+                    ? f.id === 'EXPIRING'
+                      ? 'bg-amber-500/20 text-amber-300 font-semibold'
+                      : 'bg-slate-800 text-emerald-400 font-semibold'
+                    : f.id === 'EXPIRING' && expiringPlayersCount > 0
+                      ? 'text-amber-300/90 hover:text-amber-200'
+                      : 'text-slate-400 hover:text-white'
                 }`}
               >
                 {tr(f.en, f.th)}
@@ -970,6 +987,9 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 const isDroppedStar =
                   (p.squadStatus === 'Star Player' || p.squadStatus === 'Important Player') &&
                   benchedCount >= 2;
+                const isContractExpiring =
+                  !p.loanedFromClubId && isContractExpiringSoon(p.contractEndDate, world.gameDate);
+                const loanParentClub = p.loanedFromClubId ? world.clubs[p.loanedFromClubId] : null;
 
                 return (
                   <tr
@@ -1110,6 +1130,29 @@ export const SquadView: React.FC<SquadViewProps> = ({
                                 · {p.youthSquad ? p.youthSquad.toUpperCase() : 'U18'}
                               </span>
                             )}
+                            {p.loanedFromClubId && (
+                              <span
+                                title={tr(
+                                  `On loan from ${loanParentClub?.name || p.loanedFromClubId}`,
+                                  `ยืมตัวจาก ${loanParentClub?.name || p.loanedFromClubId}`
+                                )}
+                                className="text-[10px] font-mono text-sky-400 font-semibold"
+                              >
+                                · LOAN ({loanParentClub?.shortName || p.loanedFromClubId})
+                              </span>
+                            )}
+                            {isContractExpiring && (
+                              <span
+                                data-testid={`expiring-warning-${p.id}`}
+                                title={tr(
+                                  `Contract expires ${p.contractEndDate} — renew soon to avoid Bosman free transfer`,
+                                  `สัญญาจะหมดวันที่ ${p.contractEndDate} — ควรเร่งต่อสัญญาก่อนเสียฟรีตามกฎ Bosman`
+                                )}
+                                className="text-[10px] font-mono text-amber-400 font-bold"
+                              >
+                                · EXPIRING {p.contractEndDate.slice(0, 4)}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5 mt-0.5 whitespace-nowrap">
                             <NationalityFlag code={p.nationalityCode} size="xs" showCode />
@@ -1181,7 +1224,11 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         <td className="py-2.5 px-3 text-right font-mono tabular-nums text-white">
                           €{(p.marketValue / 1_000_000).toFixed(1)}M
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono tabular-nums text-slate-300">
+                        <td
+                          className={`py-2.5 px-3 text-right font-mono tabular-nums ${
+                            isContractExpiring ? 'text-amber-400 font-bold' : 'text-slate-300'
+                          }`}
+                        >
                           {p.contractEndDate}
                         </td>
                       </>

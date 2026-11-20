@@ -67,6 +67,7 @@ import {
   exportWorldDatabaseJson,
   FREE_AGENT_MANAGERS_POOL,
   generateAnnualYouthIntake,
+  generateBosmanContractExpiryAlert,
   getClubAllTimeRecords,
   getClubStaffBonuses,
   getClubSupporterConfidence,
@@ -79,6 +80,7 @@ import {
   getWeeklyTrainingReportAndAdvice,
   holdEmergencySquadMeeting,
   importWorldDatabaseJson,
+  isContractExpiringSoon,
   isTransferDeadlineWindow,
   liveEditClubFinancesAndFacilities,
   loadWorldStateFromSlot,
@@ -104,6 +106,7 @@ import {
   setPlayerIndividualTrainingIntensity,
   setPreSeasonCampFocus,
   signPlayerOnBosmanFree,
+  simulateAiToAiTransferWindowTick,
   simulateClubWorldCupNextStage,
   simulateEuroCupNextStage,
   simulateU21YouthAndReservesMatchday,
@@ -3882,6 +3885,200 @@ test('28. Stage 15 Complete Suite: 2025/26–2026/27 Verified Transfer Database,
   assert.equal(findPlayer('Trent Alexander-Arnold')?.shirtNumber, 12);
   assert.equal(findPlayer('Lamine Yamal')?.shirtNumber, 10);
   assert.equal(findPlayer('Heung-Min Son')?.shirtNumber, 7);
+});
+
+test('29. Stage 16 Complete Suite: AI-to-AI Transfers, Multi-Season Career Archive & Bosman Expiry Alerts', () => {
+  const world = createInitialWorldState(161616, undefined, undefined);
+  const myClubId = world.controlledClubId;
+
+  // 1. Test simulateAiToAiTransferWindowTick() during closed vs open transfer window
+  const closedState = { ...world, gameDate: '2025-10-15' };
+  const closedTick = simulateAiToAiTransferWindowTick(closedState, false);
+  assert.equal(closedTick.completedDeal, null, 'AI-to-AI transfers must not execute when window is closed');
+
+  const openState = { ...world, gameDate: '2025-08-04' };
+  const openTick = simulateAiToAiTransferWindowTick(openState, true);
+  assert.ok(openTick.completedDeal, 'AI-to-AI transfer tick must complete a valid transfer during open window');
+
+  const deal = openTick.completedDeal!;
+  assert.equal(deal.status, 'Completed');
+  assert.notEqual(deal.buyingClubId, myClubId, 'AI buyer must not be controlled club');
+  assert.notEqual(deal.sellingClubId, myClubId, 'AI seller must not be controlled club');
+  assert.notEqual(deal.buyingClubId, deal.sellingClubId, 'Buyer and seller clubs must be distinct');
+
+  const movedPlayer = openTick.nextState.players[deal.playerId];
+  assert.equal(movedPlayer.clubId, deal.buyingClubId, 'Moved player clubId must update to buyer club');
+  assert.ok(
+    movedPlayer.transferHistory.length >= 1 &&
+      movedPlayer.transferHistory[0].toClubId === deal.buyingClubId &&
+      movedPlayer.transferHistory[0].fromClubId === deal.sellingClubId,
+    'Moved player must record the new deal in transferHistory'
+  );
+  const buyerBefore = openState.clubs[deal.buyingClubId];
+  const buyerAfter = openTick.nextState.clubs[deal.buyingClubId];
+  const sellerBefore = openState.clubs[deal.sellingClubId];
+  const sellerAfter = openTick.nextState.clubs[deal.sellingClubId];
+  assert.equal(
+    buyerAfter.finances.balance,
+    buyerBefore.finances.balance - deal.upfrontFee,
+    'Buyer club balance must deduct agreed transfer fee'
+  );
+  assert.equal(
+    sellerAfter.finances.balance,
+    sellerBefore.finances.balance + deal.upfrontFee,
+    'Seller club balance must credit agreed transfer fee'
+  );
+  assert.ok(
+    openTick.nextState.inbox.some((n) => n.id === `news_ai_trf_${deal.id}`),
+    'AI-to-AI transfer must generate a World Transfer news item in Inbox'
+  );
+  assert.ok(
+    (openTick.nextState.deadlineTickerHeadlines || []).length > (openState.deadlineTickerHeadlines || []).length,
+    'AI-to-AI transfer must push a headline to deadlineTickerHeadlines'
+  );
+
+  // 2. Test Loan Option-to-Buy directly on Arsenal's real 2025/26 loanee Piero Hincapie
+  const hincapie = Object.values(world.players).find(
+    (p) => `${p.firstName} ${p.lastName}`.toLowerCase() === 'piero hincapie'
+  )!;
+  assert.ok(hincapie && hincapie.clubId === myClubId && hincapie.loanedFromClubId);
+  const richArsenalWorld = {
+    ...world,
+    clubs: {
+      ...world.clubs,
+      [myClubId]: {
+        ...world.clubs[myClubId],
+        finances: {
+          ...world.clubs[myClubId].finances,
+          transferBudget: 120_000_000,
+          balance: 200_000_000,
+        },
+      },
+    },
+  };
+  const buyoutRes = triggerLoanOptionToBuy(richArsenalWorld, hincapie.id);
+  assert.equal(buyoutRes.success, true, 'Triggering Option-to-Buy on Hincapie must succeed');
+  assert.equal(buyoutRes.feePaid, 52_000_000, 'Must pay exact agreed €52M Option-to-Buy fee');
+  const hincapiePermanent = buyoutRes.nextState.players[hincapie.id];
+  assert.equal(hincapiePermanent.loanedFromClubId, null, 'Permanent signing must clear loanedFromClubId');
+  assert.equal(hincapiePermanent.loanOptionToBuyFee, null, 'Permanent signing must clear loanOptionToBuyFee');
+  assert.equal(hincapiePermanent.transferHistory[0].type, 'Transfer');
+  assert.equal(hincapiePermanent.transferHistory[0].fee, 52_000_000);
+
+  // 3. Test Multi-Season Player Career Stats Archive across processEndOfSeasonRollover + Cloud Dehydrate/Rehydrate
+  const saka = Object.values(world.players).find(
+    (p) => `${p.firstName} ${p.lastName}`.toLowerCase() === 'bukayo saka'
+  )!;
+  const externalScorer = Object.values(world.players).find(
+    (p) => p.clubId !== myClubId && p.positions.includes('ST') && p.currentAbility >= 150
+  )!;
+
+  const seasonWithStats = {
+    ...world,
+    players: {
+      ...world.players,
+      [saka.id]: {
+        ...saka,
+        stats: {
+          ...saka.stats,
+          appearances: 34,
+          starts: 33,
+          goals: 18,
+          assists: 14,
+          cleanSheets: 12,
+          averageRating: 7.72,
+          minutesPlayed: 2950,
+          manOfTheMatch: 7,
+        },
+      },
+      [externalScorer.id]: {
+        ...externalScorer,
+        stats: {
+          ...externalScorer.stats,
+          appearances: 36,
+          starts: 36,
+          goals: 26,
+          assists: 6,
+          cleanSheets: 0,
+          averageRating: 7.64,
+          minutesPlayed: 3100,
+          manOfTheMatch: 9,
+        },
+      },
+    },
+  };
+
+  const rolled = processEndOfSeasonRollover(seasonWithStats).nextState;
+  const sakaAfter = rolled.players[saka.id];
+  assert.equal(sakaAfter.stats.appearances, 0, 'Current season stats must reset to 0 on rollover');
+  assert.ok(
+    sakaAfter.careerSeasonHistory && sakaAfter.careerSeasonHistory.length === 1,
+    'Saka must archive 2025/26 season stats into careerSeasonHistory'
+  );
+  assert.equal(sakaAfter.careerSeasonHistory![0].season, world.currentSeason);
+  assert.equal(sakaAfter.careerSeasonHistory![0].appearances, 34);
+  assert.equal(sakaAfter.careerSeasonHistory![0].goals, 18);
+  assert.equal(sakaAfter.careerSeasonHistory![0].assists, 14);
+  assert.equal(sakaAfter.careerSeasonHistory![0].averageRating, 7.72);
+
+  const extAfter = rolled.players[externalScorer.id];
+  assert.ok(
+    extAfter.careerSeasonHistory && extAfter.careerSeasonHistory.length === 1 && extAfter.careerSeasonHistory[0].goals === 26,
+    'External players with appearances must also archive seasonal stats into careerSeasonHistory'
+  );
+
+  // Verify Firestore dehydrate -> rehydrate round-trip preserves careerSeasonHistory
+  const dehydrated = dehydrateWorldStateToCareerMap(rolled);
+  const rehydrated = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'test_uid',
+    slotId: 'slot_1',
+    saveName: 'Stage 16 Archive Test',
+    clubName: rolled.clubs[myClubId].name,
+    managerName: rolled.manager.name,
+    gameDate: rolled.gameDate,
+    season: rolled.currentSeason,
+    lastSavedAtIso: '2026-06-01T12:00:00Z',
+    randomSeed: rolled.randomSeed,
+    controlledClubId: myClubId,
+    careerState: dehydrated,
+  });
+  assert.equal(
+    rehydrated.players[saka.id].careerSeasonHistory?.[0]?.goals,
+    18,
+    'Rehydrated controlled club player must preserve archived careerSeasonHistory'
+  );
+
+  // 4. Test Contract Expiry helper & January 1st Bosman Alert in advanceWorldOneDay()
+  assert.equal(isContractExpiringSoon('2026-06-30', '2025-07-01'), true);
+  assert.equal(isContractExpiringSoon('2026-06-30', '2026-01-01'), true);
+  assert.equal(isContractExpiringSoon('2028-06-30', '2026-01-01'), false);
+
+  const dec31State = {
+    ...world,
+    gameDate: '2025-12-31',
+    fixtures: [], // Isolate Jan 1 rollover trigger without running matchdays
+    players: {
+      ...world.players,
+      [saka.id]: {
+        ...saka,
+        contractEndDate: '2026-06-30',
+      },
+    },
+  };
+  const jan1Result = advanceWorldOneDay(dec31State);
+  assert.equal(jan1Result.nextState.gameDate, '2026-01-01');
+  const bosmanAlert = jan1Result.nextState.inbox.find((n) =>
+    n.id.startsWith('news_bosman_alert_2026-01-01_')
+  );
+  assert.ok(bosmanAlert, 'Advancing to YYYY-01-01 must generate Assistant Manager Bosman Contract Expiry alert');
+  assert.ok(
+    bosmanAlert!.body.includes('Bukayo Saka'),
+    'Bosman Contract Expiry alert must list expiring controlled-club star player'
+  );
+
+  // Also test direct helper idempotency
+  const secondAlert = generateBosmanContractExpiryAlert(jan1Result.nextState);
+  assert.equal(secondAlert.alertCreated, false, 'Bosman alert must not duplicate for the same date');
 });
 
 

@@ -16,6 +16,7 @@ import { Player, PlayerRole, WorldState } from '../types/game';
 import {
   evaluateSwapPlayerValuation,
   getAgeAtDate,
+  isContractExpiringSoon,
 } from '../engine/worldSimulationService';
 import {
   computePlayerPolygon8Axes,
@@ -91,6 +92,8 @@ export interface PlayerProfilePageProps {
     playerId: string,
     topic: 'PRAISE_FORM' | 'CRITICIZE_FORM' | 'EXPLAIN_ROTATION' | 'CAPTAIN_INTERVENE'
   ) => void;
+  onTriggerLoanOptionToBuy?: (playerId: string) => void;
+  onRecallFromLoan?: (playerId: string) => void;
 }
 
 type ProfileTabId = 'overview' | 'development' | 'contract' | 'stats' | 'scout';
@@ -111,6 +114,8 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   onSendToAffiliateLoan,
   onOfferPlayerToClubs,
   onPlayerChat,
+  onTriggerLoanOptionToBuy,
+  onRecallFromLoan,
 }) => {
   const { lang, tr, trDynamic } = useLanguage();
   const [activeTab, setActiveTab] = useState<ProfileTabId>('overview');
@@ -123,6 +128,17 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
   const playerClub = world.clubs[player.clubId];
   const myClub = world.clubs[world.controlledClubId];
   const isMyPlayer = player.clubId === world.controlledClubId;
+  const loanParentClub = player.loanedFromClubId ? world.clubs[player.loanedFromClubId] : null;
+  const isLoanedInToMyClub =
+    isMyPlayer && Boolean(player.loanedFromClubId) && player.loanedFromClubId !== world.controlledClubId;
+  const isLoanedOutFromMyClub =
+    !isMyPlayer && player.loanedFromClubId === world.controlledClubId;
+  const effectiveLoanOptionFee =
+    player.loanOptionToBuyFee && player.loanOptionToBuyFee > 0
+      ? player.loanOptionToBuyFee
+      : Math.round((player.marketValue * 1.1) / 100_000) * 100_000;
+  const isContractExpiring =
+    !player.loanedFromClubId && isContractExpiringSoon(player.contractEndDate, world.gameDate);
   const age = getAgeAtDate(player.dateOfBirth, world.gameDate);
   const clubCountry = playerClub?.countryId || 'ENG';
   const hgStatus = getPlayerHomegrownStatus(player, clubCountry);
@@ -360,7 +376,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               </button>
             )}
 
-            {isMyPlayer && onOfferPlayerToClubs && (
+            {isMyPlayer && !isLoanedInToMyClub && onOfferPlayerToClubs && (
               <button
                 type="button"
                 data-testid="offer-to-clubs-btn"
@@ -371,19 +387,42 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               </button>
             )}
 
-            <button
-              type="button"
-              data-testid="open-negotiation-stepper-btn"
-              onClick={() => {
-                setStepperStep(1);
-                setStepperOpen(true);
-              }}
-              className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer"
-            >
-              {isMyPlayer
-                ? tr('Renew Contract', 'ต่อสัญญาฉบับใหม่')
-                : tr('Make Transfer / Loan Offer', 'ยื่นข้อเสนอซื้อ / ยืมตัว')}
-            </button>
+            {isLoanedInToMyClub && onTriggerLoanOptionToBuy ? (
+              <button
+                type="button"
+                data-testid="header-trigger-option-to-buy-btn"
+                onClick={() => onTriggerLoanOptionToBuy(player.id)}
+                className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer whitespace-nowrap"
+              >
+                {tr(
+                  `Option-to-Buy (€${(effectiveLoanOptionFee / 1_000_000).toFixed(1)}M)`,
+                  `ซื้อขาด (€${(effectiveLoanOptionFee / 1_000_000).toFixed(1)}M)`
+                )}
+              </button>
+            ) : isLoanedOutFromMyClub && onRecallFromLoan ? (
+              <button
+                type="button"
+                data-testid="header-recall-loan-btn"
+                onClick={() => onRecallFromLoan(player.id)}
+                className="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs cursor-pointer whitespace-nowrap"
+              >
+                {tr('Recall from Loan', 'ดึงกลับจากยืมตัว')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                data-testid="open-negotiation-stepper-btn"
+                onClick={() => {
+                  setStepperStep(1);
+                  setStepperOpen(true);
+                }}
+                className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs cursor-pointer whitespace-nowrap"
+              >
+                {isMyPlayer
+                  ? tr('Renew Contract', 'ต่อสัญญาฉบับใหม่')
+                  : tr('Make Transfer / Loan Offer', 'ยื่นข้อเสนอซื้อ / ยืมตัว')}
+              </button>
+            )}
           </div>
         </div>
 
@@ -447,6 +486,31 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
                   </span>
                 )}
               </div>
+
+              {player.loanedFromClubId && (
+                <div
+                  data-testid="player-loan-banner"
+                  className="flex flex-wrap items-center gap-2 text-xs font-mono text-sky-300"
+                >
+                  <span className="font-semibold">
+                    {tr('ON LOAN FROM', 'ยืมตัวจาก')}{' '}
+                    <strong className="text-white">
+                      {loanParentClub?.name || player.loanedFromClubId} ({loanParentClub?.shortName || player.loanedFromClubId})
+                    </strong>
+                  </span>
+                  {player.loanOptionToBuyFee && player.loanOptionToBuyFee > 0 && (
+                    <>
+                      <span className="text-slate-500" aria-hidden="true">·</span>
+                      <span className="text-emerald-300 font-semibold tabular-nums">
+                        {tr(
+                          `Option to Buy: €${(player.loanOptionToBuyFee / 1_000_000).toFixed(1)}M`,
+                          `ออปชันซื้อขาด: €${(player.loanOptionToBuyFee / 1_000_000).toFixed(1)}M`
+                        )}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
                 {playerClub && (
@@ -1140,11 +1204,37 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               {tr('Current Contract Terms', 'รายละเอียดสัญญาปัจจุบัน')}
             </h2>
 
-            <div className="space-y-2 font-mono">
+            <div className="space-y-2 font-mono tabular-nums">
               <div className="flex justify-between py-2 border-b border-slate-800">
-                <span className="font-sans text-slate-400">{tr('Contracted Club', 'สโมสรต้นสังกัด')}</span>
-                <span className="font-sans font-semibold text-white">{playerClub?.name}</span>
+                <span className="font-sans text-slate-400">{tr('Current Club', 'สโมสรปัจจุบัน')}</span>
+                <span className="font-sans font-semibold text-white inline-flex items-center gap-1.5">
+                  {playerClub && <ClubBadge club={playerClub} size="xs" />}
+                  <span>{playerClub?.name}</span>
+                </span>
               </div>
+              {player.loanedFromClubId && (
+                <>
+                  <div className="flex justify-between py-2 border-b border-slate-800">
+                    <span className="font-sans text-slate-400">
+                      {tr('Parent Club (Loan Owner)', 'สโมสรต้นสังกัดที่แท้จริง')}
+                    </span>
+                    <span className="font-sans font-semibold text-sky-300 inline-flex items-center gap-1.5">
+                      {loanParentClub && <ClubBadge club={loanParentClub} size="xs" />}
+                      <span>{loanParentClub?.name || player.loanedFromClubId}</span>
+                    </span>
+                  </div>
+                  <div className="flex justify-between py-2 border-b border-slate-800">
+                    <span className="font-sans text-slate-400">
+                      {tr('Agreed Option-to-Buy Fee', 'ออปชันซื้อขาดที่ตกลงไว้')}
+                    </span>
+                    <span className="text-emerald-400 font-bold">
+                      {player.loanOptionToBuyFee && player.loanOptionToBuyFee > 0
+                        ? `€${(player.loanOptionToBuyFee / 1_000_000).toFixed(2)}M`
+                        : tr('Standard Loan (No Fixed Clause)', 'ยืมตัวทั่วไป (ไม่มีออปชันตายตัว)')}
+                    </span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between py-2 border-b border-slate-800">
                 <span className="font-sans text-slate-400">{tr('Weekly Wage', 'ค่าเหนื่อยต่อสัปดาห์')}</span>
                 <span className="text-emerald-400 font-bold">
@@ -1153,7 +1243,14 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               </div>
               <div className="flex justify-between py-2 border-b border-slate-800">
                 <span className="font-sans text-slate-400">{tr('Contract Expiry', 'วันหมดสัญญา')}</span>
-                <span className="text-white">{player.contractEndDate}</span>
+                <span className={isContractExpiring ? 'text-amber-400 font-bold' : 'text-white'}>
+                  {player.contractEndDate}
+                  {isContractExpiring && (
+                    <span className="ml-2 font-sans text-[11px] text-amber-300">
+                      {tr('(Expiring Soon)', '(สัญญาใกล้หมด)')}
+                    </span>
+                  )}
+                </span>
               </div>
               <div className="flex justify-between py-2 border-b border-slate-800">
                 <span className="font-sans text-slate-400">{tr('Squad Status', 'สถานะในทีม')}</span>
@@ -1169,7 +1266,7 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
               </div>
             </div>
 
-            {isMyPlayer && onUpdatePlayerTransferAndSquadStatus && (
+            {isMyPlayer && !isLoanedInToMyClub && onUpdatePlayerTransferAndSquadStatus && (
               <div className="pt-3 border-t border-slate-800 space-y-3">
                 <div className="font-semibold text-slate-300">
                   {tr('Transfer & Loan Listing Controls', 'ตั้งค่าสถานะขึ้นบัญชีขาย / ยืมตัว')}
@@ -1216,59 +1313,103 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
 
           <div className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 text-xs">
             <h2 className="text-base font-display font-bold text-white">
-              {isMyPlayer
-                ? tr('Contract Extension Negotiation', 'การเจรจาต่อสัญญาใหม่')
-                : tr('Transfer & Acquisition Options', 'ตัวเลือกการคว้าตัวเข้าสู่ทีม')}
+              {isLoanedInToMyClub
+                ? tr('Loan Agreement & Permanent Buyout', 'สัญญายืมตัวและการใช้ออปชันซื้อขาด')
+                : isLoanedOutFromMyClub
+                  ? tr('Loan Spell Management', 'จัดการนักเตะที่ปล่อยยืมตัว')
+                  : isMyPlayer
+                    ? tr('Contract Extension Negotiation', 'การเจรจาต่อสัญญาใหม่')
+                    : tr('Transfer & Acquisition Options', 'ตัวเลือกการคว้าตัวเข้าสู่ทีม')}
             </h2>
 
             <p className="text-slate-400 leading-relaxed">
-              {isMyPlayer
+              {isLoanedInToMyClub
                 ? tr(
-                    'Use the 3-Step Contract Negotiation Wizard to propose a new wage, contract duration, and signing bonus.',
-                    'ใช้หน้าต่างเจรจา 3 ขั้นตอนเพื่อเสนอค่าเหนื่อย ระยะเวลาสัญญา และโบนัสเซ็นสัญญาใหม่'
+                    `Currently on loan from ${loanParentClub?.name || player.loanedFromClubId}. You can trigger the agreed option-to-buy clause immediately to make the move permanent.`,
+                    `กำลังอยู่ในสัญญายืมตัวจาก ${loanParentClub?.name || player.loanedFromClubId} คุณสามารถกดใช้ออปชันซื้อขาดเพื่อดึงมาร่วมทีมแบบถาวรได้ทันที`
                   )
-                : tr(
-                    'Use the 3-Step Transfer Offer Wizard to structure upfront fees, installments, sell-on clauses, and personal contract terms.',
-                    'ใช้หน้าต่างเจรจาซื้อขาย 3 ขั้นตอนเพื่อกำหนดค่าตัวก้อนแรก ผ่อนชำระ ส่วนแบ่งขายต่อ และสัญญาส่วนตัว'
-                  )}
+                : isLoanedOutFromMyClub
+                  ? tr(
+                      `Currently out on loan at ${playerClub?.name}. Recall him to your first-team squad immediately if needed for cover.`,
+                      `กำลังถูกปล่อยยืมตัวอยู่ที่ ${playerClub?.name} คุณสามารถเรียกตัวกลับสู่ทีมชุดใหญ่ได้ทันทีหากต้องการใช้งาน`
+                    )
+                  : isMyPlayer
+                    ? tr(
+                        'Use the 3-Step Contract Negotiation Wizard to propose a new wage, contract duration, and signing bonus.',
+                        'ใช้หน้าต่างเจรจา 3 ขั้นตอนเพื่อเสนอค่าเหนื่อย ระยะเวลาสัญญา และโบนัสเซ็นสัญญาใหม่'
+                      )
+                    : tr(
+                        'Use the 3-Step Transfer Offer Wizard to structure upfront fees, installments, sell-on clauses, and personal contract terms.',
+                        'ใช้หน้าต่างเจรจาซื้อขาย 3 ขั้นตอนเพื่อกำหนดค่าตัวก้อนแรก ผ่อนชำระ ส่วนแบ่งขายต่อ และสัญญาส่วนตัว'
+                      )}
             </p>
 
             <div className="space-y-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setStepperStep(1);
-                  setStepperOpen(true);
-                }}
-                className="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer"
-              >
-                {isMyPlayer
-                  ? tr('Launch Contract Renewal Wizard (3 Steps)', 'เริ่มการเจรจาต่อสัญญา (3 ขั้นตอน)')
-                  : tr('Launch Transfer / Loan Offer Wizard (3 Steps)', 'เริ่มการยื่นข้อเสนอซื้อ / ยืมตัว (3 ขั้นตอน)')}
-              </button>
+              {isLoanedInToMyClub && onTriggerLoanOptionToBuy && (
+                <button
+                  type="button"
+                  data-testid="profile-trigger-option-to-buy-btn"
+                  onClick={() => onTriggerLoanOptionToBuy(player.id)}
+                  className="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg cursor-pointer transition-colors"
+                >
+                  {tr(
+                    `Trigger Option-to-Buy (€${(effectiveLoanOptionFee / 1_000_000).toFixed(1)}M)`,
+                    `ใช้ออปชันซื้อขาดถาวร (€${(effectiveLoanOptionFee / 1_000_000).toFixed(1)}M)`
+                  )}
+                </button>
+              )}
 
-              {!isMyPlayer && player.releaseClause && onActivateReleaseClause && (
+              {isLoanedOutFromMyClub && onRecallFromLoan && (
+                <button
+                  type="button"
+                  data-testid="profile-recall-loan-btn"
+                  onClick={() => onRecallFromLoan(player.id)}
+                  className="w-full py-2.5 px-4 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold rounded-lg cursor-pointer transition-colors"
+                >
+                  {tr(
+                    `Recall from Loan at ${playerClub?.shortName || 'Loan Club'}`,
+                    `เรียกตัวกลับจากสัญญายืมตัวที่ ${playerClub?.shortName || 'สโมสรยืมตัว'}`
+                  )}
+                </button>
+              )}
+
+              {!isLoanedInToMyClub && !isLoanedOutFromMyClub && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStepperStep(1);
+                    setStepperOpen(true);
+                  }}
+                  className="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg cursor-pointer"
+                >
+                  {isMyPlayer
+                    ? tr('Launch Contract Renewal Wizard (3 Steps)', 'เริ่มการเจรจาต่อสัญญา (3 ขั้นตอน)')
+                    : tr('Launch Transfer / Loan Offer Wizard (3 Steps)', 'เริ่มการยื่นข้อเสนอซื้อ / ยืมตัว (3 ขั้นตอน)')}
+                </button>
+              )}
+
+              {!isMyPlayer && !isLoanedOutFromMyClub && player.releaseClause && onActivateReleaseClause && (
                 <button
                   type="button"
                   onClick={() => onActivateReleaseClause(player.id, false)}
                   className="w-full py-2.5 px-4 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 border border-amber-500/40 font-semibold rounded-lg cursor-pointer transition-colors"
                 >
                   {tr(
-                    `⚡ Trigger Release Clause (€${(player.releaseClause / 1_000_000).toFixed(1)}M)`,
-                    `⚡ จ่ายค่าฉีกสัญญาทันที (€${(player.releaseClause / 1_000_000).toFixed(1)}M)`
+                    `Trigger Release Clause (€${(player.releaseClause / 1_000_000).toFixed(1)}M)`,
+                    `จ่ายค่าฉีกสัญญาทันที (€${(player.releaseClause / 1_000_000).toFixed(1)}M)`
                   )}
                 </button>
               )}
 
-              {isBosmanEligible && onSignBosmanFree && (
+              {isBosmanEligible && !isLoanedOutFromMyClub && onSignBosmanFree && (
                 <button
                   type="button"
                   onClick={() => onSignBosmanFree(player.id, proposedWage, proposedYears)}
                   className="w-full py-2.5 px-4 bg-sky-500/20 hover:bg-sky-500 text-sky-300 hover:text-slate-950 border border-sky-500/40 font-semibold rounded-lg cursor-pointer transition-colors"
                 >
                   {tr(
-                    '✍️ Sign on Bosman Free Transfer (€0 Fee)',
-                    '✍️ เซ็นสัญญาล่วงหน้าฟรีตามกฎ Bosman (€0 ค่าตัว)'
+                    'Sign on Bosman Free Transfer (€0 Fee)',
+                    'เซ็นสัญญาล่วงหน้าฟรีตามกฎ Bosman (€0 ค่าตัว)'
                   )}
                 </button>
               )}
@@ -1278,70 +1419,216 @@ export const PlayerProfilePage: React.FC<PlayerProfilePageProps> = ({
       )}
 
       {/* TAB 4: CAREER STATS & HISTORY */}
-      {activeTab === 'stats' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 font-mono tabular-nums text-xs">
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-slate-400 font-sans">{tr('Appearances', 'ลงสนาม')}</div>
-              <div className="text-xl font-bold text-white mt-1">{player.stats.appearances}</div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-slate-400 font-sans">{tr('Goals', 'ประตู')}</div>
-              <div className="text-xl font-bold text-emerald-400 mt-1">{player.stats.goals}</div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-slate-400 font-sans">{tr('Assists', 'แอสซิสต์')}</div>
-              <div className="text-xl font-bold text-sky-400 mt-1">{player.stats.assists}</div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-slate-400 font-sans">{tr('Clean Sheets', 'คลีนชีต')}</div>
-              <div className="text-xl font-bold text-white mt-1">{player.stats.cleanSheets}</div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-slate-400 font-sans">{tr('Cards (Y / R)', 'ใบเหลือง / แดง')}</div>
-              <div className="text-xl font-bold text-amber-300 mt-1">
-                {player.stats.yellowCards} / {player.stats.redCards}
-              </div>
-            </div>
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="text-slate-400 font-sans">{tr('Avg Rating', 'เรตติ้งเฉลี่ย')}</div>
-              <div className="text-xl font-bold text-emerald-400 mt-1">
-                {player.stats.appearances > 0 ? player.stats.averageRating.toFixed(2) : '-'}
-              </div>
-            </div>
-          </div>
+      {activeTab === 'stats' && (() => {
+        const archivedSeasons = player.careerSeasonHistory || [];
+        const totalApps =
+          player.stats.appearances + archivedSeasons.reduce((acc, s) => acc + s.appearances, 0);
+        const totalGoals =
+          player.stats.goals + archivedSeasons.reduce((acc, s) => acc + s.goals, 0);
+        const totalAssists =
+          player.stats.assists + archivedSeasons.reduce((acc, s) => acc + s.assists, 0);
+        const totalCleanSheets =
+          player.stats.cleanSheets + archivedSeasons.reduce((acc, s) => acc + s.cleanSheets, 0);
+        const weightedRatingSum =
+          player.stats.appearances * player.stats.averageRating +
+          archivedSeasons.reduce((acc, s) => acc + s.appearances * s.averageRating, 0);
+        const careerAvgRating = totalApps > 0 ? weightedRatingSum / totalApps : 0;
 
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <h3 className="text-sm font-display font-bold text-white mb-3">
-              {tr('Season-by-Season Career History', 'ประวัติสถิติการค้าแข้งรายฤดูกาล')}
-            </h3>
-            <table className="w-full text-left text-xs border-collapse font-mono tabular-nums">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400">
-                  <th className="py-2 px-3">{tr('Season', 'ฤดูกาล')}</th>
-                  <th className="py-2 px-3 font-sans">{tr('Club', 'สโมสร')}</th>
-                  <th className="py-2 px-3 text-right">{tr('Apps', 'นัด')}</th>
-                  <th className="py-2 px-3 text-right">{tr('Goals', 'ประตู')}</th>
-                  <th className="py-2 px-3 text-right">{tr('Assists', 'แอสซิสต์')}</th>
-                  <th className="py-2 px-3 text-right">{tr('Avg Rating', 'เรตติ้ง')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60">
-                <tr className="bg-emerald-950/20 text-white font-semibold">
-                  <td className="py-2 px-3">{world.currentSeason} (Current)</td>
-                  <td className="py-2 px-3 font-sans">{playerClub?.name}</td>
-                  <td className="py-2 px-3 text-right">{player.stats.appearances}</td>
-                  <td className="py-2 px-3 text-right text-emerald-400">{player.stats.goals}</td>
-                  <td className="py-2 px-3 text-right text-sky-400">{player.stats.assists}</td>
-                  <td className="py-2 px-3 text-right">
-                    {player.stats.appearances > 0 ? player.stats.averageRating.toFixed(2) : '-'}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 font-mono tabular-nums text-xs">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-slate-400 font-sans">{tr('Appearances', 'ลงสนาม')}</div>
+                <div className="text-xl font-bold text-white mt-1">{player.stats.appearances}</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-slate-400 font-sans">{tr('Goals', 'ประตู')}</div>
+                <div className="text-xl font-bold text-emerald-400 mt-1">{player.stats.goals}</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-slate-400 font-sans">{tr('Assists', 'แอสซิสต์')}</div>
+                <div className="text-xl font-bold text-sky-400 mt-1">{player.stats.assists}</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-slate-400 font-sans">{tr('Clean Sheets', 'คลีนชีต')}</div>
+                <div className="text-xl font-bold text-white mt-1">{player.stats.cleanSheets}</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-slate-400 font-sans">{tr('Cards (Y / R)', 'ใบเหลือง / แดง')}</div>
+                <div className="text-xl font-bold text-amber-300 mt-1">
+                  {player.stats.yellowCards} / {player.stats.redCards}
+                </div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="text-slate-400 font-sans">{tr('Avg Rating', 'เรตติ้งเฉลี่ย')}</div>
+                <div className="text-xl font-bold text-emerald-400 mt-1">
+                  {player.stats.appearances > 0 ? player.stats.averageRating.toFixed(2) : '-'}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5" data-testid="player-career-season-table">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-display font-bold text-white">
+                  {tr('Season-by-Season Career History', 'ประวัติสถิติการค้าแข้งรายฤดูกาล')}
+                </h3>
+                <span className="text-xs font-mono text-slate-400 tabular-nums">
+                  {archivedSeasons.length + 1} {tr('Season(s)', 'ฤดูกาล')}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse font-mono tabular-nums">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400">
+                      <th className="py-2 px-3">{tr('Season', 'ฤดูกาล')}</th>
+                      <th className="py-2 px-3 font-sans">{tr('Club', 'สโมสร')}</th>
+                      <th className="py-2 px-3 text-right">{tr('Apps', 'นัด')}</th>
+                      <th className="py-2 px-3 text-right">{tr('Goals', 'ประตู')}</th>
+                      <th className="py-2 px-3 text-right">{tr('Assists', 'แอสซิสต์')}</th>
+                      <th className="py-2 px-3 text-right">{tr('CS', 'คลีนชีต')}</th>
+                      <th className="py-2 px-3 text-right">{tr('Avg Rating', 'เรตติ้ง')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    <tr className="bg-emerald-950/20 text-white font-semibold">
+                      <td className="py-2.5 px-3">{world.currentSeason} ({tr('Current', 'ปัจจุบัน')})</td>
+                      <td className="py-2.5 px-3 font-sans">
+                        <span className="inline-flex items-center gap-1.5">
+                          {playerClub && <ClubBadge club={playerClub} size="xs" />}
+                          <span>{playerClub?.name}</span>
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">{player.stats.appearances}</td>
+                      <td className="py-2.5 px-3 text-right text-emerald-400">{player.stats.goals}</td>
+                      <td className="py-2.5 px-3 text-right text-sky-400">{player.stats.assists}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-200">{player.stats.cleanSheets}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        {player.stats.appearances > 0 ? player.stats.averageRating.toFixed(2) : '-'}
+                      </td>
+                    </tr>
+                    {archivedSeasons.map((rec, idx) => {
+                      const histClub = world.clubs[rec.clubId];
+                      return (
+                        <tr key={`${rec.season}_${idx}`} className="hover:bg-slate-800/40 text-slate-200">
+                          <td className="py-2.5 px-3 text-slate-300">{rec.season}</td>
+                          <td className="py-2.5 px-3 font-sans">
+                            <span className="inline-flex items-center gap-1.5">
+                              {histClub && <ClubBadge club={histClub} size="xs" />}
+                              <span>{histClub?.name || rec.clubName}</span>
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 text-right">{rec.appearances}</td>
+                          <td className="py-2.5 px-3 text-right text-emerald-400">{rec.goals}</td>
+                          <td className="py-2.5 px-3 text-right text-sky-400">{rec.assists}</td>
+                          <td className="py-2.5 px-3 text-right text-slate-300">{rec.cleanSheets}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            {rec.appearances > 0 ? rec.averageRating.toFixed(2) : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-700 bg-slate-950/80 text-white font-bold">
+                      <td className="py-2.5 px-3 font-sans" colSpan={2}>
+                        {tr('Career Totals', 'สถิติรวมตลอดอาชีพในเซฟ')}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">{totalApps}</td>
+                      <td className="py-2.5 px-3 text-right text-emerald-400">{totalGoals}</td>
+                      <td className="py-2.5 px-3 text-right text-sky-400">{totalAssists}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-200">{totalCleanSheets}</td>
+                      <td className="py-2.5 px-3 text-right text-amber-300">
+                        {totalApps > 0 ? careerAvgRating.toFixed(2) : '-'}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            {/* Stage 16 Phase 1: Transfer & Loan Career Trail */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5" data-testid="player-transfer-history-card">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-display font-bold text-white">
+                  {tr('Transfer & Loan Career Trail', 'ประวัติการย้ายสโมสรและสัญญายืมตัว')}
+                </h3>
+                <span className="text-xs font-mono text-slate-400 tabular-nums">
+                  {player.transferHistory.length} {tr('Recorded Moves', 'รายการย้ายทีม')}
+                </span>
+              </div>
+              {player.transferHistory.length === 0 ? (
+                <div className="text-xs text-slate-400 py-5 text-center bg-slate-950 rounded-lg border border-slate-800">
+                  {tr(
+                    `Club-trained or long-serving squad member at ${playerClub?.name} with no recent transfer moves.`,
+                    `นักเตะลูกหม้อหรือผู้เล่นที่ค้าแข้งอยู่กับ ${playerClub?.name} มาอย่างต่อเนื่อง`
+                  )}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse font-mono tabular-nums">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400">
+                        <th className="py-2 px-3">{tr('Date', 'วันที่')}</th>
+                        <th className="py-2 px-3 font-sans">{tr('From Club', 'จากสโมสร')}</th>
+                        <th className="py-2 px-3 font-sans">{tr('To Club', 'สู่สโมสร')}</th>
+                        <th className="py-2 px-3">{tr('Deal Type', 'ประเภทดีล')}</th>
+                        <th className="py-2 px-3 text-right">{tr('Transfer Fee', 'ค่าตัว')}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {player.transferHistory.map((th, idx) => {
+                        const fromClub = world.clubs[th.fromClubId];
+                        const toClub = world.clubs[th.toClubId];
+                        return (
+                          <tr key={`${th.date}_${th.fromClubId}_${th.toClubId}_${idx}`} className="hover:bg-slate-800/40">
+                            <td className="py-2.5 px-3 text-slate-300 whitespace-nowrap">{th.date}</td>
+                            <td className="py-2.5 px-3 font-sans text-slate-200">
+                              <span className="inline-flex items-center gap-1.5">
+                                {fromClub && <ClubBadge club={fromClub} size="xs" />}
+                                <span>{fromClub?.name || th.fromClubId}</span>
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 font-sans text-white font-semibold">
+                              <span className="inline-flex items-center gap-1.5">
+                                {toClub && <ClubBadge club={toClub} size="xs" />}
+                                <span>{toClub?.name || th.toClubId}</span>
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span
+                                className={`font-semibold text-[11px] ${
+                                  th.type === 'Transfer'
+                                    ? 'text-emerald-400'
+                                    : th.type === 'Loan'
+                                      ? 'text-sky-400'
+                                      : 'text-amber-300'
+                                }`}
+                              >
+                                {th.type === 'Transfer'
+                                  ? tr('Permanent Transfer', 'ย้ายถาวร')
+                                  : th.type === 'Loan'
+                                    ? tr('Season Loan', 'ยืมตัว')
+                                    : tr('Free Transfer', 'ย้ายฟรี')}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-bold text-emerald-400 whitespace-nowrap">
+                              {th.type === 'Loan'
+                                ? tr('Loan Deal', 'ยืมตัว')
+                                : th.fee > 0
+                                  ? `€${(th.fee / 1_000_000).toFixed(2)}M`
+                                  : tr('Free', 'ฟรี')}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* TAB 5: SCOUT REPORT */}
       {activeTab === 'scout' && (
