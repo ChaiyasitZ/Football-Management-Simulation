@@ -4052,7 +4052,11 @@ export function processEndOfSeasonRollover(
     relatedPlayerId: ballonDorWinner.id,
   });
 
-  // 2. Age 33+ physical regression, reset seasonal stats, clear suspensions, and recall loans
+  // 2. Stage 17 Phase 2: Age 33+ physical regression, AI Loan Option-to-Buy execution, Dynamic Valuation, seasonal archiving & stat reset
+  const updatedStaff: Record<string, StaffMember> = { ...state.staff };
+  const affectedClubIds = new Set<string>();
+  const aiBuyoutHeadlines: string[] = [];
+
   for (const [pid, p] of Object.entries(updatedPlayers)) {
     const age = getAgeAtDate(p.dateOfBirth, `${nextYear}-07-01`);
     let nextCa = p.currentAbility;
@@ -4070,8 +4074,137 @@ export function processEndOfSeasonRollover(
       };
     }
 
-    const nextClubId =
-      p.loanedFromClubId && updatedClubs[p.loanedFromClubId] ? p.loanedFromClubId : p.clubId;
+    // Stage 17 Phase 2A: AI Loan Option-to-Buy Execution vs Loan Recall
+    let nextClubId = p.clubId;
+    let nextContractEndDate = p.contractEndDate;
+    let nextTransferHistory = p.transferHistory;
+    let permanentBuyoutTriggered = false;
+
+    if (p.loanedFromClubId && updatedClubs[p.loanedFromClubId]) {
+      const hostClub = updatedClubs[p.clubId];
+      const parentClub = updatedClubs[p.loanedFromClubId];
+      const optFee = p.loanOptionToBuyFee || 0;
+      const goodLoanForm =
+        p.currentAbility >= (hostClub?.reputation || 75) * 1.72 ||
+        p.stats.goals + p.stats.assists >= 8 ||
+        (p.stats.appearances >= 5 && p.stats.averageRating >= 7.08);
+
+      if (
+        hostClub &&
+        parentClub &&
+        hostClub.id !== state.controlledClubId &&
+        optFee > 0 &&
+        hostClub.finances.transferBudget >= optFee &&
+        goodLoanForm
+      ) {
+        permanentBuyoutTriggered = true;
+        nextClubId = hostClub.id;
+        affectedClubIds.add(hostClub.id);
+        affectedClubIds.add(parentClub.id);
+
+        updatedClubs[hostClub.id] = {
+          ...hostClub,
+          finances: {
+            ...hostClub.finances,
+            balance: hostClub.finances.balance - optFee,
+            transferBudget: Math.max(0, hostClub.finances.transferBudget - optFee),
+          },
+        };
+        updatedClubs[parentClub.id] = {
+          ...parentClub,
+          finances: {
+            ...parentClub.finances,
+            balance: parentClub.finances.balance + optFee,
+            transferBudget: parentClub.finances.transferBudget + Math.round(optFee * 0.85),
+          },
+        };
+
+        const curEndYear = parseInt((p.contractEndDate || `${nextYear + 2}-06-30`).slice(0, 4), 10) || nextYear;
+        if (curEndYear < nextYear + 3) {
+          nextContractEndDate = `${nextYear + 4}-06-30`;
+        }
+        nextTransferHistory = [
+          {
+            date: `${nextYear}-07-01`,
+            fromClubId: parentClub.id,
+            toClubId: hostClub.id,
+            fee: optFee,
+            type: 'Transfer',
+          },
+          ...(p.transferHistory || []),
+        ];
+
+        const feeM = (optFee / 1_000_000).toFixed(1);
+        if (parentClub.id === state.controlledClubId) {
+          nextTransactions.unshift({
+            id: `tx_loan_buyout_${nextYear}_${p.id}`,
+            date: `${nextYear}-07-01`,
+            clubId: parentClub.id,
+            category: 'Player Sale',
+            amount: optFee,
+            description: trText(
+              `Loan Option-to-Buy Exercised: ${p.firstName} ${p.lastName} sold permanently to ${hostClub.name} (€${feeM}M)`,
+              `สโมสรคู่แข่งใช้ออปชันซื้อขาด: ขาย ${p.firstName} ${p.lastName} ให้ ${hostClub.name} ถาวร (€${feeM}M)`
+            ),
+            balanceAfter: updatedClubs[parentClub.id].finances.balance,
+          });
+          nextInbox.unshift({
+            id: `news_loan_buyout_${nextYear}_${p.id}`,
+            gameDate: `${nextYear}-07-15`,
+            category: 'Transfer',
+            title: trText(
+              `Loan Option-to-Buy Triggered: ${hostClub.name} Sign ${p.firstName} ${p.lastName} for €${feeM}M!`,
+              `ใช้ออปชันซื้อขาดสำเร็จ: ${hostClub.name} ซื้อ ${p.firstName} ${p.lastName} ถาวร €${feeM}M!`
+            ),
+            body: trText(
+              `${hostClub.name} have activated the €${feeM}M permanent option-to-buy clause for ${p.firstName} ${p.lastName} following an impressive loan spell. €${((optFee * 0.85) / 1_000_000).toFixed(1)}M has been added to your transfer budget.`,
+              `${hostClub.name} ตัดสินใจกดใช้ออปชันซื้อขาด ${p.firstName} ${p.lastName} มูลค่า €${feeM}M หลังโชว์ฟอร์มยอดเยี่ยมระหว่างยืมตัว โดยงบเสริมทัพของสโมสรเพิ่มขึ้น +€${((optFee * 0.85) / 1_000_000).toFixed(1)}M ทันที`
+            ),
+            isRead: false,
+            isImportant: true,
+            relatedPlayerId: p.id,
+            relatedClubId: hostClub.id,
+          });
+        } else if (optFee >= 20_000_000 && aiBuyoutHeadlines.length < 4) {
+          aiBuyoutHeadlines.push(
+            `${p.firstName} ${p.lastName} (${parentClub.shortName} → ${hostClub.name}, €${feeM}M)`
+          );
+        }
+      } else {
+        nextClubId = parentClub.id;
+        affectedClubIds.add(p.clubId);
+        affectedClubIds.add(parentClub.id);
+      }
+    }
+
+    // Stage 17 Phase 2B: Dynamic Player Valuation based on new CA, age & seasonal form
+    const destClub = updatedClubs[nextClubId] || updatedClubs[p.clubId];
+    let formMultiplier = 1.0;
+    if (p.stats.appearances >= 5) {
+      const ratingDelta = ((p.stats.averageRating || 6.85) - 6.85) * 0.24;
+      const gaBonus = Math.min(0.18, p.stats.goals * 0.009 + p.stats.assists * 0.006);
+      const csBonus =
+        p.positions.includes('GK') || p.positions.includes('DC')
+          ? Math.min(0.1, p.stats.cleanSheets * 0.007)
+          : 0;
+      formMultiplier = Math.max(0.88, Math.min(1.24, 1.0 + ratingDelta + gaBonus + csBonus));
+    } else if (age >= 32) {
+      formMultiplier = 0.92;
+    }
+    const { marketValue: baseVal } = calculatePlayerValuation(
+      nextCa,
+      p.potentialAbility,
+      age,
+      destClub?.reputation || 75
+    );
+    const nextMarketValue = Math.max(
+      250_000,
+      Math.round((baseVal * formMultiplier) / 50_000) * 50_000
+    );
+    const nextAskingPrice = Math.max(
+      300_000,
+      Math.round((nextMarketValue * (p.transferListed ? 0.92 : 1.25)) / 50_000) * 50_000
+    );
 
     // Stage 16 Phase 3: Archive player's seasonal stats into careerSeasonHistory before resetting
     const shouldArchiveSeason =
@@ -4103,8 +4236,14 @@ export function processEndOfSeasonRollover(
       clubId: nextClubId,
       loanedFromClubId: null,
       loanOptionToBuyFee: null,
+      contractEndDate: nextContractEndDate,
+      transferHistory: nextTransferHistory,
       currentAbility: nextCa,
       attributes: nextAttrs,
+      marketValue: nextMarketValue,
+      askingPrice: nextAskingPrice,
+      transferListed: permanentBuyoutTriggered ? false : p.transferListed,
+      loanListed: false,
       fitness: 90,
       matchSharpness: 64,
       suspensionMatchesRemaining: 0,
@@ -4122,6 +4261,437 @@ export function processEndOfSeasonRollover(
         manOfTheMatch: 0,
       },
     };
+  }
+
+  if (aiBuyoutHeadlines.length > 0) {
+    nextInbox.unshift({
+      id: `news_ai_loan_buyouts_${nextYear}`,
+      gameDate: `${nextYear}-07-15`,
+      category: 'Transfer',
+      title: trText(
+        `Summer Loan Buyouts: ${aiBuyoutHeadlines.length} Permanent Clauses Activated Across Europe`,
+        `สรุปดีลซื้อขาดสัญญายืมตัวซัมเมอร์ ${nextYear}: ปิดดีลถาวร ${aiBuyoutHeadlines.length} ราย`
+      ),
+      body: trText(
+        `Clubs across world football have exercised permanent option-to-buy clauses after standout loan campaigns: ${aiBuyoutHeadlines.join(' · ')}.`,
+        `หลายสโมสรตัดสินใจใช้ออปชันซื้อขาดนักเตะที่ทำผลงานได้ดีหลังจบฤดูกาลยืมตัว: ${aiBuyoutHeadlines.join(' · ')}`
+      ),
+      isRead: false,
+    });
+  }
+
+  // 2a. Stage 17 Phase 3: End-of-Season Contract Expiry & Bosman Free-Transfer Resolution
+  const lifecycleRng = new SeededRNG(state.randomSeed + nextYear * 37 + 17);
+  const squadCountsByClub: Record<string, number> = {};
+  for (const p of Object.values(updatedPlayers)) {
+    squadCountsByClub[p.clubId] = (squadCountsByClub[p.clubId] || 0) + 1;
+  }
+  const aiClubList = Object.values(updatedClubs).filter((c) => c.id !== state.controlledClubId);
+  const userBosmanDepartures: string[] = [];
+  const userAutoRenewals: string[] = [];
+
+  for (const [pid, p] of Object.entries(updatedPlayers)) {
+    const endYear = parseInt((p.contractEndDate || `${nextYear + 2}-06-30`).slice(0, 4), 10) || nextYear + 2;
+    if (endYear > nextYear) continue;
+
+    const club = updatedClubs[p.clubId];
+    const clubSquadSize = squadCountsByClub[p.clubId] || 20;
+    const age = getAgeAtDate(p.dateOfBirth, `${nextYear}-07-01`);
+    const lastSeasonRec = p.careerSeasonHistory?.[0];
+    const lastSeasonApps =
+      lastSeasonRec && lastSeasonRec.season === state.currentSeason ? lastSeasonRec.appearances : 0;
+
+    if (p.clubId === state.controlledClubId) {
+      const isFringePlayer =
+        lastSeasonApps < 10 &&
+        p.currentAbility < (club?.reputation || 75) * 1.62 &&
+        p.squadStatus !== 'Star Player' &&
+        p.squadStatus !== 'Important Player' &&
+        p.squadStatus !== 'Regular Starter';
+      if (isFringePlayer && clubSquadSize > 19) {
+        const destCandidates = aiClubList.filter(
+          (c) =>
+            Math.abs(c.reputation - (club?.reputation || 75)) <= 18 &&
+            (squadCountsByClub[c.id] || 0) < 28
+        );
+        const destClub =
+          destCandidates.length > 0
+            ? destCandidates[lifecycleRng.int(0, destCandidates.length - 1)]
+            : null;
+        if (destClub) {
+          squadCountsByClub[p.clubId] = Math.max(0, clubSquadSize - 1);
+          squadCountsByClub[destClub.id] = (squadCountsByClub[destClub.id] || 0) + 1;
+          affectedClubIds.add(p.clubId);
+          affectedClubIds.add(destClub.id);
+          updatedPlayers[pid] = {
+            ...p,
+            clubId: destClub.id,
+            contractEndDate: `${nextYear + 2}-06-30`,
+            transferListed: false,
+            loanListed: false,
+            transferHistory: [
+              {
+                date: `${nextYear}-07-01`,
+                fromClubId: p.clubId,
+                toClubId: destClub.id,
+                fee: 0,
+                type: 'Free',
+              },
+              ...(p.transferHistory || []),
+            ],
+          };
+          userBosmanDepartures.push(`${p.firstName} ${p.lastName} → ${destClub.name}`);
+          continue;
+        }
+      }
+      // Core player or squad depth needed: board triggers automatic 1-year extension option
+      updatedPlayers[pid] = {
+        ...p,
+        contractEndDate: `${nextYear + 1}-06-30`,
+      };
+      userAutoRenewals.push(`${p.firstName} ${p.lastName}`);
+      continue;
+    }
+
+    // AI Club Contract Expiry Decision
+    const keepAtAiClub =
+      p.currentAbility >= (club?.reputation || 75) * 1.66 || age <= 24 || clubSquadSize <= 19;
+    if (keepAtAiClub) {
+      const extYears = age <= 24 ? 4 : age <= 29 ? 3 : 2;
+      updatedPlayers[pid] = {
+        ...p,
+        contractEndDate: `${nextYear + extYears}-06-30`,
+      };
+    } else {
+      const destCandidates = aiClubList.filter(
+        (c) =>
+          c.id !== p.clubId &&
+          Math.abs(c.reputation - (club?.reputation || 70)) <= 15 &&
+          (squadCountsByClub[c.id] || 0) < 27
+      );
+      const destClub =
+        destCandidates.length > 0
+          ? destCandidates[lifecycleRng.int(0, destCandidates.length - 1)]
+          : null;
+      if (destClub) {
+        squadCountsByClub[p.clubId] = Math.max(0, clubSquadSize - 1);
+        squadCountsByClub[destClub.id] = (squadCountsByClub[destClub.id] || 0) + 1;
+        affectedClubIds.add(p.clubId);
+        affectedClubIds.add(destClub.id);
+        updatedPlayers[pid] = {
+          ...p,
+          clubId: destClub.id,
+          contractEndDate: `${nextYear + 2}-06-30`,
+          transferListed: false,
+          loanListed: false,
+          transferHistory: [
+            {
+              date: `${nextYear}-07-01`,
+              fromClubId: p.clubId,
+              toClubId: destClub.id,
+              fee: 0,
+              type: 'Free',
+            },
+            ...(p.transferHistory || []),
+          ],
+        };
+      } else {
+        updatedPlayers[pid] = {
+          ...p,
+          contractEndDate: `${nextYear + 1}-06-30`,
+        };
+      }
+    }
+  }
+
+  if (userBosmanDepartures.length > 0) {
+    nextInbox.unshift({
+      id: `news_bosman_departures_${nextYear}`,
+      gameDate: `${nextYear}-07-15`,
+      category: 'Transfer',
+      title: trText(
+        `Bosman Free Departures: ${userBosmanDepartures.length} Out-of-Contract Player(s) Left the Club`,
+        `ย้ายออกฟรีตามกฎบอสแมน: นักเตะหมดสัญญา ${userBosmanDepartures.length} รายย้ายออกจากสโมสร`
+      ),
+      body: trText(
+        `Following the expiry of their contracts on 30 June ${nextYear}, the following fringe players departed on free transfers: ${userBosmanDepartures.join(', ')}.`,
+        `หลังหมดสัญญาวันที่ 30 มิ.ย. ${nextYear} นักเตะสำรองที่ไม่ได้ต่อสัญญาได้ย้ายทีมแบบไร้ค่าตัวแล้ว: ${userBosmanDepartures.join(', ')}`
+      ),
+      isRead: false,
+      relatedClubId: state.controlledClubId,
+    });
+  }
+  if (userAutoRenewals.length > 0) {
+    nextInbox.unshift({
+      id: `news_board_option_renew_${nextYear}`,
+      gameDate: `${nextYear}-07-15`,
+      category: 'Board',
+      title: trText(
+        `Board Exercised 1-Year Extension Option for ${userAutoRenewals.length} Expiring Player(s)`,
+        `บอร์ดบริหารใช้ออปชันขยายสัญญาอัตโนมัติ 1 ปีให้ผู้เล่น ${userAutoRenewals.length} ราย`
+      ),
+      body: trText(
+        `To protect squad value and prevent key losses on free transfers, the board triggered 1-year contract extension clauses until June ${nextYear + 1} for: ${userAutoRenewals.slice(0, 6).join(', ')}.`,
+        `เพื่อป้องกันการเสียตัวหลักไปแบบไร้ค่าตัว บอร์ดบริหารได้ใช้ออปชันขยายสัญญาอัตโนมัติถึงปี ${nextYear + 1} ให้กับ: ${userAutoRenewals.slice(0, 6).join(', ')}`
+      ),
+      isRead: false,
+      relatedClubId: state.controlledClubId,
+    });
+  }
+
+  // 2a-ii. Stage 17 Phase 4: Age 37+ Veteran Retirement, Player-to-Staff Transition & Regen Replacement
+  const retirementCandidates = Object.values(updatedPlayers)
+    .map((p) => ({ player: p, age: getAgeAtDate(p.dateOfBirth, `${nextYear}-07-01`) }))
+    .filter(({ player, age }) => age >= 37 || (age >= 36 && player.currentAbility <= 118))
+    .sort((a, b) => b.age - a.age || b.player.currentAbility - a.player.currentAbility);
+
+  let retiredCount = 0;
+  const maxSeasonalRetirements = 90;
+  const notableRetirements: string[] = [];
+  const newLegendCoaches: string[] = [];
+
+  for (const { player: p, age } of retirementCandidates) {
+    const mustRetire = age >= 40 || (age >= 36 && p.currentAbility <= 118);
+    if (!mustRetire && retiredCount >= maxSeasonalRetirements) continue;
+    const shouldRetire =
+      mustRetire ||
+      (age >= 38 ? lifecycleRng.chance(0.65) : lifecycleRng.chance(0.35));
+    if (!shouldRetire) continue;
+
+    retiredCount++;
+    delete updatedPlayers[p.id];
+    affectedClubIds.add(p.clubId);
+
+    const club = updatedClubs[p.clubId];
+    if (p.currentAbility >= 145 || p.clubId === state.controlledClubId) {
+      notableRetirements.push(`${p.firstName} ${p.lastName} (${club?.shortName || 'Club'}, ${age})`);
+    }
+
+    // Player-to-Staff Transition for legends & natural leaders
+    if (p.currentAbility >= 145 || p.attributes.mental.leadership >= 15) {
+      const staffRole: StaffMember['role'] =
+        p.attributes.mental.leadership >= 15 || p.currentAbility >= 160
+          ? 'Assistant Manager'
+          : 'Youth Coach';
+      const staffId = `stf_ret_${nextYear}_${p.id}`;
+      const tacKnow = Math.min(
+        20,
+        Math.max(12, Math.round((p.attributes.mental.decisions + p.attributes.mental.vision) / 2))
+      );
+      const manMgmt = Math.min(20, Math.max(12, p.attributes.mental.leadership));
+      const motiv = Math.min(20, Math.max(12, p.attributes.mental.determination));
+      const techCoach = Math.min(20, Math.max(11, p.attributes.technical.technique));
+
+      updatedStaff[staffId] = {
+        id: staffId,
+        name: `${p.firstName} ${p.lastName}`,
+        nationality: p.nationality,
+        age,
+        role: staffRole,
+        clubId: null,
+        wagePerWeek: Math.max(
+          6_000,
+          Math.min(35_000, Math.round((p.currentAbility * 140) / 500) * 500)
+        ),
+        contractEndDate: `${nextYear + 2}-06-30`,
+        attributes: {
+          coachingTechnical: techCoach,
+          coachingTactical: tacKnow,
+          fitnessCoaching: Math.min(18, Math.max(10, p.attributes.physical.naturalFitness)),
+          judgingAbility: Math.min(19, Math.max(11, tacKnow)),
+          judgingPotential: Math.min(
+            19,
+            Math.max(11, Math.round((tacKnow + p.attributes.mental.vision) / 2))
+          ),
+          motivating: motiv,
+          manManagement: manMgmt,
+          tacticalKnowledge: tacKnow,
+          medical: 8,
+          adaptability: Math.min(18, Math.max(11, p.professionalism)),
+        },
+      };
+      newLegendCoaches.push(`${p.firstName} ${p.lastName} (${staffRole})`);
+    }
+
+    // Spawn 16-17 Year-Old Regen Replacement at the exact same club & position
+    if (club) {
+      const pool = NATIONALITY_POOLS[club.countryId] || NATIONALITY_POOLS.ENG;
+      const regenAge = lifecycleRng.chance(0.55) ? 16 : 17;
+      const birthYear = nextYear - regenAge;
+      const birthMonth = String(lifecycleRng.int(1, 12)).padStart(2, '0');
+      const birthDay = String(lifecycleRng.int(1, 28)).padStart(2, '0');
+      const primaryPos = p.positions[0] || 'MC';
+      const regenRole = lifecycleRng.pick(ROLES_BY_POSITION[primaryPos] || ROLES_BY_POSITION.MC);
+      const regenCa = lifecycleRng.int(84, 114);
+      const regenPa = Math.min(
+        196,
+        Math.max(132, Math.round(club.reputation * 1.65 + lifecycleRng.int(-12, 32)))
+      );
+      const { marketValue: regenVal, wagePerWeek: regenWage } = calculatePlayerValuation(
+        regenCa,
+        regenPa,
+        regenAge,
+        club.reputation
+      );
+      const base = Math.max(6, Math.round(regenCa / 10));
+      const regenId = `plr_regen_${nextYear}_${club.id}_${retiredCount}`;
+
+      updatedPlayers[regenId] = {
+        id: regenId,
+        firstName: lifecycleRng.pick(pool.firstNames),
+        lastName: lifecycleRng.pick(pool.lastNames),
+        dateOfBirth: `${birthYear}-${birthMonth}-${birthDay}`,
+        nationality: club.countryId,
+        nationalityCode: club.countryId,
+        heightCm: primaryPos === 'GK' ? lifecycleRng.int(184, 196) : lifecycleRng.int(170, 190),
+        weightKg: lifecycleRng.int(63, 82),
+        preferredFoot: lifecycleRng.chance(0.76) ? 'Right' : 'Left',
+        positions: [primaryPos],
+        preferredRole: regenRole,
+        currentAbility: regenCa,
+        potentialAbility: regenPa,
+        potentialRange: [Math.max(115, regenPa - 10), Math.min(200, regenPa + 6)],
+        attributes: {
+          technical: {
+            finishing: Math.min(20, Math.max(4, base + lifecycleRng.int(-2, 3))),
+            firstTouch: Math.min(20, Math.max(5, base + lifecycleRng.int(0, 3))),
+            passing: Math.min(20, Math.max(5, base + lifecycleRng.int(0, 3))),
+            technique: Math.min(20, Math.max(5, base + lifecycleRng.int(0, 3))),
+            dribbling: Math.min(20, Math.max(5, base + lifecycleRng.int(-1, 3))),
+            crossing: Math.min(20, Math.max(4, base + lifecycleRng.int(-2, 2))),
+            heading: Math.min(20, Math.max(4, base + lifecycleRng.int(-2, 2))),
+            tackling: Math.min(20, Math.max(4, base + lifecycleRng.int(-2, 2))),
+            marking: Math.min(20, Math.max(4, base + lifecycleRng.int(-2, 2))),
+            longShots: Math.min(20, Math.max(4, base + lifecycleRng.int(-2, 2))),
+            penaltyTaking: base,
+            freeKickTaking: base,
+            corners: base,
+            ballControl: Math.min(20, Math.max(5, base + 1)),
+          },
+          mental: {
+            decisions: Math.min(20, Math.max(5, base + 1)),
+            vision: Math.min(20, Math.max(5, base + 1)),
+            composure: Math.min(20, Math.max(5, base)),
+            concentration: Math.min(20, Math.max(5, base)),
+            positioning: Math.min(20, Math.max(5, base)),
+            anticipation: Math.min(20, Math.max(5, base + 1)),
+            workRate: Math.min(20, Math.max(6, base + 2)),
+            teamwork: Math.min(20, Math.max(6, base + 2)),
+            leadership: lifecycleRng.int(7, 13),
+            determination: lifecycleRng.int(12, 18),
+            aggression: lifecycleRng.int(8, 14),
+            flair: lifecycleRng.int(9, 17),
+            offTheBall: Math.min(20, Math.max(5, base + 1)),
+            bravery: lifecycleRng.int(9, 15),
+            consistency: Math.min(20, Math.max(6, base + 1)),
+          },
+          physical: {
+            acceleration: Math.min(20, Math.max(7, base + 3)),
+            pace: Math.min(20, Math.max(7, base + 3)),
+            stamina: Math.min(20, Math.max(7, base + 2)),
+            strength: Math.min(20, Math.max(5, base - 1)),
+            agility: Math.min(20, Math.max(7, base + 2)),
+            balance: Math.min(20, Math.max(6, base + 1)),
+            jumpingReach: Math.min(20, Math.max(6, base)),
+            naturalFitness: lifecycleRng.int(13, 18),
+          },
+        },
+        fitness: 96,
+        matchSharpness: 78,
+        morale: 90,
+        tacticalFamiliarity: 76,
+        squadStatus: 'Youth',
+        satisfaction: 92,
+        personality: lifecycleRng.pick(['Ambitious', 'Professional', 'Resolute', 'Balanced']),
+        professionalism: lifecycleRng.int(12, 18),
+        clubId: club.id,
+        isHomegrown: true,
+        homegrownStatus: 'HGC',
+        shirtNumber: p.shirtNumber || lifecycleRng.int(32, 99),
+        loanedFromClubId: null,
+        loanOptionToBuyFee: null,
+        wagePerWeek: Math.min(5_000, regenWage),
+        contractEndDate: `${nextYear + 4}-06-30`,
+        goalBonus: 500,
+        marketValue: regenVal,
+        askingPrice: Math.round(regenVal * 1.4),
+        transferListed: false,
+        loanListed: false,
+        injuryStatus: { isInjured: false, daysRemaining: 0 },
+        individualTraining: {
+          attributeFocus: 'Balanced',
+          roleFocus: regenRole,
+          intensity: 'Medium',
+        },
+        stats: {
+          appearances: 0,
+          starts: 0,
+          goals: 0,
+          assists: 0,
+          yellowCards: 0,
+          redCards: 0,
+          cleanSheets: 0,
+          minutesPlayed: 0,
+          averageRating: 0,
+          manOfTheMatch: 0,
+        },
+        careerSeasonHistory: [],
+        developmentHistory: [{ date: `${nextYear}-07-15`, ca: regenCa, keyAttributeChanges: [] }],
+        transferHistory: [],
+      };
+    }
+  }
+
+  // Re-pick tactics for any clubs whose roster changed (loan buyouts/returns, Bosman moves, retirements)
+  if (affectedClubIds.size > 0) {
+    const playersByClub: Record<string, Player[]> = {};
+    for (const pl of Object.values(updatedPlayers)) {
+      if (!affectedClubIds.has(pl.clubId)) continue;
+      if (!playersByClub[pl.clubId]) playersByClub[pl.clubId] = [];
+      playersByClub[pl.clubId].push(pl);
+    }
+    for (const cid of affectedClubIds) {
+      const club = updatedClubs[cid];
+      const squad = playersByClub[cid] || [];
+      if (club && squad.length >= 11) {
+        updatedClubs[cid] = {
+          ...club,
+          primaryTactic: autoPickLineup(
+            club.primaryTactic.formation,
+            squad,
+            club.primaryTactic.instructions,
+            club.primaryTactic.id,
+            club.primaryTactic.name
+          ),
+        };
+      }
+    }
+  }
+
+  if (notableRetirements.length > 0 || newLegendCoaches.length > 0) {
+    nextInbox.unshift({
+      id: `news_retirements_${nextYear}`,
+      gameDate: `${nextYear}-07-15`,
+      category: 'Media',
+      title: trText(
+        `End of an Era (${nextYear}): ${retiredCount} Veterans Hang Up Their Boots — ${newLegendCoaches.length} Enter Coaching!`,
+        `ปิดตำนานแข้งเก๋า (${nextYear}): นักเตะอาวุโส ${retiredCount} รายประกาศแขวนสตั๊ด — ${newLegendCoaches.length} รายผันตัวเป็นโค้ช!`
+      ),
+      body: trText(
+        `Notable retirements: ${notableRetirements.slice(0, 6).join(', ') || 'Several senior professionals'}. ${
+          newLegendCoaches.length > 0
+            ? `Now available as Free Agent Staff to hire: ${newLegendCoaches.slice(0, 6).join(', ')}.`
+            : ''
+        } Academies across the world have promoted 16–17 year-old regens to replenish club squads.`,
+        `ตำนานที่อำลาสนาม: ${notableRetirements.slice(0, 6).join(', ') || 'แข้งอาวุโสหลายราย'} ${
+          newLegendCoaches.length > 0
+            ? `| ผันตัวเป็นโค้ชว่างงานพร้อมให้ดึงร่วมทีมในหน้า Staff: ${newLegendCoaches.slice(0, 6).join(', ')}`
+            : ''
+        } พร้อมดันดาวรุ่ง Regen อายุ 16–17 ปีทดแทนในสโมสรเดิมครบทุกทีม`
+      ),
+      isRead: false,
+      isImportant: true,
+    });
   }
 
   // 2b. Multi-Tier Promotion & Relegation Swaps (including Promotion Playoff Final Winners!)
@@ -4374,6 +4944,7 @@ export function processEndOfSeasonRollover(
     manager: updatedManager,
     clubs: updatedClubs,
     players: updatedPlayers,
+    staff: updatedStaff,
     standings: nextStandings,
     uefaStandings: nextUefaStandings,
     uefaPots: nextUefaPots,
@@ -4531,6 +5102,7 @@ export interface PlayerDelta {
   playInReserves?: boolean;
   individualTraining?: Player['individualTraining'];
   askingPrice?: number;
+  marketValue?: number;
   loanedFromClubId?: string | null;
   loanOptionToBuyFee?: number | null;
   careerSeasonHistory?: PlayerCareerSeasonRecord[];
@@ -4550,6 +5122,7 @@ export interface CareerStateMap {
   completedFixtures: Record<string, Fixture | CompactFixtureScore>;
   modifiedPlayers: Record<string, Player>;
   playerDiffs: Record<string, PlayerDelta>;
+  retiredPlayerIds?: string[];
   transferOffers: TransferOffer[];
   shortlistPlayerIds: string[];
   scoutAssignments: ScoutAssignment[];
@@ -4568,6 +5141,19 @@ export interface CareerStateMap {
   lastSquadMeetingDate?: string;
   scheduledExtraFixtures?: Fixture[];
   uefaPots?: Record<UefaCompetitionId, string[] | string[][]>;
+  clubMetaDiffs?: Record<
+    string,
+    {
+      leagueId: LeagueId;
+      reputation: number;
+      pointsDeduction?: number;
+      transferBudget: number;
+      balance: number;
+      trainingFacilities: number;
+      youthFacilities: number;
+      aiManagerName?: string;
+    }
+  >;
 }
 
 export interface CareerSaveDocument {
@@ -4726,25 +5312,40 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     compacted.customClubConfig || null
   );
 
-  // 1. Store controlledClub + clubs whose leagueId, pointsDeduction, or facilities changed
+  // 1. Store full Club for controlledClub (and any custom/non-baseline club); compact meta diffs for other modified clubs
   const modifiedClubs: Record<string, Club> = {};
+  const clubMetaDiffs: NonNullable<CareerStateMap['clubMetaDiffs']> = {};
   if (userClub) {
     modifiedClubs[controlledId] = userClub;
   }
-  let extraClubsCount = 0;
+  let extraClubDiffCount = 0;
   for (const [id, club] of Object.entries(compacted.clubs)) {
     if (id === controlledId) continue;
     const baseClub = baseline.clubs[id];
-    const leagueChanged = !baseClub || club.leagueId !== baseClub.leagueId;
-    const deductionChanged = (club.pointsDeduction || 0) !== (baseClub?.pointsDeduction || 0);
-    const facilityChanged =
-      !baseClub ||
+    if (!baseClub) {
+      modifiedClubs[id] = club;
+      continue;
+    }
+    const leagueChanged = club.leagueId !== baseClub.leagueId;
+    const deductionChanged = (club.pointsDeduction || 0) !== (baseClub.pointsDeduction || 0);
+    const managerChanged = club.aiManager.name !== baseClub.aiManager.name;
+    const facilityOrBudgetChanged =
       club.trainingFacilities !== baseClub.trainingFacilities ||
       club.youthFacilities !== baseClub.youthFacilities ||
+      club.reputation !== baseClub.reputation ||
       club.finances.transferBudget !== baseClub.finances.transferBudget;
-    if (leagueChanged || deductionChanged || (facilityChanged && extraClubsCount < 10)) {
-      modifiedClubs[id] = club;
-      if (!leagueChanged && !deductionChanged) extraClubsCount++;
+    if (leagueChanged || deductionChanged || managerChanged || (facilityOrBudgetChanged && extraClubDiffCount < 45)) {
+      clubMetaDiffs[id] = {
+        leagueId: club.leagueId,
+        reputation: club.reputation,
+        pointsDeduction: club.pointsDeduction || 0,
+        transferBudget: club.finances.transferBudget,
+        balance: club.finances.balance,
+        trainingFacilities: club.trainingFacilities,
+        youthFacilities: club.youthFacilities,
+        aiManagerName: managerChanged ? club.aiManager.name : undefined,
+      };
+      if (!leagueChanged && !deductionChanged && !managerChanged) extraClubDiffCount++;
     }
   }
 
@@ -4826,13 +5427,14 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
       continue;
     }
 
-    if (!basePlayer || p.clubId !== basePlayer.clubId) {
-      if (Object.keys(modifiedPlayers).length < 75) {
+    if (!basePlayer) {
+      if (Object.keys(modifiedPlayers).length < 52) {
         modifiedPlayers[id] = p;
       }
       continue;
     }
 
+    const movedClub = p.clubId !== basePlayer.clubId;
     const isTracked = shortlistSet.has(id) || Boolean(compacted.scoutReports[id]);
     const inUserLeague = pLeagueId === userLeagueId;
     const baseArchiveLen = basePlayer.careerSeasonHistory?.length || 0;
@@ -4841,6 +5443,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
       curArchiveLen !== baseArchiveLen ||
       (curArchiveLen > 0 && p.careerSeasonHistory![0]?.season !== basePlayer.careerSeasonHistory?.[0]?.season);
     const hasNotableChange =
+      movedClub ||
       p.stats.goals > 0 ||
       p.stats.assists > 0 ||
       hasCareerArchiveChanged ||
@@ -4855,6 +5458,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
 
     if (!hasNotableChange && !isTracked) continue;
     if (
+      !movedClub &&
       !inUserLeague &&
       !isTracked &&
       !hasCareerArchiveChanged &&
@@ -4868,6 +5472,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     }
 
     const priority =
+      (movedClub ? 1500 : 0) +
       (isTracked ? 1000 : 0) +
       (inUserLeague ? 500 : 0) +
       (hasCareerArchiveChanged ? 250 : 0) +
@@ -4897,6 +5502,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
         playInReserves: p.playInReserves,
         individualTraining: p.individualTraining,
         askingPrice: p.askingPrice,
+        marketValue: p.marketValue,
         loanedFromClubId: p.loanedFromClubId,
         loanOptionToBuyFee: p.loanOptionToBuyFee,
         careerSeasonHistory: hasCareerArchiveChanged && p.careerSeasonHistory
@@ -4910,6 +5516,15 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
   const playerDiffs: Record<string, PlayerDelta> = {};
   for (const item of diffCandidates.slice(0, 150)) {
     playerDiffs[item.id] = item.delta;
+  }
+
+  // Track retired baseline players so they stay retired upon Cloud Save rehydration
+  const retiredPlayerIds: string[] = [];
+  for (const basePid of Object.keys(baseline.players)) {
+    if (!compacted.players[basePid]) {
+      retiredPlayerIds.push(basePid);
+      if (retiredPlayerIds.length >= 160) break;
+    }
   }
 
   // Cap scoutReports to 35 entries
@@ -4934,6 +5549,7 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     completedFixtures,
     modifiedPlayers,
     playerDiffs,
+    retiredPlayerIds: retiredPlayerIds.length > 0 ? retiredPlayerIds : undefined,
     transferOffers: compacted.transferOffers.slice(0, 25),
     shortlistPlayerIds: compacted.shortlistPlayerIds.slice(0, 40),
     scoutAssignments: compacted.scoutAssignments.slice(0, 20),
@@ -4952,15 +5568,29 @@ export function dehydrateWorldStateToCareerMap(state: WorldState): CareerStateMa
     lastSquadMeetingDate: compacted.lastSquadMeetingDate || '',
     scheduledExtraFixtures,
     uefaPots: flatUefaPots,
+    clubMetaDiffs: Object.keys(clubMetaDiffs).length > 0 ? clubMetaDiffs : undefined,
   });
 
   // Safety guard: guarantee JSON payload is under 300KB so Firestore BSON/proto never approaches 1,048,576 bytes
   if (JSON.stringify(dehydrated).length > 300_000) {
     const trimmedDiffs: Record<string, PlayerDelta> = {};
-    for (const [k, v] of Object.entries(dehydrated.playerDiffs).slice(0, 60)) {
+    for (const [k, v] of Object.entries(dehydrated.playerDiffs).slice(0, 50)) {
       trimmedDiffs[k] = v;
     }
     dehydrated.playerDiffs = trimmedDiffs;
+  }
+  if (JSON.stringify(dehydrated).length > 300_000) {
+    const trimmedMod: Record<string, Player> = {};
+    let nonUserCount = 0;
+    for (const [k, v] of Object.entries(dehydrated.modifiedPlayers)) {
+      if (v.clubId === controlledId) {
+        trimmedMod[k] = v;
+      } else if (nonUserCount < 15) {
+        trimmedMod[k] = v;
+        nonUserCount++;
+      }
+    }
+    dehydrated.modifiedPlayers = trimmedMod;
   }
 
   return dehydrated;
@@ -5005,6 +5635,27 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
     ...baseline.clubs,
     ...(cs.clubs || {}),
   };
+  for (const [cid, cdiff] of Object.entries(cs.clubMetaDiffs || {})) {
+    const existing = rehydratedClubs[cid];
+    if (existing) {
+      rehydratedClubs[cid] = {
+        ...existing,
+        leagueId: cdiff.leagueId,
+        reputation: cdiff.reputation,
+        pointsDeduction: cdiff.pointsDeduction ?? existing.pointsDeduction,
+        trainingFacilities: cdiff.trainingFacilities,
+        youthFacilities: cdiff.youthFacilities,
+        finances: {
+          ...existing.finances,
+          transferBudget: cdiff.transferBudget,
+          balance: cdiff.balance,
+        },
+        aiManager: cdiff.aiManagerName
+          ? { ...existing.aiManager, name: cdiff.aiManagerName }
+          : existing.aiManager,
+      };
+    }
+  }
 
   const rehydratedStaff: Record<string, StaffMember> = {
     ...baseline.staff,
@@ -5023,6 +5674,9 @@ export function rehydrateWorldStateFromCareerDoc(docData: CareerSaveDocument): W
   };
 
   const rehydratedPlayers: Record<string, Player> = { ...baseline.players };
+  for (const retiredId of cs.retiredPlayerIds || []) {
+    delete rehydratedPlayers[retiredId];
+  }
   for (const [id, diff] of Object.entries(cs.playerDiffs || {})) {
     const existing = rehydratedPlayers[id];
     if (existing) {

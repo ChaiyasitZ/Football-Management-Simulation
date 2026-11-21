@@ -68,6 +68,7 @@ import {
   FREE_AGENT_MANAGERS_POOL,
   generateAnnualYouthIntake,
   generateBosmanContractExpiryAlert,
+  getAgeAtDate,
   getClubAllTimeRecords,
   getClubStaffBonuses,
   getClubSupporterConfidence,
@@ -4242,6 +4243,282 @@ test('30. 2024/25 Real-World History, 2025/26 Squads/Transfers/Super Cups, Club 
     upgraded.seasonAwardsHistory!.find((a) => a.season === '2024/25')?.managerOfTheSeason.managerName,
     'Luis Enrique',
     'Legacy rehydration must upgrade stale 2024/25 Manager of the Season to Luis Enrique'
+  );
+});
+
+test('Stage 17 Complete Suite: AI Loan Option-to-Buy, Dynamic Player Valuation, Contract Expiry/Bosman & Age 37+ Retirement -> Staff/Regen', () => {
+  const world = createInitialWorldState(171717);
+  const myClubId = world.controlledClubId; // Arsenal
+  const aiBuyerClub = Object.values(world.clubs).find(
+    (c) => c.id !== myClubId && c.leagueId === 'ESP_LL' && c.reputation >= 82
+  )!;
+  const aiPoorClub = Object.values(world.clubs).find(
+    (c) => c.id !== myClubId && c.id !== aiBuyerClub.id && c.leagueId === 'FRA_L1'
+  )!;
+
+  const myPlayers = Object.values(world.players).filter((p) => p.clubId === myClubId);
+  const loanStar = [...myPlayers].sort((a, b) => a.currentAbility - b.currentAbility)[3];
+  const loanRecallTarget = [...myPlayers].sort((a, b) => a.currentAbility - b.currentAbility)[4];
+  const unusedExpiringUserPlayer = [...myPlayers].sort((a, b) => a.currentAbility - b.currentAbility)[0];
+  const breakoutStar = myPlayers.find((p) => p.positions.includes('ST') || p.positions.includes('AMR')) || myPlayers[0];
+  const slumpingPeer = myPlayers.find(
+    (p) =>
+      p.id !== breakoutStar.id &&
+      p.id !== loanStar.id &&
+      p.id !== loanRecallTarget.id &&
+      p.id !== unusedExpiringUserPlayer.id
+  )!;
+
+  const veteranLegend =
+    Object.values(world.players).find(
+      (p) =>
+        p.clubId !== myClubId &&
+        p.currentAbility >= 150 &&
+        getAgeAtDate(p.dateOfBirth, '2026-07-01') >= 40
+    ) ||
+    Object.values(world.players).find((p) => p.clubId !== myClubId && p.currentAbility >= 155)!;
+
+  const veteranClubId = veteranLegend.clubId;
+  const veteranPrimaryPos = veteranLegend.positions[0];
+
+  const aiSurplusClub = Object.values(world.clubs).find(
+    (c) =>
+      c.id !== myClubId &&
+      c.id !== aiBuyerClub.id &&
+      Object.values(world.players).filter((p) => p.clubId === c.id).length >= 22
+  )!;
+  const aiSurplusExpiring = Object.values(world.players)
+    .filter((p) => p.clubId === aiSurplusClub.id && p.id !== veteranLegend.id)
+    .sort((a, b) => a.currentAbility - b.currentAbility)[0];
+
+  const myPreBalance = world.clubs[myClubId].finances.balance;
+  const myPreBudget = world.clubs[myClubId].finances.transferBudget;
+
+  const testState = {
+    ...world,
+    clubs: {
+      ...world.clubs,
+      [aiBuyerClub.id]: {
+        ...aiBuyerClub,
+        finances: {
+          ...aiBuyerClub.finances,
+          balance: 150_000_000,
+          transferBudget: 80_000_000,
+        },
+      },
+      [aiPoorClub.id]: {
+        ...aiPoorClub,
+        finances: {
+          ...aiPoorClub.finances,
+          transferBudget: 2_000_000,
+        },
+      },
+    },
+    players: {
+      ...world.players,
+      [loanStar.id]: {
+        ...loanStar,
+        clubId: aiBuyerClub.id,
+        loanedFromClubId: myClubId,
+        loanOptionToBuyFee: 28_000_000,
+        stats: {
+          ...loanStar.stats,
+          appearances: 30,
+          starts: 28,
+          goals: 12,
+          assists: 6,
+          averageRating: 7.45,
+          minutesPlayed: 2500,
+        },
+      },
+      [loanRecallTarget.id]: {
+        ...loanRecallTarget,
+        clubId: aiPoorClub.id,
+        loanedFromClubId: myClubId,
+        loanOptionToBuyFee: 55_000_000,
+        stats: {
+          ...loanRecallTarget.stats,
+          appearances: 14,
+          goals: 2,
+          assists: 1,
+          averageRating: 6.72,
+        },
+      },
+      [unusedExpiringUserPlayer.id]: {
+        ...unusedExpiringUserPlayer,
+        contractEndDate: '2026-06-30',
+        stats: { ...unusedExpiringUserPlayer.stats, appearances: 2 },
+      },
+      [aiSurplusExpiring.id]: {
+        ...aiSurplusExpiring,
+        dateOfBirth: '1996-03-10',
+        currentAbility: 105,
+        contractEndDate: '2026-06-30',
+      },
+      [breakoutStar.id]: {
+        ...breakoutStar,
+        dateOfBirth: '2003-05-10',
+        currentAbility: 165,
+        potentialAbility: 185,
+        stats: {
+          ...breakoutStar.stats,
+          appearances: 36,
+          starts: 35,
+          goals: 26,
+          assists: 11,
+          averageRating: 7.82,
+        },
+      },
+      [slumpingPeer.id]: {
+        ...slumpingPeer,
+        dateOfBirth: '2003-05-10',
+        currentAbility: 165,
+        potentialAbility: 185,
+        stats: {
+          ...slumpingPeer.stats,
+          appearances: 20,
+          starts: 14,
+          goals: 0,
+          assists: 0,
+          averageRating: 6.15,
+        },
+      },
+      [veteranLegend.id]: {
+        ...veteranLegend,
+        dateOfBirth: '1985-02-05',
+        currentAbility: 162,
+        attributes: {
+          ...veteranLegend.attributes,
+          mental: {
+            ...veteranLegend.attributes.mental,
+            leadership: 18,
+          },
+        },
+      },
+    },
+  };
+
+  const rolled = processEndOfSeasonRollover(testState).nextState;
+
+  // 1. AI Loan Option-to-Buy Execution vs Recall
+  const boughtOut = rolled.players[loanStar.id];
+  assert.equal(boughtOut.clubId, aiBuyerClub.id, 'AI host club must permanently sign high-performing loanee with affordable option-to-buy');
+  assert.equal(boughtOut.loanedFromClubId, null);
+  assert.equal(boughtOut.loanOptionToBuyFee, null);
+  assert.equal(boughtOut.transferHistory[0]?.type, 'Transfer');
+  assert.equal(boughtOut.transferHistory[0]?.fee, 28_000_000);
+  assert.ok(
+    rolled.clubs[myClubId].finances.balance > myPreBalance + 28_000_000,
+    'User parent club balance must include loan buyout proceeds plus prize money'
+  );
+  assert.ok(
+    rolled.clubs[myClubId].finances.transferBudget > myPreBudget + 20_000_000,
+    'User parent club transfer budget must receive 85% of buyout fee'
+  );
+  assert.ok(
+    rolled.inbox.some((n) => n.id.includes(`news_loan_buyout_2026_${loanStar.id}`)),
+    'Inbox must notify user when an AI club exercises a loan option-to-buy'
+  );
+
+  const recalled = rolled.players[loanRecallTarget.id];
+  assert.equal(recalled.clubId, myClubId, 'Unaffordable loan option must still return player to parent club');
+  assert.equal(recalled.loanedFromClubId, null);
+
+  // 2. Dynamic Player Valuation
+  const breakoutAfter = rolled.players[breakoutStar.id];
+  const slumpingAfter = rolled.players[slumpingPeer.id];
+  assert.ok(
+    breakoutAfter.marketValue > slumpingAfter.marketValue * 1.2,
+    `Breakout star marketValue (${breakoutAfter.marketValue}) must significantly exceed slumping peer (${slumpingAfter.marketValue})`
+  );
+
+  // 3. End-of-Season Contract Expiry & Bosman Free Transfers (0 stale expired contracts globally)
+  const expiredAfterRollover = Object.values(rolled.players).filter(
+    (p) => parseInt(p.contractEndDate.slice(0, 4), 10) <= 2026
+  );
+  assert.equal(
+    expiredAfterRollover.length,
+    0,
+    `No player should retain an expired 2026 contract after rollover, found ${expiredAfterRollover.length}`
+  );
+  const bosmanMovedUser = rolled.players[unusedExpiringUserPlayer.id];
+  assert.notEqual(bosmanMovedUser.clubId, myClubId, 'Unused expiring user-club player must depart on Bosman Free Transfer');
+  assert.equal(bosmanMovedUser.transferHistory[0]?.type, 'Free');
+  assert.equal(bosmanMovedUser.transferHistory[0]?.fee, 0);
+
+  const bosmanMovedAi = rolled.players[aiSurplusExpiring.id];
+  assert.notEqual(bosmanMovedAi.clubId, aiSurplusClub.id, 'Surplus aging AI player must depart on Bosman Free Transfer');
+  assert.equal(bosmanMovedAi.transferHistory[0]?.type, 'Free');
+
+  // 4. Age 37+ Veteran Retirement, Player-to-Staff Transition & Regen Replacement
+  assert.equal(
+    rolled.players[veteranLegend.id],
+    undefined,
+    'Age 41 veteran legend must retire and be removed from active players'
+  );
+  const retiredCoach = Object.values(rolled.staff).find(
+    (s) => s.id === `stf_ret_2026_${veteranLegend.id}`
+  );
+  assert.ok(retiredCoach, 'High-CA / High-Leadership retiring veteran must transition into Free Agent Staff');
+  assert.equal(retiredCoach!.clubId, null);
+  assert.ok(
+    retiredCoach!.role === 'Assistant Manager' || retiredCoach!.role === 'Youth Coach',
+    `Unexpected retired legend staff role: ${retiredCoach!.role}`
+  );
+  const replacementRegen = Object.values(rolled.players).find(
+    (p) =>
+      p.id.startsWith(`plr_regen_2026_${veteranClubId}_`) &&
+      p.clubId === veteranClubId &&
+      p.positions[0] === veteranPrimaryPos
+  );
+  assert.ok(
+    replacementRegen,
+    'Retiring veteran must be replaced by a 16-17 year-old Regen at the same club & position'
+  );
+  const regenAge = getAgeAtDate(replacementRegen!.dateOfBirth, '2026-07-15');
+  assert.ok(regenAge >= 16 && regenAge <= 17, `Regen age must be 16-17, got ${regenAge}`);
+  assert.ok(
+    rolled.inbox.some((n) => n.id === 'news_retirements_2026'),
+    'Inbox must announce seasonal veteran retirements and new legend coaches'
+  );
+
+  // Verify no club lineup references a retired/departed player
+  for (const club of Object.values(rolled.clubs)) {
+    for (const slot of club.primaryTactic.lineup) {
+      if (slot.playerId) {
+        const pl = rolled.players[slot.playerId];
+        assert.ok(
+          pl && pl.clubId === club.id,
+          `Club ${club.name} lineup slot references missing/departed player ${slot.playerId}`
+        );
+      }
+    }
+  }
+
+  // 5. Cloud Save Round-Trip preserves retired veterans & new legend coaches within 300KB cap
+  const dehydrated = dehydrateWorldStateToCareerMap(rolled);
+  assert.ok(JSON.stringify(dehydrated).length <= 300_000, 'Firestore save payload must remain <= 300KB');
+  const rehydrated = rehydrateWorldStateFromCareerDoc({
+    ownerId: 'stage17_uid',
+    slotId: 'slot_17',
+    saveName: 'Stage 17 Lifecycle Save',
+    clubName: rolled.clubs[myClubId].name,
+    managerName: rolled.manager.name,
+    gameDate: rolled.gameDate,
+    season: rolled.currentSeason,
+    lastSavedAtIso: '2026-07-15T12:00:00Z',
+    randomSeed: rolled.randomSeed,
+    controlledClubId: myClubId,
+    careerState: dehydrated,
+  });
+  assert.equal(
+    rehydrated.players[veteranLegend.id],
+    undefined,
+    'Rehydrated Cloud Save must keep retired veterans retired'
+  );
+  assert.ok(
+    rehydrated.staff[`stf_ret_2026_${veteranLegend.id}`],
+    'Rehydrated Cloud Save must preserve retired-legend Free Agent coach'
   );
 });
 

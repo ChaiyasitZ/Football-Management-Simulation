@@ -3412,7 +3412,710 @@ export const TransfersView: React.FC<{
 };
 
 /* ============================================================================
-   6. COMPETITIONS & SCHEDULE VIEW (15 DOMESTIC LEAGUES + NEW UEFA SWISS FORMAT)
+   6A. INTERACTIVE 394-CLUB DOSSIER & SQUAD INSPECTOR MODAL (Stage 17 Phase 1)
+============================================================================ */
+export const ClubInspectorModal: React.FC<{
+  clubId: string;
+  world: WorldState;
+  onClose: () => void;
+  onSelectPlayer: (playerId: string) => void;
+}> = ({ clubId, world, onClose, onSelectPlayer }) => {
+  const { tr } = useLanguage();
+  const [subTab, setSubTab] = useState<'squad' | 'tactics' | 'records'>('squad');
+  const club = world.clubs[clubId];
+
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const squadData = useMemo(() => {
+    if (!club) return null;
+    const clubPlayers = Object.values(world.players).filter((p) => p.clubId === club.id);
+    const starterOrder = new Map<string, number>();
+    club.primaryTactic.lineup.forEach((slot, idx) => {
+      if (slot.playerId) starterOrder.set(slot.playerId, idx);
+    });
+    const subSet = new Set(club.primaryTactic.benchPlayerIds || []);
+
+    const sortedSquad = [...clubPlayers].sort((a, b) => {
+      const aStarter = starterOrder.has(a.id);
+      const bStarter = starterOrder.has(b.id);
+      if (aStarter && !bStarter) return -1;
+      if (!aStarter && bStarter) return 1;
+      if (aStarter && bStarter) return (starterOrder.get(a.id) ?? 0) - (starterOrder.get(b.id) ?? 0);
+      const aSub = subSet.has(a.id);
+      const bSub = subSet.has(b.id);
+      if (aSub && !bSub) return -1;
+      if (!aSub && bSub) return 1;
+      return b.currentAbility - a.currentAbility;
+    });
+
+    const totalValue = clubPlayers.reduce((sum, p) => sum + p.marketValue, 0);
+    const avgCa =
+      clubPlayers.length > 0
+        ? clubPlayers.reduce((sum, p) => sum + p.currentAbility, 0) / clubPlayers.length
+        : 0;
+    const avgAge =
+      clubPlayers.length > 0
+        ? clubPlayers.reduce(
+            (sum, p) => sum + getAgeAtDate(p.dateOfBirth, world.gameDate),
+            0
+          ) / clubPlayers.length
+        : 0;
+
+    // Collect club's recent transfer history across all players in the world
+    const clubTransfers: Array<{
+      date: string;
+      direction: 'IN' | 'OUT';
+      playerId: string;
+      playerName: string;
+      counterpartyName: string;
+      type: 'Transfer' | 'Loan' | 'Free';
+      fee: number;
+    }> = [];
+    for (const p of Object.values(world.players)) {
+      for (const mv of p.transferHistory || []) {
+        if (mv.toClubId === club.id || mv.fromClubId === club.id) {
+          const isIn = mv.toClubId === club.id;
+          const otherId = isIn ? mv.fromClubId : mv.toClubId;
+          clubTransfers.push({
+            date: mv.date,
+            direction: isIn ? 'IN' : 'OUT',
+            playerId: p.id,
+            playerName: `${p.firstName} ${p.lastName}`,
+            counterpartyName: world.clubs[otherId]?.name || otherId,
+            type: mv.type,
+            fee: mv.fee,
+          });
+        }
+      }
+    }
+    clubTransfers.sort((a, b) => b.date.localeCompare(a.date) || b.fee - a.fee);
+
+    return {
+      sortedSquad,
+      starterOrder,
+      subSet,
+      totalValue,
+      avgCa,
+      avgAge,
+      records: getClubAllTimeRecords(world, club.id),
+      clubTrophies: (world.trophyHistory || []).filter((t) => t.winnerClubId === club.id),
+      clubTransfers: clubTransfers.slice(0, 30),
+    };
+  }, [club, world]);
+
+  if (!club || !squadData) return null;
+
+  const leagueCfg = LEAGUES_CONFIG[club.leagueId];
+  const isUserClub = club.id === world.controlledClubId;
+
+  const openPlayer = (playerId: string) => {
+    onClose();
+    onSelectPlayer(playerId);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4"
+      data-testid="club-inspector-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${club.name} Club Dossier`}
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-5xl w-full max-h-[88vh] flex flex-col overflow-hidden shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header Banner */}
+        <div className="px-6 py-4 bg-slate-950/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <ClubBadge club={club} size="lg" showRing />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <h2 className="text-xl font-display font-bold text-white truncate">
+                  {club.name}
+                </h2>
+                <span className="text-xs font-mono text-emerald-400 font-semibold">
+                  {club.shortName}
+                </span>
+                <CompetitionBadge competitionId={club.leagueId} size="xs" />
+                {isUserClub && (
+                  <span className="text-xs font-mono text-sky-400 font-semibold">
+                    · {tr('Your Club', 'สโมสรของคุณ')}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-slate-400 mt-1 flex flex-wrap items-center gap-2 font-mono tabular-nums">
+                <span>
+                  {tr('Manager:', 'กุนซือ:')}{' '}
+                  <strong className="text-slate-100 font-sans font-medium">
+                    {isUserClub ? world.manager.name : club.aiManager.name}
+                  </strong>
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {club.primaryTactic.formation} ({club.aiManager.style})
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {club.stadiumName} ({club.stadiumCapacity.toLocaleString()})
+                </span>
+                {leagueCfg && (
+                  <>
+                    <span aria-hidden="true">·</span>
+                    <span className="inline-flex items-center gap-1">
+                      <NationalityFlag code={club.countryId} size="xs" />
+                      {leagueCfg.name}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 shrink-0">
+            <div className="text-right font-mono tabular-nums text-xs">
+              <div className="text-slate-400">{tr('Transfer Budget', 'งบเสริมทัพ')}</div>
+              <div className="text-sm font-bold text-emerald-400">
+                €{(club.finances.transferBudget / 1_000_000).toFixed(1)}M
+              </div>
+            </div>
+            <button
+              type="button"
+              data-testid="close-club-inspector-btn"
+              onClick={onClose}
+              className="px-3.5 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+            >
+              {tr('Close', 'ปิด')}
+            </button>
+          </div>
+        </div>
+
+        {/* Sub-Tab Navigation */}
+        <div
+          className="px-6 py-2.5 bg-slate-950/60 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3"
+          role="tablist"
+          aria-label="Club Dossier Sections"
+        >
+          <div className="flex items-center gap-1.5">
+            {(
+              [
+                {
+                  id: 'squad',
+                  label: tr(
+                    `Squad & Starting XI (${squadData.sortedSquad.length})`,
+                    `ขุมกำลัง & 11 ตัวจริง (${squadData.sortedSquad.length})`
+                  ),
+                },
+                {
+                  id: 'tactics',
+                  label: tr('Tactical Setup & Manager', 'แผนการเล่น & ผู้จัดการทีม'),
+                },
+                {
+                  id: 'records',
+                  label: tr('Transfers & Club Records', 'ซื้อ-ขาย & สถิติสโมสร'),
+                },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={subTab === tab.id}
+                data-testid={`club-inspector-tab-${tab.id}`}
+                onClick={() => setSubTab(tab.id)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
+                  subTab === tab.id
+                    ? 'bg-emerald-500 text-slate-950'
+                    : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="text-xs text-slate-400 font-mono tabular-nums flex items-center gap-2">
+            <span>
+              {tr('Rep', 'ชื่อเสียง')} <strong className="text-white">{club.reputation}</strong>/100
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {tr('Avg CA', 'พลังเฉลี่ย')}{' '}
+              <strong className="text-emerald-400">{(squadData.avgCa / 10).toFixed(1)}</strong>
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {tr('Squad Value', 'มูลค่ารวม')}{' '}
+              <strong className="text-amber-300">
+                €{(squadData.totalValue / 1_000_000).toFixed(1)}M
+              </strong>
+            </span>
+          </div>
+        </div>
+
+        {/* Scrollable Body */}
+        <div className="flex-1 overflow-y-auto p-6">
+          {subTab === 'squad' && (
+            <div className="space-y-3" data-testid="club-inspector-squad-panel">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                <span>
+                  {tr(
+                    'Click any player to open their full profile, scout report, or submit a transfer/loan offer.',
+                    'คลิกชื่อนักเตะคนใดก็ได้เพื่อเปิดโปรไฟล์เชิงลึก ดูรายงานแมวมอง หรือยื่นข้อเสนอซื้อ/ยืมตัวได้ทันที'
+                  )}
+                </span>
+                <span className="font-mono tabular-nums">
+                  {tr('Avg Age:', 'อายุเฉลี่ย:')} {squadData.avgAge.toFixed(1)}
+                </span>
+              </div>
+
+              <div className="border border-slate-800 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-950/80 border-b border-slate-800 text-[11px] text-slate-400">
+                      <th className="py-2.5 px-3 w-12">{tr('Unit', 'ชุด')}</th>
+                      <th className="py-2.5 px-2 w-10 text-right">#</th>
+                      <th className="py-2.5 px-3">{tr('Player', 'นักเตะ')}</th>
+                      <th className="py-2.5 px-2">{tr('Pos', 'ตำแหน่ง')}</th>
+                      <th className="py-2.5 px-2 text-right">{tr('Age', 'อายุ')}</th>
+                      <th className="py-2.5 px-2 text-right">CA / PA</th>
+                      <th className="py-2.5 px-3 text-right">{tr('Value', 'มูลค่า')}</th>
+                      <th className="py-2.5 px-3 text-right">{tr('Contract', 'สัญญา')}</th>
+                      <th className="py-2.5 px-3 text-right">{tr('Action', 'จัดการ')}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/70">
+                    {squadData.sortedSquad.map((p) => {
+                      const isStarter = squadData.starterOrder.has(p.id);
+                      const isSub = squadData.subSet.has(p.id);
+                      const age = getAgeAtDate(p.dateOfBirth, world.gameDate);
+                      const parentClub = p.loanedFromClubId
+                        ? world.clubs[p.loanedFromClubId]
+                        : null;
+                      return (
+                        <tr
+                          key={p.id}
+                          className={`transition-colors ${
+                            isStarter
+                              ? 'bg-emerald-950/15 hover:bg-emerald-950/30'
+                              : 'hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <td className="py-2 px-3 font-mono text-[11px]">
+                            <span
+                              className={
+                                isStarter
+                                  ? 'text-emerald-400 font-bold'
+                                  : isSub
+                                    ? 'text-sky-400 font-semibold'
+                                    : 'text-slate-500'
+                              }
+                            >
+                              {isStarter ? 'XI' : isSub ? 'SUB' : 'RES'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono tabular-nums text-slate-400">
+                            {p.shirtNumber ?? '-'}
+                          </td>
+                          <td className="py-2 px-3">
+                            <button
+                              type="button"
+                              onClick={() => openPlayer(p.id)}
+                              className="flex items-center gap-2.5 text-left group cursor-pointer"
+                            >
+                              <PlayerAvatar player={p} club={club} size="xs" />
+                              <NationalityFlag code={p.nationalityCode} size="xs" />
+                              <div className="min-w-0">
+                                <div className="font-medium text-white group-hover:text-emerald-400 transition-colors truncate">
+                                  {p.firstName} {p.lastName}
+                                </div>
+                                {parentClub && (
+                                  <div className="text-[10px] font-mono text-amber-300">
+                                    {tr('On loan from', 'ยืมตัวจาก')} {parentClub.shortName}
+                                    {p.loanOptionToBuyFee
+                                      ? ` · Opt €${(p.loanOptionToBuyFee / 1_000_000).toFixed(1)}M`
+                                      : ''}
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          </td>
+                          <td className="py-2 px-2 font-mono text-slate-300">
+                            {p.positions[0]}
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono tabular-nums text-slate-300">
+                            {age}
+                          </td>
+                          <td className="py-2 px-2 text-right font-mono tabular-nums">
+                            <span className="text-emerald-400 font-semibold">
+                              {(p.currentAbility / 10).toFixed(1)}
+                            </span>
+                            <span className="text-slate-500">
+                              {' '}
+                              / {(p.potentialAbility / 10).toFixed(1)}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums text-slate-200">
+                            €{(p.marketValue / 1_000_000).toFixed(1)}M
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums text-slate-400">
+                            {p.contractEndDate.slice(0, 4)}
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => openPlayer(p.id)}
+                              className="px-2.5 py-1 rounded bg-slate-800 hover:bg-emerald-500 hover:text-slate-950 text-slate-200 text-[11px] font-semibold cursor-pointer whitespace-nowrap transition-colors"
+                            >
+                              {isUserClub
+                                ? tr('Profile', 'โปรไฟล์')
+                                : tr('Scout / Bid', 'ส่อง / ยื่นซื้อ')}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {subTab === 'tactics' && (
+            <div
+              className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+              data-testid="club-inspector-tactics-panel"
+            >
+              {/* Left Column: Manager Profile, Philosophy & Club Finances */}
+              <div className="space-y-5">
+                <div className="border border-slate-800 rounded-xl p-4 bg-slate-950/60 space-y-3">
+                  <h3 className="text-sm font-display font-bold text-white">
+                    {tr('Manager & Tactical Identity', 'ผู้จัดการทีมและปรัชญาแท็กติก')}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <div className="text-slate-400">{tr('Head Coach', 'หัวหน้าผู้ฝึกสอน')}</div>
+                      <div className="text-sm font-semibold text-white mt-0.5">
+                        {isUserClub ? world.manager.name : club.aiManager.name}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">{tr('Tactical Style', 'สไตล์การคุมทีม')}</div>
+                      <div className="text-sm font-semibold text-emerald-400 mt-0.5">
+                        {club.aiManager.style}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">{tr('Primary Formation', 'แผนการเล่นหลัก')}</div>
+                      <div className="font-mono font-bold text-white mt-0.5">
+                        {club.primaryTactic.formation}
+                        {club.secondaryTactic?.formation
+                          ? ` / ${club.secondaryTactic.formation}`
+                          : ''}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">{tr('Mentality & Tempo', 'ทัศนคติ & จังหวะเกม')}</div>
+                      <div className="font-mono text-slate-200 mt-0.5">
+                        {club.primaryTactic.instructions.mentality} ·{' '}
+                        {club.primaryTactic.instructions.tempo}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">{tr('Pressing & Def. Line', 'เพรสซิ่ง & แนวรับ')}</div>
+                      <div className="font-mono text-slate-200 mt-0.5">
+                        {club.primaryTactic.instructions.pressingIntensity} ·{' '}
+                        {club.primaryTactic.instructions.defensiveLine}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400">{tr('Manager Reputation', 'ชื่อเสียงกุนซือ')}</div>
+                      <div className="font-mono tabular-nums text-sky-400 font-semibold mt-0.5">
+                        {isUserClub ? world.manager.reputation : club.aiManager.reputation} / 100
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border border-slate-800 rounded-xl p-4 bg-slate-950/60 space-y-3">
+                  <h3 className="text-sm font-display font-bold text-white">
+                    {tr('Finances & Infrastructure', 'การเงินและโครงสร้างพื้นฐานสโมสร')}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-3 text-xs font-mono tabular-nums">
+                    <div>
+                      <div className="text-slate-400 font-sans">
+                        {tr('Transfer Budget', 'งบประมาณเสริมทัพ')}
+                      </div>
+                      <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                        €{(club.finances.transferBudget / 1_000_000).toFixed(1)}M
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 font-sans">
+                        {tr('Club Balance', 'ยอดเงินคงคลัง')}
+                      </div>
+                      <div className="text-sm font-bold text-white mt-0.5">
+                        €{(club.finances.balance / 1_000_000).toFixed(1)}M
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 font-sans">
+                        {tr('Weekly Wage Budget', 'เพดานค่าเหนื่อย/สัปดาห์')}
+                      </div>
+                      <div className="text-slate-200 mt-0.5">
+                        €{(club.finances.wageBudgetPerWeek / 1_000_000).toFixed(2)}M/wk
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 font-sans">
+                        {tr('Stadium Capacity', 'ความจุสนามเหย้า')}
+                      </div>
+                      <div className="text-slate-200 mt-0.5">
+                        {club.stadiumCapacity.toLocaleString()}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 font-sans">
+                        {tr('Training Facilities', 'ศูนย์ฝึกซ้อม')}
+                      </div>
+                      <div className="text-sky-400 mt-0.5">{club.trainingFacilities} / 20</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-400 font-sans">
+                        {tr('Youth Academy', 'ศูนย์เยาวชนอคาเดมี')}
+                      </div>
+                      <div className="text-amber-300 mt-0.5">{club.youthFacilities} / 20</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Starting XI Tactical Pitch Preview */}
+              <div className="border border-slate-800 rounded-xl p-4 bg-slate-950/60 flex flex-col">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-display font-bold text-white">
+                    {tr('Starting XI Shape', 'ผังการยืน 11 ตัวจริง')} ({club.primaryTactic.formation})
+                  </h3>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {tr('Click player to inspect', 'คลิกตัวผู้เล่นเพื่อดูโปรไฟล์')}
+                  </span>
+                </div>
+                <div className="relative flex-1 min-h-[340px] rounded-xl border border-emerald-500/30 bg-gradient-to-b from-emerald-950/75 via-emerald-950/55 to-emerald-950/75 overflow-hidden">
+                  {/* Pitch markings */}
+                  <div className="absolute inset-x-4 top-1/2 h-px bg-emerald-400/20" />
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border border-emerald-400/20" />
+                  <div className="absolute left-1/2 top-0 -translate-x-1/2 w-36 h-12 border-b border-x border-emerald-400/20" />
+                  <div className="absolute left-1/2 bottom-0 -translate-x-1/2 w-36 h-12 border-t border-x border-emerald-400/20" />
+
+                  {club.primaryTactic.lineup.map((slot, idx) => {
+                    const pl = slot.playerId ? world.players[slot.playerId] : null;
+                    const leftPct = Math.max(10, Math.min(90, slot.x));
+                    const topPct = Math.max(9, Math.min(91, 100 - slot.y));
+                    return (
+                      <button
+                        key={`${slot.position}_${idx}`}
+                        type="button"
+                        disabled={!pl}
+                        onClick={() => pl && openPlayer(pl.id)}
+                        style={{ left: `${leftPct}%`, top: `${topPct}%` }}
+                        className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group cursor-pointer disabled:cursor-default"
+                      >
+                        <span
+                          className="w-8 h-8 rounded-full border-2 border-white/80 flex items-center justify-center text-[11px] font-mono font-bold text-white shadow-md group-hover:scale-110 transition-transform"
+                          style={{ backgroundColor: club.primaryColor || '#10b981' }}
+                        >
+                          {pl?.shirtNumber ?? slot.position}
+                        </span>
+                        <span className="mt-1 px-1.5 py-0.5 rounded bg-slate-950/90 text-[10px] font-medium text-white whitespace-nowrap max-w-[96px] truncate group-hover:text-emerald-400">
+                          {pl ? pl.lastName : slot.position}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {subTab === 'records' && (
+            <div className="space-y-6" data-testid="club-inspector-records-panel">
+              {/* All-Time Club Records */}
+              <div className="space-y-3">
+                <h3 className="text-sm font-display font-bold text-white">
+                  {tr('Club Records Book', 'ทำเนียบสถิติสูงสุดสโมสร')}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                    <div className="text-slate-400">
+                      {tr('Record Arrival Signing', 'สถิติซื้อตัวเข้าแพงสุด')}
+                    </div>
+                    <div className="font-semibold text-white truncate">
+                      {squadData.records.recordSigning.playerName}
+                    </div>
+                    <div className="font-mono tabular-nums text-emerald-400 font-bold">
+                      €{(squadData.records.recordSigning.fee / 1_000_000).toFixed(1)}M ·{' '}
+                      <span className="text-slate-400 font-normal">
+                        {squadData.records.recordSigning.fromClubName}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                    <div className="text-slate-400">
+                      {tr('Record Player Sale', 'สถิติขายออกแพงสุด')}
+                    </div>
+                    <div className="font-semibold text-white truncate">
+                      {squadData.records.recordSale.playerName}
+                    </div>
+                    <div className="font-mono tabular-nums text-sky-400 font-bold">
+                      €{(squadData.records.recordSale.fee / 1_000_000).toFixed(1)}M ·{' '}
+                      <span className="text-slate-400 font-normal">
+                        {squadData.records.recordSale.toClubName}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                    <div className="text-slate-400">
+                      {tr('Top Goalscorer', 'ดาวซัลโวสูงสุด')}
+                    </div>
+                    <div className="font-semibold text-white truncate">
+                      {squadData.records.topGoalscorer.playerName}
+                    </div>
+                    <div className="font-mono tabular-nums text-amber-300 font-bold">
+                      {squadData.records.topGoalscorer.goals} {tr('Goals', 'ประตู')} ·{' '}
+                      <span className="text-slate-400 font-normal">
+                        {squadData.records.topGoalscorer.appearances} {tr('Apps', 'นัด')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1">
+                    <div className="text-slate-400">
+                      {tr('Highest Rated Player', 'เรตติ้งเฉลี่ยสูงสุด')}
+                    </div>
+                    <div className="font-semibold text-white truncate">
+                      {squadData.records.highestRatedPlayer.playerName}
+                    </div>
+                    <div className="font-mono tabular-nums text-emerald-400 font-bold">
+                      {squadData.records.highestRatedPlayer.averageRating.toFixed(2)}{' '}
+                      {tr('Avg', 'เฉลี่ย')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Trophy Honours */}
+              {squadData.clubTrophies.length > 0 && (
+                <div className="space-y-2.5">
+                  <h3 className="text-sm font-display font-bold text-white">
+                    {tr('Recorded Honours', 'ทำเนียบแชมป์ล่าสุด')} ({squadData.clubTrophies.length})
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                    {squadData.clubTrophies.slice(0, 9).map((t) => (
+                      <div
+                        key={t.id}
+                        className="flex items-center gap-3 p-3 rounded-xl bg-slate-950/70 border border-slate-800"
+                      >
+                        <CompetitionBadge competitionId={t.competitionId} size="sm" />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-amber-300 truncate">
+                            {t.competitionName}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400">
+                            {t.season}
+                            {t.runnerUpClubName ? ` · vs ${t.runnerUpClubName}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Club Transfer Ledger (Arrivals & Departures) */}
+              <div className="space-y-2.5">
+                <h3 className="text-sm font-display font-bold text-white">
+                  {tr('Club Transfer Activity', 'ประวัติการซื้อ-ขายนักเตะของสโมสร')} (
+                  {squadData.clubTransfers.length})
+                </h3>
+                {squadData.clubTransfers.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-400 border border-slate-800 rounded-xl bg-slate-950/40">
+                    {tr(
+                      'No transfer deals recorded yet for this club.',
+                      'ยังไม่มีบันทึกการซื้อ-ขายนักเตะสำหรับสโมสรนี้'
+                    )}
+                  </div>
+                ) : (
+                  <div className="border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-950/80 border-b border-slate-800 text-[11px] text-slate-400">
+                          <th className="py-2 px-3">{tr('Date', 'วันที่')}</th>
+                          <th className="py-2 px-2">{tr('Move', 'ทิศทาง')}</th>
+                          <th className="py-2 px-3">{tr('Player', 'นักเตะ')}</th>
+                          <th className="py-2 px-3">{tr('Counterparty', 'สโมสรคู่สัญญา')}</th>
+                          <th className="py-2 px-2">{tr('Type', 'ประเภท')}</th>
+                          <th className="py-2 px-3 text-right">{tr('Fee', 'ค่าตัว')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/70 font-mono tabular-nums">
+                        {squadData.clubTransfers.map((trf, i) => (
+                          <tr
+                            key={`${trf.playerId}_${trf.date}_${i}`}
+                            className="hover:bg-slate-800/40"
+                          >
+                            <td className="py-2 px-3 text-slate-400">{trf.date}</td>
+                            <td className="py-2 px-2 font-bold">
+                              <span
+                                className={
+                                  trf.direction === 'IN' ? 'text-emerald-400' : 'text-amber-400'
+                                }
+                              >
+                                {trf.direction}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 font-sans">
+                              <button
+                                type="button"
+                                onClick={() => openPlayer(trf.playerId)}
+                                className="text-white hover:text-emerald-400 font-medium cursor-pointer"
+                              >
+                                {trf.playerName}
+                              </button>
+                            </td>
+                            <td className="py-2 px-3 font-sans text-slate-300">
+                              {trf.counterpartyName}
+                            </td>
+                            <td className="py-2 px-2 text-slate-400">{trf.type}</td>
+                            <td className="py-2 px-3 text-right font-semibold text-white">
+                              {trf.type === 'Loan'
+                                ? tr('Loan', 'ยืมตัว')
+                                : trf.fee <= 0
+                                  ? tr('Free', 'ฟรี')
+                                  : `€${(trf.fee / 1_000_000).toFixed(2)}M`}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================================
+   6. COMPETITIONS & SCHEDULE VIEW (23 DOMESTIC LEAGUES + NEW UEFA SWISS FORMAT)
 ============================================================================ */
 export const CompetitionsAndScheduleView: React.FC<{
   world: WorldState;
@@ -3453,6 +4156,7 @@ export const CompetitionsAndScheduleView: React.FC<{
   const [selectedUefaMatchday, setSelectedUefaMatchday] = useState<number>(1);
   const [inspectedUefaClubId, setInspectedUefaClubId] = useState<string>('');
   const [inspectedTrophyId, setInspectedTrophyId] = useState<string | null>(null);
+  const [inspectedClubId, setInspectedClubId] = useState<string | null>(null);
 
   const cfg = LEAGUES_CONFIG[selectedLeague];
   const standings = world.standings[selectedLeague] || [];
@@ -4426,7 +5130,11 @@ export const CompetitionsAndScheduleView: React.FC<{
                                               : 'text-slate-200'
                                           }`}
                                         >
-                                          <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <button
+                                            type="button"
+                                            onClick={() => h && setInspectedClubId(h.id)}
+                                            className="flex items-center gap-1.5 min-w-0 truncate hover:text-emerald-400 cursor-pointer text-left"
+                                          >
                                             <ClubBadge club={h} size="xs" />
                                             <span className="truncate">{h?.shortName || h?.name}</span>
                                             {hTier === 2 && (
@@ -4434,7 +5142,7 @@ export const CompetitionsAndScheduleView: React.FC<{
                                                 D2
                                               </span>
                                             )}
-                                          </div>
+                                          </button>
                                           <span className="font-mono">
                                             {fix.status === 'Completed' && fix.result
                                               ? fix.result.homeGoals
@@ -4450,7 +5158,11 @@ export const CompetitionsAndScheduleView: React.FC<{
                                               : 'text-slate-200'
                                           }`}
                                         >
-                                          <div className="flex items-center gap-1.5 min-w-0 truncate">
+                                          <button
+                                            type="button"
+                                            onClick={() => a && setInspectedClubId(a.id)}
+                                            className="flex items-center gap-1.5 min-w-0 truncate hover:text-emerald-400 cursor-pointer text-left"
+                                          >
                                             <ClubBadge club={a} size="xs" />
                                             <span className="truncate">{a?.shortName || a?.name}</span>
                                             {aTier === 2 && (
@@ -4458,7 +5170,7 @@ export const CompetitionsAndScheduleView: React.FC<{
                                                 D2
                                               </span>
                                             )}
-                                          </div>
+                                          </button>
                                           <span className="font-mono">
                                             {fix.status === 'Completed' && fix.result
                                               ? fix.result.awayGoals
@@ -4521,9 +5233,13 @@ export const CompetitionsAndScheduleView: React.FC<{
                                   key={fix.id}
                                   className="flex items-center justify-between px-4 py-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
                                 >
-                                  <div className="flex items-center gap-2 w-44 truncate">
+                                  <button
+                                    type="button"
+                                    onClick={() => h && setInspectedClubId(h.id)}
+                                    className="flex items-center gap-2 w-44 truncate text-left hover:text-emerald-400 cursor-pointer"
+                                  >
                                     <ClubBadge club={h} size="xs" />
-                                    <span className="font-medium text-white truncate">
+                                    <span className="font-medium text-white hover:text-emerald-400 truncate">
                                       {h?.name}
                                     </span>
                                     {hTier === 2 && (
@@ -4531,7 +5247,7 @@ export const CompetitionsAndScheduleView: React.FC<{
                                         D2
                                       </span>
                                     )}
-                                  </div>
+                                  </button>
                                   <div className="text-center font-mono">
                                     {fix.status === 'Completed' && fix.result ? (
                                       <div>
@@ -4549,17 +5265,21 @@ export const CompetitionsAndScheduleView: React.FC<{
                                       <span className="text-slate-400">{fix.kickoffDate}</span>
                                     )}
                                   </div>
-                                  <div className="flex items-center justify-end gap-2 w-44 truncate">
+                                  <button
+                                    type="button"
+                                    onClick={() => a && setInspectedClubId(a.id)}
+                                    className="flex items-center justify-end gap-2 w-44 truncate text-right hover:text-emerald-400 cursor-pointer"
+                                  >
                                     {aTier === 2 && (
                                       <span className="px-1 rounded bg-slate-800 text-[9px] font-mono text-amber-300">
                                         D2
                                       </span>
                                     )}
-                                    <span className="font-medium text-white truncate">
+                                    <span className="font-medium text-white hover:text-emerald-400 truncate">
                                       {a?.name}
                                     </span>
                                     <ClubBadge club={a} size="xs" />
-                                  </div>
+                                  </button>
                                 </div>
                               );
                             })}
@@ -4728,8 +5448,14 @@ export const CompetitionsAndScheduleView: React.FC<{
                         </td>
                         <td className="py-2 px-3 font-sans font-medium text-white">
                           <div className="flex items-center gap-2">
-                            <ClubBadge club={c} size="xs" />
-                            <span>{c?.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => c && setInspectedClubId(c.id)}
+                              className="flex items-center gap-2 text-left hover:text-emerald-400 cursor-pointer transition-colors"
+                            >
+                              <ClubBadge club={c} size="xs" />
+                              <span className="underline-offset-2 hover:underline">{c?.name}</span>
+                            </button>
                             <span className="text-[10px] font-mono text-slate-400 px-1.5 py-0.5 rounded bg-slate-950 border border-slate-800">
                               {c?.countryId} · Pot {potNum}
                             </span>
@@ -5162,25 +5888,37 @@ export const CompetitionsAndScheduleView: React.FC<{
                       key={fix.id}
                       className="flex items-center justify-between px-4 py-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
                     >
-                      <div className="flex items-center justify-end gap-2 w-44 truncate text-right">
+                      <button
+                        type="button"
+                        onClick={() => h && setInspectedClubId(h.id)}
+                        className="flex items-center justify-end gap-2 w-44 truncate text-right hover:text-emerald-400 cursor-pointer"
+                      >
                         <span className="text-[10px] font-mono text-slate-500">
                           {hPot ? `P${hPot}` : ''}
                         </span>
-                        <span className="font-medium text-white truncate">{h?.name}</span>
+                        <span className="font-medium text-white hover:text-emerald-400 truncate">
+                          {h?.name}
+                        </span>
                         <ClubBadge club={h} size="xs" />
-                      </div>
+                      </button>
                       <span className="px-3 py-1 rounded bg-slate-900 font-mono tabular-nums font-bold text-sky-400">
                         {fix.status === 'Completed' && fix.result
                           ? `${fix.result.homeGoals} - ${fix.result.awayGoals}`
                           : fix.kickoffDate}
                       </span>
-                      <div className="flex items-center gap-2 w-44 truncate">
+                      <button
+                        type="button"
+                        onClick={() => a && setInspectedClubId(a.id)}
+                        className="flex items-center gap-2 w-44 truncate text-left hover:text-emerald-400 cursor-pointer"
+                      >
                         <ClubBadge club={a} size="xs" />
-                        <span className="font-medium text-white truncate">{a?.name}</span>
+                        <span className="font-medium text-white hover:text-emerald-400 truncate">
+                          {a?.name}
+                        </span>
                         <span className="text-[10px] font-mono text-slate-500">
                           {aPot ? `P${aPot}` : ''}
                         </span>
-                      </div>
+                      </button>
                     </div>
                   );
                 })}
@@ -5340,8 +6078,14 @@ export const CompetitionsAndScheduleView: React.FC<{
                         </td>
                         <td className="py-2 px-3 font-sans font-medium text-white">
                           <div className="flex items-center gap-2">
-                            <ClubBadge club={c} size="xs" />
-                            <span>{c?.name}</span>
+                            <button
+                              type="button"
+                              onClick={() => c && setInspectedClubId(c.id)}
+                              className="flex items-center gap-2 text-left hover:text-emerald-400 cursor-pointer transition-colors"
+                            >
+                              <ClubBadge club={c} size="xs" />
+                              <span className="underline-offset-2 hover:underline">{c?.name}</span>
+                            </button>
                             {isProm && (
                               <span className="text-[10px] text-emerald-400 font-mono">PROM</span>
                             )}
@@ -5477,15 +6221,27 @@ export const CompetitionsAndScheduleView: React.FC<{
                       key={fix.id}
                       className="flex items-center justify-between px-4 py-3 rounded-lg bg-slate-950 border border-slate-800 text-xs"
                     >
-                      <span className="font-medium text-white w-40 truncate text-right">
-                        {h?.name}
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => h && setInspectedClubId(h.id)}
+                        className="flex items-center justify-end gap-2 font-medium text-white hover:text-emerald-400 w-44 truncate text-right cursor-pointer"
+                      >
+                        <span className="truncate">{h?.name}</span>
+                        <ClubBadge club={h} size="xs" />
+                      </button>
                       <span className="px-3 py-1 rounded bg-slate-900 font-mono tabular-nums font-bold text-emerald-400">
                         {fix.status === 'Completed' && fix.result
                           ? `${fix.result.homeGoals} - ${fix.result.awayGoals}`
                           : fix.kickoffDate}
                       </span>
-                      <span className="font-medium text-white w-40 truncate">{a?.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => a && setInspectedClubId(a.id)}
+                        className="flex items-center gap-2 font-medium text-white hover:text-emerald-400 w-44 truncate text-left cursor-pointer"
+                      >
+                        <ClubBadge club={a} size="xs" />
+                        <span className="truncate">{a?.name}</span>
+                      </button>
                     </div>
                   );
                 })}
@@ -5588,6 +6344,16 @@ export const CompetitionsAndScheduleView: React.FC<{
         world={world}
         onClose={() => setInspectedTrophyId(null)}
       />
+
+      {/* Stage 17 Phase 1: Interactive 394-Club Dossier & Squad Inspector Modal */}
+      {inspectedClubId && (
+        <ClubInspectorModal
+          clubId={inspectedClubId}
+          world={world}
+          onClose={() => setInspectedClubId(null)}
+          onSelectPlayer={onSelectPlayer}
+        />
+      )}
     </div>
   );
 };
